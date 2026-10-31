@@ -1,0 +1,137 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run autonomous TradeWars bot",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				".\\autonomous-bot\\bot.js",
+				".\\autonomous-bot\\config.192.168.4.75.json"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Stop autonomous TradeWars bot",
+			"type": "shell",
+			"command": "Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" | Where-Object { $_.CommandLine -match 'autonomous-bot[\\\\/]bot\\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Stop autonomous TradeWars bot",
+			"type": "shell",
+			"command": "Get-CimInstance Win32_Process -Filter 'Name = ''node.exe''' | Where-Object { $_.CommandLine -match 'autonomous-bot[\\\\/]bot\\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Stop autonomous TradeWars bot",
+			"type": "shell",
+			"command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'autonomous-bot[\\\\/]bot\\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Stop autonomous TradeWars bot process",
+			"type": "shell",
+			"command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'autonomous-bot[\\\\/]bot\\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run autonomous TradeWars bot fast timing",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				".\\autonomous-bot\\bot.js",
+				".\\autonomous-bot\\config.192.168.4.75.json"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Stop current autonomous bot after trade fix",
+			"type": "shell",
+			"command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'autonomous-bot[\\\\/]bot\\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run autonomous bot after trade fix",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				".\\autonomous-bot\\bot.js",
+				".\\autonomous-bot\\config.192.168.4.75.json"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Stop bot before fast macro test",
+			"type": "shell",
+			"command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'autonomous-bot[\\\\/]bot\\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run bot with TWX fast port macro",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				".\\autonomous-bot\\bot.js",
+				".\\autonomous-bot\\config.192.168.4.75.json"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Run autonomous bot offline smoke test",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				".\\autonomous-bot\\test-offline.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Render watcher snapshot test",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				".\\autonomous-bot\\trade-wars-watcher.js",
+				"--once",
+				"--no-color"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify bot watcher process state",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				".\\autonomous-bot\\test-process.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run TradeWars watcher dashboard",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				".\\autonomous-bot\\trade-wars-watcher.js"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		},
+	]
+}

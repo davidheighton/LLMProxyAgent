@@ -1,0 +1,130 @@
+// tlxtwdir.slt
+////////////////////////////////////////////////////////////////////////
+main()
+{
+ // Edit the below path to the directory where TLXTW Scripts are installed.
+ // Then start Telix with the "S" switch.
+ //
+ // Example:
+ //
+ // TELIX STLXTWDIR
+ //
+ // will load Telix and run the "S"cript TLXTWDIR.
+ //
+ // Or load Telix as you usually do, and assign this to a Function key,
+ // etc, so all you do is hit F1 (for example) to change script
+ // directories and load Trader.key. if you assign this to a function key
+ // then move this script to your normal script directory.
+
+ //                        Edit below
+
+str tlxtw_dir[64] = "e:\telix\work\slc\slt\tlxtw\";                          //
+
+            // The above path is all you must edit.
+            // Must end with "\".
+
+ _scr_chk_key=0;
+ read_file_entry_name();
+ strcat( tlxtw_dir, "trader.key" );
+ if (keyload( tlxtw_dir ) > -1) {
+    fnstrip( tlxtw_dir, 12, _script_dir );
+    if(!carrier()) {
+        printsc("^M^JTrader.key loaded^M^JScript directory:  " );
+        printsc( _script_dir );
+        printsc("^M^JAlt-F1 for Help");
+        printsc("^M^JAlt-H resets defaults.");
+        prints("");
+    }
+    tlxtw_dir=_script_dir;
+    strcat(tlxtw_dir,"Tlxtw.cfg");
+    if(!filefind(tlxtw_dir,0)) {
+        _scr_chk_key=1;
+        call("config");
+    }
+ }
+ else {
+    printsc("^M^JError loading file " ); prints( tlxtw_dir );
+ }
+ if(!carrier())
+    cputs_tr(_mdm_init_str);
+ else {
+    clear_scr();
+    capture(_capture_fname);
+    //printsc("^M^JBBS:  ");
+    //printsc(_entry_name);
+    //printsc("  (Ctrl-B to change)^m^j");
+    cputs("d");
+ }
+ _scr_chk_key=1;
+ return 1;
+}
+///////////////////////////////////////////////////////////////////////////////
+append_backslash( str string )
+{
+    if(subchr(string,strlen(string)-1)!='\')strcat(string,"\");
+    return string;
+}
+/////////////////////////////////////////////////////////////////////////////
+//                         Soft Wind
+soft_wind(str message, int duration)
+{
+    int old_chk_key;
+    old_chk_key = _scr_chk_key;
+    _scr_chk_key = 0;
+    int l, h, x, y, key = 0, ts;
+    cursor_onoff(0);
+    x=getx(); y=gety();
+    l = strlen(message)/2;
+    h = vsavearea(37-l, 10, 43+l, 14);
+    box(37-l, 10, 43+l, 14, 3, 0, 5 );
+    pstraxy(message, 40-l  , 12, 11 );
+    ts = timer_start(duration);
+    while( !key && !time_up(ts)) key=inkey();
+    vrstrarea(h);
+    cursor_onoff(1);
+    gotoxy(x,y);
+    timer_free(ts);
+    _scr_chk_key = old_chk_key;
+    return key;
+}
+///////////////////////////////////////////////////////////////////////////////
+fgetsi(str buf, int fhandle)//read line from a file and return the int value
+{
+    fgets(buf,strmaxlen(buf),fhandle);
+    return stoi(buf);
+}
+///////////////////////////////////////////////////////////////////////////////
+read_file_entry_name()
+{
+    str fname[64],buf[64];
+    int f,i,l,baud,parity,data,stop,osk;
+
+    osk=_scr_chk_key;_scr_chk_key=0;
+    if(!getenv("temp",fname)) {
+        soft_wind("^"Temp^" Environment variable not found!",30);
+        _scr_chk_key=osk;
+        return 0;
+    }
+    append_backslash(fname);
+    strcat(fname,"Entrynam.txt");
+    if((f=fopen(fname,"r"))==0) {
+        fclearerr(f);
+        buf="Open Error ";
+        strcat(buf,fname);
+        if(carrier())
+            call("bbsname");
+        //soft_wind(buf,40);
+        _scr_chk_key=osk;
+        return 0;
+    }
+    fgets(_entry_name,strmaxlen(_entry_name),f);
+    baud=fgetsi(buf   ,f);
+    parity=fgetsi(buf ,f);
+    data=fgetsi(buf   ,f);
+    stop=fgetsi(buf   ,f);
+    i=set_cparams(baud,parity,data,stop);
+    fclose(f);
+    _scr_chk_key=osk;
+    return 1;
+}
+// end of tlxtwdir.slt

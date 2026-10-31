@@ -1,0 +1,30 @@
+<nav class="session-tabs" aria-label="Agent workspace">
+    <a class="@ActiveClass("overview")" href="@AgentPath()" aria-current="@CurrentPage("overview")">Overview</a>
+    <a class="@ActiveClass("monitor")" href="@AgentPath("/monitor")" aria-current="@CurrentPage("monitor")">Live monitor</a>
+    <a class="@ActiveClass("runtime")" href="@AgentPath("/runtime")" aria-current="@CurrentPage("runtime")">Runtime</a>
+    <a class="@ActiveClass("strategy")" href="@AgentPath("/strategy")" aria-current="@CurrentPage("strategy")">Strategy</a>
+    <a class="@ActiveClass("objectives")" href="@AgentPath("/objectives")" aria-current="@CurrentPage("objectives")">Objectives</a>
+    <a class="@ActiveClass("events")" href="@AgentPath("/events")" aria-current="@CurrentPage("events")">Events</a>
+    <a class="@ActiveClass("activity")" href="@AgentPath("/activity")" aria-current="@CurrentPage("activity")">Activity</a>
+    <a class="@ActiveClass("settings")" href="@AgentPath("/settings")" aria-current="@CurrentPage("settings")">Settings</a>
+</nav>
+
+@code {
+    [Parameter, EditorRequired]
+    public string AgentId { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string ActivePage { get; set; } = string.Empty;
+
+    private string AgentPath(string suffix = "") =>
+        $"/agents/{Uri.EscapeDataString(AgentId)}{suffix}";
+
+    private string? ActiveClass(string page) =>
+        IsActive(page) ? "selected" : null;
+
+    private string? CurrentPage(string page) =>
+        IsActive(page) ? "page" : null;
+
+    private bool IsActive(string page) =>
+        string.Equals(ActivePage, page, StringComparison.OrdinalIgnoreCase);
+}

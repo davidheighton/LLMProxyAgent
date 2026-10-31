@@ -1,0 +1,870 @@
+{
+  "connection": {
+    "host": "192.168.4.75",
+    "port": 23
+  },
+  "credentials": {
+    "character": "1",
+    "username": "",
+    "password": ""
+  },
+  "autoCreateAccount": {
+    "enabled": true,
+    "reuseGeneratedAccount": true,
+    "usernamePrefix": "twbot",
+    "passwordPrefix": "TwBot",
+    "minSuffix": 1000,
+    "maxSuffix": 99999,
+    "saveGeneratedTo": "./generated-account.json"
+  },
+  "prompts": {
+    "characterPrompt": "Select.*character|Enter.*character",
+    "usernamePrompt": "(please\\s+enter\\s+your\\s+name|what is your name|user ?name|username|login).*[?:]\\s*$",
+    "passwordPrompt": "^\\s*password\\s*[:?]\\s*$",
+    "commandPrompt": "command.*\\[",
+    "sectorPrompt": "sector\\s*(command|:|#)"
+  },
+  "autoResponses": [
+    {
+      "match": "\\[A\\]\\[B\\]\\s*:",
+      "reply": "A",
+      "once": true
+    },
+    {
+      "match": "(choose|select).*(game|universe).*(a|b)|game\\s*(a|b)",
+      "reply": "A",
+      "once": true
+    },
+    {
+      "match": "(new user|new player|create (an )?account|register)\\s*\\(?(y/n|yes/no)\\)?",
+      "reply": "y",
+      "once": false
+    },
+    {
+      "match": "(do you have an account|existing user)\\s*\\(?(y/n|yes/no)\\)?",
+      "reply": "n",
+      "once": false
+    },
+    {
+      "match": "(start a new character|new character in this game).*(type y or n|y/n)",
+      "reply": "y",
+      "once": false
+    },
+    {
+      "match": "use \\(n\\)ew name or \\(b\\)bs name",
+      "reply": "B",
+      "once": false
+    },
+    {
+      "match": "what do you want to name your ship",
+      "reply": "{username}-1",
+      "once": false
+    },
+    {
+      "match": "what do you want to name your home planet",
+      "reply": "{username}-home",
+      "once": false
+    },
+    {
+      "match": "planet command.*\\[[A-Z]\\]",
+      "reply": "Q",
+      "once": true
+    },
+    {
+      "match": "is what you want\\?",
+      "reply": "y",
+      "once": false
+    },
+    {
+      "match": "(press\\s+enter|hit\\s+enter|continue\\.\\.\\.)",
+      "reply": "",
+      "allowEmpty": true,
+      "once": false
+    },
+    {
+      "match": "press\\s+space\\s+or\\s+enter\\s+to\\s+continue",
+      "reply": "",
+      "allowEmpty": true,
+      "once": false
+    },
+    {
+      "match": "\\[pause\\]",
+      "reply": "",
+      "allowEmpty": true,
+      "once": false
+    },
+    {
+      "match": "enter your choice\\s*:",
+      "reply": "T",
+      "once": true
+    },
+    {
+      "match": "show today'?s log\\?\\s*\\(y/n\\)",
+      "reply": "N",
+      "once": true
+    },
+    {
+      "match": "engage\\s+the\\s+autopilot\\?",
+      "reply": "y",
+      "once": false
+    },
+    {
+      "match": "^computer\\s+command\\s*\\[",
+      "reply": "q",
+      "skipWhenCimActive": true,
+      "once": false
+    },
+    {
+      "match": "are you sure\\?",
+      "reply": "y",
+      "once": false
+    },
+    {
+      "match": "safe\\s+to\\s+go\\?",
+      "reply": "n",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "safe\\s+to\\s+go\\?",
+      "reply": "n",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenNotEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "<StarDock>\\s*Where to\\?",
+      "reply": "q",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenNotEscapePod": true,
+      "maxCredits": 1999,
+      "once": false
+    },
+    {
+      "match": "<StarDock>\\s*Where to\\?",
+      "reply": "q",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenNotEscapePod": true,
+      "minCredits": 2000,
+      "once": false
+    },
+    {
+      "match": "choose\\s+navpoint.*\\[q\\]\\s*:",
+      "reply": "q",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "do\\s+you\\s+wish\\s+to\\s+clear\\s+some\\s+avoids\\?\\s*\\(y\\/n\\)\\s*\\[n\\]",
+      "reply": "N",
+      "once": false
+    },
+    {
+      "match": "(yes/no|y/n)\\s*[:?]$",
+      "reply": "y",
+      "once": false
+    },
+    {
+      "match": "do you want to engage.*\\(y/n\\)",
+      "reply": "n",
+      "once": false
+    },
+    {
+      "match": "how many\\s+shield\\s+points\\s+do\\s+you\\s+want",
+      "reply": "{stardockBuyShield}",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "how many\\s+fighters\\s+do\\s+you\\s+(want|wish)\\s+to\\s+buy",
+      "reply": "{stardockBuyFighters}",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "how many\\s+(cargo\\s+)?holds\\s+do\\s+you\\s+(want|wish)\\s+to\\s+buy",
+      "reply": "{stardockBuyHolds}",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "how many\\s+(cargo\\s+)?holds\\s+do\\s+you\\s+(want|wish)\\s+to\\s+buy",
+      "reply": "{stardockBuyHolds}",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenNotEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "how many\\s+cargo\\s+holds\\s+do\\s+you\\s+want\\s+installed",
+      "reply": "{stardockBuyHolds}",
+      "onlyWhenAtStarDock": true,
+      "once": false
+    },
+    {
+      "match": "which\\s+item\\s+do\\s+you\\s+wish\\s+to\\s+buy\\?\\s*\\(a,b,c,q,\\?\\)",
+      "reply": "{stardockCommerceChoice}",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenNotEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "<shipyards>\\s*your\\s*option\\s*\\(\\?\\)\\s*\\?",
+      "reply": "q",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenNotEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "(buy|purchase).*(ship|scanner|shield|fighters).*(y/n|yes/no)",
+      "reply": "{stardockBuyShipConfirm}",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenEscapePod": true,
+      "once": false
+    },
+    {
+      "match": "(buy|purchase).*(ship|scanner|shield|fighters).*(y/n|yes/no)",
+      "reply": "{stardockBuyShipConfirm}",
+      "onlyWhenAtStarDock": true,
+      "onlyWhenNotEscapePod": true,
+      "once": false
+    }
+  ],
+  "strategy": {
+    "minActionDelayMs": 350,
+    "tickIntervalMs": 250,
+    "statusPersistEveryMs": 1000,
+    "statusDerivedRefreshEveryMs": 5000,
+    "preCommandNudgeMs": 500,
+    "maxIdleBeforeKeepAliveMs": 2500,
+    "recoveryWarpCooldownMs": 350,
+    "shipInfoRefresh": {
+      "enabled": false,
+      "intervalMs": 60000,
+      "minGapMs": 1000,
+      "sequence": ["C", "N", "Q", "Q"]
+    },
+    "infoRefresh": {
+      "enabled": true,
+      "command": "I",
+      "intervalMs": 60000,
+      "minGapAfterActionMs": 1500,
+      "skipInStarDockSubmenu": true
+    },
+    "trade": {
+      "enabled": true,
+      "forcePromptHaggle": false,
+      "desiredCargo": "equipment",
+      "autoDesiredCargoByNeed": true,
+      "allowSpeculativeLocalBuys": true,
+      "fastPortMacroEnabled": true,
+      "fastPortMacroMinCredits": 20000,
+      "enableHoldStepModel": false,
+      "localPortBurstMin": 0,
+      "localTradeInFlightTimeoutMs": 3500,
+      "tradeExchangeGuardMs": 3500,
+      "moveOnRejectStreak": 1,
+      "noTradeSectorCooldownMs": 5000,
+      "noTradePairCooldownMs": 12000,
+      "noTradePairThreshold": 1,
+      "profitModeWarpEnabled": true,
+      "profitModeWarpMs": 1500,
+      "profitQuestionEnabled": false,
+      "profitQuestionMs": 90000,
+      "profitQuestionMinNetCredits": 200,
+      "stuckSectorWarpEnabled": true,
+      "stuckSectorWarpMs": 8000,
+      "buyOfferPct": 0.985,
+      "sellOfferPct": 1.015,
+      "maxHaggleRounds": 0,
+      "qtyPromptBusyMs": 200,
+      "offerPromptBusyMs": 200,
+      "quotePreemptBusyMs": 200,
+      "responseNudgeDelayMs": 3500,
+      "driftTolerance": 5,
+      "uncertainThreshold": 1,
+      "overbidWhenUncertain": false,
+      "correctionPct": 0.05,
+      "adaptiveHaggleEnabled": false,
+      "adaptiveHaggleWindow": 12,
+      "adaptiveHaggleMinSamples": 6,
+      "adaptiveRejectRateThreshold": 0.3,
+      "adaptiveBuyPctMax": 0.997,
+      "adaptiveSellPctMin": 1.005,
+      "adaptiveUncertainThresholdBoost": 10,
+      "adaptiveCorrectionScale": 0.6,
+      "iterationTuningEnabled": true,
+      "iterationTargetIterations": 100,
+      "iterationProfitQuestionStepMs": 1000,
+      "iterationMinProfitQuestionMs": 30000,
+      "iterationStuckWarpStepMs": 250,
+      "iterationMinStuckSectorWarpMs": 8000,
+      "iterationRouteBonusStep": 1,
+      "iterationMaxProfitablePairBonus": 60,
+      "initialNoHaggleDeals": 6,
+      "pairHarvest": {
+        "enabled": true,
+        "tradePercent": 80,
+        "minScore": 180,
+        "cooldownMs": 15000,
+        "refreshCim": true,
+        "stockFreshMs": 120000
+      }
+    },
+    "supervisor": {
+      "enabled": true,
+      "freezeMs": 100000,
+      "recoveryCooldownMs": 12000,
+      "escalationKeepAliveAfter": 2
+    },
+    "kpi": {
+      "enabled": true,
+      "windowMs": 180000,
+      "sampleMinGapMs": 1500,
+      "autoTuneEnabled": false,
+      "autoTuneIntervalMs": 120000,
+      "autoTuneNoEligiblePerMinHigh": 1.8,
+      "autoTuneMinActionsPerMin": 22,
+      "autoTuneMinCreditsPerMin": 150,
+      "autoTuneMinActionDelayMs": 350,
+      "autoTuneMaxProfitablePairBonus": 120,
+      "autoTuneMinProfitModeWarpMs": 1500,
+      "autoTuneMinStuckSectorWarpMs": 5000,
+      "autoTuneMinNoTradeSectorCooldownMs": 15000,
+      "autoTuneMinNoTradePairCooldownMs": 45000
+    },
+    "events": {
+      "enabled": true,
+      "maxRecent": 80,
+      "maxCounters": 300,
+      "maxPayloadChars": 280
+    },
+    "startupSurvey": {
+      "enabled": true,
+      "commands": ["i", "v", "^rq", "^iq", "/"],
+      "minGapMs": 1200,
+      "cimMinAgeMs": 86400000
+    },
+    "shipCatalogDiscovery": {
+      "enabled": true,
+      "command": "CC?",
+      "stardockCommand": "SE?",
+      "minGapMs": 1800,
+      "maxPages": 1,
+      "cacheMaxAgeMs": 0
+    },
+    "alignmentShift": {
+      "enabled": false,
+      "targetAlignmentMax": -10,
+      "sourceSector": 1,
+      "infoCommand": "I",
+      "moveToSourceCommand": "m{sourceSector}*",
+      "loadColonistsCommand": "l1*t*",
+      "leaveFedSpaceCommand": "m{nextWarp}*",
+      "jettisonCommand": "jy",
+      "preferDirectMoveToSource": true,
+      "requireKnownAlignment": true,
+      "minColonistsToJettison": 1,
+      "suspendInRecovery": true,
+      "suspendInEscapePod": true,
+      "prioritizeInRecoveryUntilTarget": true,
+      "enableSelfDestructReset": true,
+      "selfDestructCommand": "cby",
+      "selfDestructOnlyInRecovery": false,
+      "selfDestructOnlyWhenNotEscapePod": true,
+      "selfDestructWhenColonistPathInsufficient": true,
+      "skipJettisonWhenInsufficientCapacity": true,
+      "maxLoadAttemptsBeforeSelfDestruct": 3,
+      "maxJettisonAttemptsBeforeSelfDestruct": 1,
+      "maxSourceSeekAttemptsBeforeSelfDestruct": 6,
+      "selfDestructCooldownMs": 7200000,
+      "verifyAfterJettison": true,
+      "verifyAfterSelfDestruct": true,
+      "verificationMinGapMs": 1800,
+      "fedSpaceSectors": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    },
+    "keepAliveCommand": "/",
+    "startupTuningSequence": "",
+    "recoveryModeMaxCredits": 5000,
+    "recoveryOnlyWhenEscapePod": true,
+    "safeProgressionMinExp": 120,
+    "recoveryLiquidationSequence": "",
+    "recoveryLiquidationMaxCredits": 120,
+    "recoveryLiquidationStagnationTicks": 10,
+    "cim": {
+      "enabled": true,
+      "intervalMs": 600000,
+      "includeWarpData": true,
+      "bootstrapIfMissing": true,
+      "prioritizeStale": false,
+      "fallbackOnlyWhenPairsExhausted": true,
+      "knownPairThreshold": 0,
+      "skipInEscapePod": true,
+      "requireSafeSector": true,
+      "maxNavHazForCim": 2,
+      "deferAfterThreatMs": 60000,
+      "portFreshMs": 86400000,
+      "warpFreshMs": 86400000,
+      "portCommand": "^rq",
+      "warpCommand": "^iq",
+      "completionPattern": "ENDINTERROG",
+      "timeoutMs": 45000,
+      "minTurns": 0,
+      "minCredits": 0,
+      "persistEveryMs": 15000
+    },
+    "evil": {
+      "enforceBustBlacklist": true,
+      "bustForgetMs": 1200000,
+      "bustForgetMsSteal": 1200000,
+      "bustForgetMsRob": 2400000,
+      "bustPenalty": 5000
+    },
+    "noEligibleFallbackAction": "worldtrade-warp-hop",
+    "routinePolicy": {
+      "enabled": true,
+      "logSelections": false,
+      "states": {
+        "escapePodAtStarDock": {
+          "primary": "stardock-buy-ship",
+          "fallback": "escapepod-leave-stardock"
+        },
+        "escapePodAwayStarDock": {
+          "primary": "recovery-trade-local-port",
+          "fallback": "recovery-explore-warp"
+        },
+        "atStarDockLowCredits": {
+          "primary": "stardock-exit-low-credits",
+          "fallback": "worldtrade-warp-hop"
+        },
+        "atStarDockUpgrade": {
+          "primary": "stardock-upgrade-survival",
+          "fallback": "stardock-exit-low-credits"
+        },
+        "recoveryMode": {
+          "primary": "recovery-trade-local-port",
+          "fallback": "recovery-explore-warp"
+        },
+        "localTradeReady": {
+          "primary": "worldtrade-local-port",
+          "fallback": "worldtrade-warp-hop"
+        },
+        "evilOpportunity": {
+          "primary": "evil-recovery-steal-local",
+          "fallback": "evil-recovery-hunt-port"
+        },
+        "transit": {
+          "primary": "worldtrade-warp-hop",
+          "fallback": "discover-stardock"
+        }
+      }
+    },
+    "randomSectorMin": 1,
+    "randomSectorMax": 5000,
+    "stealHoldsExpDivisor": 20,
+    "stealCreditsMultiplier": 10,
+    "stealRequiresAlignment": true,
+    "stealAlignmentMax": -100,
+    "minStealHolds": 1,
+    "maxStealHolds": 75,
+    "preferCommodityPairsMinCredits": 10000,
+    "organicPairBonus": 75,
+    "equipmentPairBonus": 90,
+    "fuelPairOpportunisticFactor": 0.35,
+    "stardockUpgradeSequence": "p",
+    "stardockShipBuySequence": "pss",
+    "stardockMenuLearnSequence": "",
+    "computerSettings": {
+      "ansi": "off",
+      "animation": "off",
+      "pageMessages": "off",
+      "subspace": "preserve",
+      "fedCom": "on",
+      "hails": "yes",
+      "silence": "off",
+      "abortDisplay": "space",
+      "messageDisplay": "compact",
+      "screenPauses": "off",
+      "autoFlee": "off"
+    },
+    "menuDiscovery": {
+      "enabled": true,
+      "observeOnly": true,
+      "blockSelfDestruct": true,
+      "knowledgeFile": "./logs/192.168.4.75.menu-knowledge.json"
+    },
+    "menuSurvey": {
+      "enabled": false,
+      "oneShot": true,
+      "includeMain": true,
+      "includeComputer": true,
+      "includeCorp": true,
+      "includeStarDock": true,
+      "includeClassZeroPorts": true,
+      "classZeroSectors": [1],
+      "minGapMs": 1800
+    },
+    "stardockDiscovery": {
+      "enabled": true,
+      "pauseTrading": false,
+      "helpOnly": true,
+      "sequence": ["C", "N", "1", "Q", "Q"]
+    },
+    "stardockTiming": {
+      "promptReadyDelayMs": 450,
+      "fallbackGateMs": 1500,
+      "discoveryHelpWaitMs": 1200,
+      "discoverySequenceGapMs": 700
+    },
+    "knownStardockSector": 0,
+    "stardockBuyShield": "200",
+    "stardockBuyFighters": "500",
+    "stardockBuyHolds": "2",
+    "stardockBuyScanner": "H",
+    "stardockBuyShipConfirm": "y",
+    "transwarpFuelReserveEnabled": false,
+    "transwarpFuelReserve": 0,
+    "stardockSellEnabled": true,
+    "stardockSellKeepFighters": 0,
+    "stardockSellKeepShields": 0,
+    "stardockSellKeepHolds": 0,
+    "stardockSellMaxFightersPerPrompt": 5000,
+    "stardockSellMaxShieldsPerPrompt": 1000,
+    "stardockSellMaxHoldsPerPrompt": 25,
+    "upgrades": {
+      "enabled": true,
+      "triggerCredits": 100000,
+      "replacementUpgradeReserve": 85000,
+      "holoScannerPriority": true,
+      "densityScannerMinCredits": 5000,
+      "holoScannerMinCredits": 25000,
+      "minCashReserve": 1000,
+      "maxSpendPerVisit": 60000,
+      "minSpendToUpgrade": 500,
+      "periodicRouteEnabled": true,
+      "periodicRouteCredits": 10000,
+      "periodicRouteCooldownMs": 120000,
+      "periodicRouteMinBudget": 1000,
+      "autoPurchase": true,
+      "shieldUnitCost": 110,
+      "fighterUnitCost": 239,
+      "holdUnitCost": 1240,
+      "shieldSpendRatio": 0.35,
+      "fighterSpendRatio": 0.65,
+      "holdsSpendRatio": 0.35,
+      "maxShieldBuy": 300,
+      "maxFighterBuy": 1500,
+      "maxHoldBuy": 8,
+      "minHoldBuyPerCycle": 2
+    },
+    "movementSafety": {
+      "enabled": true,
+      "layFightersOnTradeWarpHop": false,
+      "fightersPerDrop": 1,
+      "layOnlyOnGoodPairs": true,
+      "layOnAdjacentGoodPairs": true,
+      "maxNavHazToLay": 2,
+      "figDropCommandPrefix": "f",
+      "figDropCommandSuffix": "*ct"
+    },
+    "restock": {
+      "enabled": true,
+      "fighterLowWatermark": 10,
+      "fighterMinimum": 100,
+      "shieldLowWatermark": 25,
+      "shieldMinimum": 100,
+      "fighterDropReserve": 25,
+      "routeCooldownMs": 30000,
+      "prioritizeClass0Ports": true,
+      "preferStardockForFighters": true
+    },
+    "probeRecovery": {
+      "enabled": false,
+      "minCreditsToRoute": 5000,
+      "discoverCommand": "v",
+      "discoverCooldownMs": 15000,
+      "routeCooldownMs": 3000,
+      "withdrawWhenBroke": false,
+      "withdrawCommand": "",
+      "withdrawCreditsTarget": 5000,
+      "withdrawCooldownMs": 90000,
+      "selfDestructWhenBroke": true,
+      "selfDestructCreditsMax": 1000,
+      "selfDestructCommand": "cby",
+      "selfDestructCooldownMs": 300000
+    },
+    "route": {
+      "recentMemorySize": 24,
+      "unknownSectorBonus": 4,
+      "unexploredSectorBonus": 3,
+      "anyPortBonus": 18,
+      "doubleBuyPortBonus": 14,
+      "singleBuyPortBonus": 7,
+      "profitablePairBonus": 200,
+      "fuelPairBonus": 150,
+      "extraCommodityPairBonus": 150,
+      "backtrackPenalty": 50,
+      "recentSectorPenalty": 35,
+      "bustedSectorPenalty": 1000,
+      "hostileSectorPenalty": 1700,
+      "densityUnsafeWarpPenalty": 120,
+      "failedRoutePenalty": 250,
+      "failedRoutePenaltyStep": 120,
+      "failedRouteForgetMs": 180000,
+      "threatAvoidWindowMs": 60000,
+      "threatUnknownPenalty": 320,
+      "threatUnexploredPenalty": 260,
+      "minTradeProductAmount": 250,
+      "minTradePercent": 20,
+      "noUnsafeEscapeFallback": true,
+      "randomJitterMax": 0
+    },
+    "placeholders": {
+      "ssmSectorA": "14450",
+      "ssmSectorB": "18548",
+      "sstShip1": "0",
+      "sstShip2": "0"
+    },
+    "actions": [
+      {
+        "name": "bootstrap-status",
+        "command": "/",
+        "enabled": true,
+        "minCredits": 0,
+        "maxCredits": 60000,
+        "cooldownMs": 15000,
+        "once": true
+      },
+      {
+        "name": "discover-stardock",
+        "command": "v",
+        "enabled": true,
+        "whenPromptMatches": ".*",
+        "onlyWhenStardockUnknown": true,
+        "cooldownMs": 15000,
+        "once": false
+      },
+      {
+        "name": "escapepod-return-stardock",
+        "command": "b{stardockSector}*",
+        "enabled": false,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenEscapePod": true,
+        "onlyWhenNotAtStarDock": true,
+        "onlyWhenStardockKnown": true,
+        "cooldownMs": 6000
+      },
+      {
+        "name": "stardock-upgrade-survival",
+        "command": "{stardockUpgradeSequence}",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenNotEscapePod": true,
+        "onlyWhenAtStarDock": true,
+        "minCredits": 5000,
+        "cooldownMs": 3500,
+        "once": false
+      },
+      {
+        "name": "stardock-exit-low-credits",
+        "command": "m25358*",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenNotEscapePod": true,
+        "onlyWhenAtStarDock": true,
+        "maxCredits": 1999,
+        "cooldownMs": 3500,
+        "once": false
+      },
+      {
+        "name": "stardock-exit-done",
+        "command": "m{nextWarp}*",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenNotEscapePod": true,
+        "onlyWhenAtStarDock": true,
+        "cooldownMs": 2500,
+        "once": false
+      },
+      {
+        "name": "escapepod-leave-stardock",
+        "command": "m{nextWarp}*",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenEscapePod": true,
+        "onlyWhenAtStarDock": true,
+        "cooldownMs": 5000
+      },
+      {
+        "name": "stardock-buy-ship",
+        "command": "{stardockShipBuySequence}",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenEscapePod": true,
+        "onlyWhenAtStarDock": true,
+        "minCredits": 0,
+        "cooldownMs": 7000
+      },
+      {
+        "name": "bootstrap-ship-info",
+        "command": "/",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "cooldownMs": 12000,
+        "once": true
+      },
+      {
+        "name": "recovery-sell-cargo-local-port",
+        "command": "pt",
+        "enabled": false,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenHasPort": true,
+        "onlyWhenEscapePod": true,
+        "onlyWhenNotAtStarDock": true,
+        "onlyWhenRecoveryMode": true,
+        "onlyWhenCargoLoaded": true,
+        "maxCredits": 150,
+        "cooldownMs": 1800
+      },
+      {
+        "name": "recovery-trade-local-port",
+        "command": "pt",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenHasPort": false,
+        "onlyWhenEscapePod": true,
+        "onlyWhenNotAtStarDock": true,
+        "onlyWhenRecoveryMode": true,
+        "minCredits": 0,
+        "cooldownMs": 900
+      },
+      {
+        "name": "recovery-explore-warp",
+        "command": "{nextWarp}*",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenEscapePod": true,
+        "onlyWhenNotAtStarDock": true,
+        "onlyWhenRecoveryMode": true,
+        "minCredits": 0,
+        "cooldownMs": 700
+      },
+      {
+        "name": "worldtrade-local-port",
+        "command": "pt",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenHasPort": true,
+        "onlyWhenNotEscapePod": true,
+        "onlyWhenNotAtStarDock": true,
+        "onlyWhenNotRecoveryMode": true,
+        "minCredits": 200,
+        "cooldownMs": 900
+      },
+      {
+        "name": "evil-recovery-steal-local",
+        "command": "pr*st3{stealAmount}*",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenHasPort": true,
+        "onlyWhenNotAtStarDock": true,
+        "maxAlignment": -100,
+        "onlyWhenNotEscapePod": true,
+        "minExp": 120,
+        "cooldownMs": 2200
+      },
+      {
+        "name": "evil-recovery-upgrade-local",
+        "command": "o3{upgradeAmount}*q",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenHasPort": true,
+        "onlyWhenNotAtStarDock": true,
+        "maxAlignment": -100,
+        "onlyWhenNotEscapePod": true,
+        "minExp": 120,
+        "cooldownMs": 5000
+      },
+      {
+        "name": "evil-recovery-hunt-port",
+        "command": "m{nextWarp}*",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenNotAtStarDock": true,
+        "maxAlignment": -100,
+        "onlyWhenNotEscapePod": true,
+        "minExp": 120,
+        "cooldownMs": 1200
+      },
+      {
+        "name": "worldtrade-warp-hop",
+        "command": "{nextWarp}*",
+        "enabled": true,
+        "whenPromptMatches": "command.*\\[",
+        "onlyWhenNotEscapePod": true,
+        "onlyWhenNotRecoveryMode": true,
+        "cooldownMs": 700
+      },
+      {
+        "name": "bootstrap-port-trade",
+        "command": "pt**0*0*",
+        "enabled": false,
+        "whenPromptMatches": "command.*\\[",
+        "minCredits": 0,
+        "maxCredits": 350000,
+        "cooldownMs": 5000
+      },
+      {
+        "name": "ssm-leg-a",
+        "command": "{ssmSectorA}*pt**0*0*pr*st3{stealAmount}*",
+        "enabled": true,
+        "minCredits": 120000,
+        "minExp": 30,
+        "cooldownMs": 2500
+      },
+      {
+        "name": "ssm-leg-b",
+        "command": "{ssmSectorB}*pt**0*0*pr*st3{stealAmount}*",
+        "enabled": true,
+        "minCredits": 120000,
+        "minExp": 30,
+        "cooldownMs": 2500
+      },
+      {
+        "name": "port-upgrade-equip",
+        "command": "o3{upgradeAmount}*q",
+        "enabled": true,
+        "onlyWhenHasPort": true,
+        "onlyWhenNotAtStarDock": true,
+        "minCredits": 90000,
+        "minExp": 40,
+        "cooldownMs": 8000
+      },
+      {
+        "name": "sst-hop-ship2",
+        "command": "x{sstShip2}*qpt**0*0*pr*s3{stealAmount}*",
+        "enabled": false,
+        "minCredits": 1500000,
+        "minExp": 300,
+        "cooldownMs": 2500
+      },
+      {
+        "name": "sst-hop-ship1",
+        "command": "x{sstShip1}*qpt**0*0*pr*s3{stealAmount}*",
+        "enabled": false,
+        "minCredits": 1500000,
+        "minExp": 300,
+        "cooldownMs": 2500
+      }
+    ]
+  },
+  "logging": {
+    "file": "./logs/192.168.4.75.log",
+    "statusFile": "./logs/192.168.4.75.status.json",
+    "intelFile": "./logs/192.168.4.75.intel.json"
+  }
+}

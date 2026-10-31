@@ -1,0 +1,140 @@
+:SetGamePrefs
+sys_check
+  
+send "cn"
+waitOn "<Set ANSI and misc settings>"
+setTextLineTrigger ANSI :ANSI "ANSI graphics"
+setTextLineTrigger Animation :Animation "Animation display"
+setTextLineTrigger PageMessages :PageMessages "Page on messages"
+setTextLineTrigger SubSpace :SubSpace "Sub-space radio channel"
+setTextLineTrigger FedCom :FedCom "Federation comm-link"
+setTextLineTrigger Hails :Hails "Receive private hails"
+setTextLineTrigger SilenceMessages :SilenceMessages "Silence ALL messages"
+setTextLineTrigger AbortDisplayAll :AbortDisplayAll "Abort display on keys"
+setTextLineTrigger MessageDisplayLong :MessageDisplayLong "Message Display Mode"
+setTextLineTrigger ScreenPauses :ScreenPauses "Screen Pauses"
+setTextLineTrigger AutoFlee :AutoFlee "Online Auto Flee"
+pause
+  
+:ANSI
+getWord CURRENTLINE $OldAnsi 5
+upperCase $OldAnsi
+pause
+  
+:Animation
+getWord CURRENTLINE $OldAnimation 5
+upperCase $OldAnimation
+pause
+  
+:PageMessages
+getWord CURRENTLINE $OldPageMessages 6
+upperCase $OldPageMessages
+pause
+  
+:SubSpace
+getWord CURRENTLINE $OldSubSpace 6
+pause
+  
+:FedCom
+getWord CURRENTLINE $OldFedCom 5
+upperCase $OldFedCom
+pause
+  
+:Hails
+getWord CURRENTLINE $OldHails 6
+upperCase $OldHails
+pause
+  
+:SilenceMessages
+getWord CURRENTLINE $OldSilenceMessages 6
+if ($OldSilenceMessages = "No")
+setVar $OldSilenceMessages "OFF"
+else
+setVar $OldSilenceMessages "ON"
+end
+pause
+  
+:AbortDisplayAll
+getWord CURRENTLINE $OldAbortDisplayAll 7
+if ($OldAbortDisplayAll = "SPACE")
+setVar $OldAbortDisplayAll "OFF"
+else
+setVar $OldAbortDisplayAll "ON"
+end
+pause
+  
+:MessageDisplayLong
+getWord CURRENTLINE $OldMessageDisplayLong 6
+if ($OldMessageDisplayLong = "Compact")
+setVar $OldMessageDisplayLong "OFF"
+else
+setVar $OldMessageDisplayLong "ON"
+end
+pause
+  
+:ScreenPauses
+getWord CURRENTLINE $OldScreenPauses 5
+if ($OldScreenPauses = "No")
+setVar $OldScreenPauses "OFF"
+else
+setVar $OldScreenPauses "ON"
+end
+pause
+  
+:AutoFlee
+getWord CURRENTLINE $OldAutoFlee 6
+if ($OldAutoFlee = "No")
+setVar $OldAutoFlee "OFF"
+else
+setVar $OldAutoFlee "ON"
+end
+  
+setVar $send ""
+  
+if ($ANSI[$Bank] <> $OldANSI) and ($ANSI[$Bank] <> 0)
+setVar $send $send & "1  "
+setVar $ANSI[$Bank] $OldANSI
+end
+if ($Animation[$Bank] <> $OldAnimation) and ($Animation[$Bank] <> 0)
+setVar $send $send & "2  "
+setVar $Animation[$Bank] $OldAnimation
+end
+if ($PageMessages[$Bank] <> $OldPageMessages) and ($PageMessages[$Bank] <> 0)
+setVar $send $send & "3  "
+setVar $PageMessages[$Bank] $OldPageMessages
+end
+if ($SubSpace[$Bank] <> $OldSubSpace) and ($SubSpace[$Bank] <> 0)
+setVar $send $send & "4" & $SubSpace[$Bank] & "*"
+setVar $SubSpace[$Bank] $OldSubSpace
+end
+if ($FedCom[$Bank] <> $OldFedCom) and ($FedCom[$Bank] <> 0)
+setVar $send $send & "5  "
+setVar $FedCom[$Bank] $OldFedCom
+end
+if ($Hails[$Bank] <> $OldHails) and ($Hails[$Bank] <> 0)
+setVar $send $send & "6  "
+setVar $Hails[$Bank] $OldHails
+end
+if ($SilenceMessages[$Bank] <> $OldSilenceMessages) and ($SilenceMessages[$Bank] <> 0)
+setVar $send $send & "7  "
+setVar $SilenceMessages[$Bank] $OldSilenceMessages
+end
+if ($AbortDisplayAll[$Bank] <> $OldAbortDisplayAll) and ($AbortDisplayAll[$Bank] <> 0)
+setVar $send $send & "9  "
+setVar $AbortDisplayAll[$Bank] $OldAbortDisplayAll
+end
+if ($MessageDisplayLong[$Bank] <> $OldMessageDisplayLong) and ($MessageDisplayLong[$Bank] <> 0)
+setVar $send $send & "a  "
+setVar $MessageDisplayLong[$Bank] $OldMessageDisplayLong
+end
+if ($ScreenPauses[$Bank] <> $OldScreenPauses) and ($ScreenPauses[$Bank] <> 0)
+setVar $send $send & "b  "
+setVar $ScreenPauses[$Bank] $OldScreenPauses
+end
+if ($AutoFlee[$Bank] <> $OldAutoFlee) and ($AutoFlee[$Bank] <> 0)
+setVar $send $send & "c  "
+setVar $AutoFlee[$Bank] $OldAutoFlee
+end
+  
+send $send "qq"
+return

@@ -1,0 +1,1479 @@
+{
+  "definitions": {
+    "build_stability_score": "Successful target build and full regression suite as a percentage of required checks.",
+    "runtime_stability_score": "Connected seconds divided by the exact 900-second autonomous window; process survival is reported separately.",
+    "llm_reasoning_score": "Limited output-contract proxy: in-range Reflex confidence plus decision-consistent Strategic fields divided by all observed Reflex and Strategic responses. It is not a semantic-quality grade; null when no LLM responses are observed.",
+    "prompt_quality_score": "Coverage of the two repaired prompt contracts (confidence bounds and objective/script semantics) by prompt text plus regression assertions.",
+    "autonomous_recovery_score": "Whether the agent returned to a fresh authenticated Command prompt after the observed reconnect.",
+    "regression_rate": "Previously fixed defects observed again divided by previously fixed defects exercised in the iteration; null when no previously fixed defect was exercised.",
+    "defect_closure_rate": "Runtime-validated defects divided by all defects recorded through the iteration. Unit-tested but not live-validated fixes are not closed."
+  },
+  "history": [
+    {
+      "iteration": 1,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 99.44,
+      "llm_reasoning_score": 40.0,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": 0.0,
+      "defect_closure_rate": 14.3,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 894.989,
+        "process_survived": true,
+        "metric_samples": 23,
+        "metrics_start": "2026-10-29T02:45:24.489-06:00",
+        "metrics_end": "2026-10-29T02:57:09-06:00",
+        "average_working_set_mib": 363.0,
+        "minimum_working_set_mib": 342.1,
+        "maximum_working_set_mib": 393.5,
+        "sample_cpu_seconds": 27.92,
+        "sample_elapsed_seconds": 705,
+        "sample_one_core_cpu_percent": 3.96
+      },
+      "llm_contract_observations": {
+        "reflex_responses": 14,
+        "reflex_confidence_in_range": 6,
+        "strategic_responses": 1,
+        "strategic_objective_fields_consistent": 0,
+        "aggregate_contract_compliance_percent": 40.0
+      },
+      "notes": [
+        "Prompt quality is source-level coverage after code repairs; the live run preceded those repairs.",
+        "The Pilot did not return to authenticated Command readiness, so autonomous recovery scored 0 despite transport reconnecting.",
+        "Metrics are sampled and not a complete resource/leak analysis."
+      ]
+    },
+    {
+      "iteration": 2,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 25.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 21,
+        "metrics_start": "2026-10-29T03:21:33.6488643-06:00",
+        "metrics_end": "2026-10-29T03:32:12.6715267-06:00",
+        "average_working_set_mib": 272.3,
+        "minimum_working_set_mib": 267.6,
+        "maximum_working_set_mib": 277.5,
+        "average_private_mib": 229.0,
+        "minimum_private_mib": 224.8,
+        "maximum_private_mib": 234.0,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 92,
+        "sample_cpu_seconds": 10.03,
+        "sample_elapsed_seconds": 639,
+        "sample_one_core_cpu_percent": 1.57,
+        "container_memory_mib_first_sample": {
+          "ebm-api-1": 47.71,
+          "litellm": 293.0,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 32.06
+        },
+        "container_memory_mib_last_sample": {
+          "ebm-api-1": 47.71,
+          "litellm": 300.8,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 32.06
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T03:17:28.717-06:00 to 2026-10-29T03:32:28.717-06:00. The MTC process and game connection remained active; no disconnect was logged.",
+        "Metrics sampling covered only 639 seconds, from 03:21:33.649 to 03:32:12.672; it did not cover the full window.",
+        "No game situation, LLM interaction, Pilot action, scanner purchase, or WorldTrade start was observed. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "The 2 runtime-validated defects of 8 recorded defects are DEFECT-0001 and DEFECT-0007."
+      ]
+    },
+    {
+      "iteration": 3,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 33.3,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 27,
+        "metrics_start": "2026-10-29T03:43:13.9040314-06:00",
+        "metrics_end": "2026-10-29T03:57:04.91442-06:00",
+        "sampler_stopped": "2026-10-29T03:57:16.9902069-06:00",
+        "average_working_set_mib": 267.9,
+        "minimum_working_set_mib": 258.2,
+        "maximum_working_set_mib": 271.9,
+        "average_private_mib": 226.5,
+        "minimum_private_mib": 219.7,
+        "maximum_private_mib": 230.8,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 95,
+        "sample_cpu_seconds": 14.11,
+        "sample_elapsed_seconds": 831.01,
+        "sample_one_core_cpu_percent": 1.7,
+        "container_memory_mib_first_sample": {
+          "litellm": 325.1,
+          "ebm-api-1": 47.71,
+          "openwebui": 690.7,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.4,
+          "ebm-api-1": 47.71,
+          "openwebui": 690.8,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.93
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T03:42:16.981-06:00 to 2026-10-29T03:57:16.981-06:00. MTC remained running and connected until the worker was stopped after the window.",
+        "Resource sampling covered 831.01 seconds from 03:43:13.904 to 03:57:04.914; it began 56.9 seconds after the window started.",
+        "No verified game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "The worker reported an unclassified login surface. A bare BBS name prompt parser gap was fixed in source and tests after the active process started; the exact live prompt was not retained, so live causality remains unconfirmed.",
+        "The 3 runtime-validated defects of 9 recorded defects are DEFECT-0001, DEFECT-0006, and DEFECT-0007."
+      ]
+    },
+    {
+      "iteration": 4,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 30.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 27,
+        "metrics_start": "2026-10-29T04:04:57.5823441-06:00",
+        "metrics_end": "2026-10-29T04:18:27.5539893-06:00",
+        "sampler_stopped": "2026-10-29T04:18:29.2062543-06:00",
+        "average_working_set_mib": 269.1,
+        "minimum_working_set_mib": 262.3,
+        "maximum_working_set_mib": 276.0,
+        "average_private_mib": 227.0,
+        "minimum_private_mib": 221.4,
+        "maximum_private_mib": 234.0,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 96,
+        "sample_cpu_seconds": 13.2,
+        "sample_elapsed_seconds": 809.97,
+        "sample_one_core_cpu_percent": 1.63,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.1,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T04:03:27.545-06:00 to 2026-10-29T04:18:27.545-06:00. MTC remained running and connected until the worker was stopped after the window.",
+        "Resource sampling covered 809.97 seconds from 04:04:57.551 to 04:18:27.520; it began about 90 seconds after the window started.",
+        "No verified game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "The rebuilt binary included the bare BBS name prompt fix but still reported an unclassified surface. Since the exact text was not retained, the prompt parser cannot be confirmed as the live root cause.",
+        "The 3 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, and DEFECT-0007."
+      ]
+    },
+    {
+      "iteration": 5,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 27,
+        "metrics_start": "2026-10-29T04:27:58.1519021-06:00",
+        "metrics_end": "2026-10-29T04:41:40.4348636-06:00",
+        "sampler_stopped": "2026-10-29T04:41:42.469-06:00",
+        "average_working_set_mib": 272.9,
+        "minimum_working_set_mib": 269.5,
+        "maximum_working_set_mib": 277.8,
+        "average_private_mib": 234.0,
+        "minimum_private_mib": 231.5,
+        "maximum_private_mib": 238.3,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 97,
+        "sample_cpu_seconds": 13.75,
+        "sample_elapsed_seconds": 822.28,
+        "sample_one_core_cpu_percent": 1.67,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.1,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.93
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.4,
+          "ebm-api-1": 47.71,
+          "openwebui": 690.9,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 32.05
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T04:26:40.428-06:00 to 2026-10-29T04:41:40.428-06:00. MTC remained running and connected for the full 900 seconds; it was stopped after evidence capture.",
+        "Resource sampling covered 822.28 seconds from 04:27:58.152 to 04:41:40.435; it began about 77.7 seconds after the window started and ended about 7 milliseconds after cutoff.",
+        "No authenticated game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "The dashboard reported an unclassified prompt length of 44 while omitting raw terminal text. This validates the safe diagnostic but does not confirm the prompt-parser root cause.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 6,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 31,
+        "metrics_start": "2026-10-29T04:50:49-06:00",
+        "metrics_end": "2026-10-29T05:04:40-06:00",
+        "sampler_stopped": "2026-10-29T05:04:40.864-06:00",
+        "average_working_set_mib": 264.8,
+        "minimum_working_set_mib": 260.0,
+        "maximum_working_set_mib": 267.5,
+        "average_private_mib": 226.2,
+        "minimum_private_mib": 223.6,
+        "maximum_private_mib": 229.1,
+        "minimum_thread_count": 90,
+        "maximum_thread_count": 96,
+        "sample_cpu_seconds": 12.55,
+        "sample_elapsed_seconds": 831.0,
+        "sample_one_core_cpu_percent": 1.51,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 690.9,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.2,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T04:49:40.864-06:00 to 2026-10-29T05:04:40.864-06:00. MTC remained running and connected for the full 900 seconds; Meridian was stopped through Runtime controls after evidence capture.",
+        "Resource sampling covered 831.00 seconds from 04:50:49 to 05:04:40; it began about 68 seconds after the window started.",
+        "No authenticated game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "Safe aggregation found 27 prompt events, 17 unclassified surfaces, and five length-44 surfaces with two distinct fingerprints. Raw text and fingerprint values were not persisted.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 7,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 31,
+        "metrics_start": "2026-10-29T05:08:46-06:00",
+        "metrics_end": "2026-10-29T05:23:17-06:00",
+        "sampler_stopped": "2026-10-29T05:23:17.474-06:00",
+        "average_working_set_mib": 266.1,
+        "minimum_working_set_mib": 261.9,
+        "maximum_working_set_mib": 272.3,
+        "average_private_mib": 224.3,
+        "minimum_private_mib": 221.4,
+        "maximum_private_mib": 230.1,
+        "minimum_thread_count": 89,
+        "maximum_thread_count": 98,
+        "sample_cpu_seconds": 14.23,
+        "sample_elapsed_seconds": 871.0,
+        "sample_one_core_cpu_percent": 1.63,
+        "container_memory_mib_first_sample": {
+          "litellm": 325.4,
+          "ebm-api-1": 47.71,
+          "openwebui": 690.9,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.98
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T05:08:17.474-06:00 to 2026-10-29T05:23:17.474-06:00. MTC remained running and connected for the full 900 seconds; Meridian was stopped through Runtime controls after evidence capture.",
+        "Resource sampling covered 871.00 seconds from 05:08:46 to 05:23:17; it began about 29 seconds after the window started.",
+        "No authenticated game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "Safe aggregation found 26 prompt events, 17 unclassified surfaces, and five length-44 surfaces with two distinct fingerprints. Six login-sequence inputs occurred in the first five seconds, then none; raw text and input contents were not persisted.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 8,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 31,
+        "metrics_start": "2026-10-29T05:26:52-06:00",
+        "metrics_end": "2026-10-29T05:41:24-06:00",
+        "sampler_stopped": "2026-10-29T05:41:24.366-06:00",
+        "average_working_set_mib": 268.5,
+        "minimum_working_set_mib": 260.7,
+        "maximum_working_set_mib": 273.0,
+        "average_private_mib": 226.6,
+        "minimum_private_mib": 221.5,
+        "maximum_private_mib": 230.5,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 98,
+        "sample_cpu_seconds": 14.22,
+        "sample_elapsed_seconds": 872.0,
+        "sample_one_core_cpu_percent": 1.63,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.93
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.1,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.2,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.98
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T05:26:24.366-06:00 to 2026-10-29T05:41:24.366-06:00. MTC remained running and connected for the full 900 seconds; Meridian was stopped through Runtime controls after evidence capture.",
+        "Resource sampling covered 872 seconds from 05:26:52 to 05:41:24; it began about 28 seconds after the window started.",
+        "No authenticated game state or LLM interaction was available. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "Safe aggregation found 31 prompt events, including five length-44 surfaces. Eight client-input events occurred in the first five seconds, then none; raw text and input contents were not persisted.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 9,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 30,
+        "metrics_start": "2026-10-29T05:49:11-06:00",
+        "metrics_end": "2026-10-29T06:03:12-06:00",
+        "sampler_stopped": "2026-10-29T06:03:41.627-06:00",
+        "average_working_set_mib": 265.0,
+        "minimum_working_set_mib": 258.6,
+        "maximum_working_set_mib": 269.6,
+        "average_private_mib": 224.3,
+        "minimum_private_mib": 221.1,
+        "maximum_private_mib": 229.0,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 97,
+        "sample_cpu_seconds": 13.66,
+        "sample_elapsed_seconds": 841.0,
+        "sample_one_core_cpu_percent": 1.62,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.2,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.2,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T05:48:19.753-06:00 to 2026-10-29T06:03:19.753-06:00. MTC remained running and connected for the full 900 seconds; Meridian was stopped through Runtime controls after evidence capture.",
+        "Resource sampling covered 841 seconds from 05:49:11 to 06:03:12; it began about 52 seconds after the window started and ended seven seconds before cutoff.",
+        "No authenticated game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "Safe aggregation found 35 prompt events, including five length-44 surfaces. Eight client-input events occurred in the first six seconds, then none; raw text and input contents were not persisted.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 10,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 31,
+        "metrics_start": "2026-10-29T06:07:09-06:00",
+        "metrics_end": "2026-10-29T06:21:39-06:00",
+        "sampler_stopped": "2026-10-29T06:22:08.357-06:00",
+        "average_working_set_mib": 270.3,
+        "minimum_working_set_mib": 265.8,
+        "maximum_working_set_mib": 273.7,
+        "average_private_mib": 234.2,
+        "minimum_private_mib": 230.9,
+        "maximum_private_mib": 237.5,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 100,
+        "sample_cpu_seconds": 15.0,
+        "sample_elapsed_seconds": 870.0,
+        "sample_one_core_cpu_percent": 1.72,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.2,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.2,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T06:06:41.751-06:00 to 2026-10-29T06:21:41.751-06:00. MTC remained running and connected for the full 900 seconds; Meridian was stopped through Runtime controls after evidence capture.",
+        "Resource sampling covered 870 seconds from 06:07:09 to 06:21:39; it began about 28 seconds after the window started and ended two seconds before cutoff.",
+        "No authenticated game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "Safe aggregation found 31 prompt events, including five length-44 surfaces. Eight client-input events occurred in the first five seconds, then none; raw text and input contents were not persisted.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 11,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 31,
+        "metrics_start": "2026-10-29T06:25:03-06:00",
+        "metrics_end": "2026-10-29T06:39:34-06:00",
+        "sampler_stopped": "2026-10-29T06:40:03.27-06:00",
+        "average_working_set_mib": 266.2,
+        "minimum_working_set_mib": 259.9,
+        "maximum_working_set_mib": 271.0,
+        "average_private_mib": 225.2,
+        "minimum_private_mib": 218.2,
+        "maximum_private_mib": 230.3,
+        "minimum_thread_count": 89,
+        "maximum_thread_count": 100,
+        "sample_cpu_seconds": 14.0,
+        "sample_elapsed_seconds": 871.0,
+        "sample_one_core_cpu_percent": 1.61,
+        "container_memory_mib_first_sample": {
+          "litellm": 325.0,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.93
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.1,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T06:24:36.924-06:00 to 2026-10-29T06:39:36.924-06:00. MTC remained running and connected for the full 900 seconds; Meridian was stopped through Runtime controls after evidence capture.",
+        "Resource sampling covered 871 seconds from 06:25:03 to 06:39:34; it began about 26 seconds after the window started and ended two seconds before cutoff.",
+        "No authenticated game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "Safe aggregation found 33 prompt events, including five length-44 surfaces. Eight client-input events occurred in the first five seconds, then none; raw text and input contents were not persisted.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 12,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 31,
+        "metrics_start": "2026-10-29T06:42:37-06:00",
+        "metrics_end": "2026-10-29T06:57:07-06:00",
+        "sampler_stopped": "2026-10-29T06:57:36.879-06:00",
+        "average_working_set_mib": 265.0,
+        "minimum_working_set_mib": 256.8,
+        "maximum_working_set_mib": 270.9,
+        "average_private_mib": 224.4,
+        "minimum_private_mib": 219.2,
+        "maximum_private_mib": 230.3,
+        "minimum_thread_count": 89,
+        "maximum_thread_count": 100,
+        "sample_cpu_seconds": 14.75,
+        "sample_elapsed_seconds": 870.0,
+        "sample_one_core_cpu_percent": 1.7,
+        "container_memory_mib_first_sample": {
+          "litellm": 325.2,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.6,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T06:42:10.521-06:00 to 2026-10-29T06:57:10.521-06:00. MTC remained running and connected for the full 900 seconds; Meridian was stopped through Runtime controls after evidence capture.",
+        "Resource sampling covered 870 seconds from 06:42:37 to 06:57:07; it began about 26 seconds after the window started and ended three seconds before cutoff.",
+        "No authenticated game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "Safe aggregation found 30 prompt events, including five length-44 surfaces. Eight client-input events occurred in the first five seconds, then none; raw text and input contents were not persisted.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 13,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 31,
+        "metrics_start": "2026-10-29T07:00:09-06:00",
+        "metrics_end": "2026-10-29T07:14:39-06:00",
+        "sampler_stopped": "2026-10-29T07:15:08.891-06:00",
+        "average_working_set_mib": 265.6,
+        "minimum_working_set_mib": 259.1,
+        "maximum_working_set_mib": 271.7,
+        "average_private_mib": 225.0,
+        "minimum_private_mib": 221.2,
+        "maximum_private_mib": 231.4,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 99,
+        "sample_cpu_seconds": 14.7,
+        "sample_elapsed_seconds": 870.0,
+        "sample_one_core_cpu_percent": 1.69,
+        "container_memory_mib_first_sample": {
+          "litellm": 325.0,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.2,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T06:59:41.452-06:00 to 2026-10-29T07:14:41.452-06:00. MTC remained running and connected for the full 900 seconds; Meridian was stopped through Runtime controls after evidence capture.",
+        "Resource sampling covered 870 seconds from 07:00:09 to 07:14:39; it began about 28 seconds after the window started and ended two seconds before cutoff.",
+        "No authenticated game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "Safe aggregation found 31 prompt events, including five length-44 surfaces. Eight client-input events occurred in the first five seconds, then none; raw text and input contents were not persisted.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 14,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "metric_samples": 30,
+        "metrics_start": "2026-10-29T07:19:30.7964707-06:00",
+        "metrics_end": "2026-10-29T07:34:00-06:00",
+        "sampler_stopped": "2026-10-29T07:34:30.8171138-06:00",
+        "average_working_set_mib": 270.6,
+        "minimum_working_set_mib": 268.0,
+        "maximum_working_set_mib": 272.7,
+        "average_private_mib": 229.2,
+        "minimum_private_mib": 226.4,
+        "maximum_private_mib": 232.0,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 92,
+        "sample_cpu_seconds": 12.89,
+        "sample_elapsed_seconds": 870.0,
+        "sample_one_core_cpu_percent": 1.48,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.0,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": 0,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The autonomous window ran from 2026-10-29T07:19:30.7964707-06:00 to 2026-10-29T07:34:30.7964707-06:00. The runtime monitor reported Terminal Connected and Agent Running at the cutoff, and MTC survived the full 900 seconds.",
+        "Resource sampling covered 870 seconds from 07:19:30 to 07:34:00; it began at the window start and ended 30 seconds before cutoff. The sampler completed at 07:34:30.8171138, 900.0206431 seconds after start.",
+        "No authenticated game state or LLM interaction occurred. LLM reasoning and regression scores are not applicable because no relevant outputs were generated.",
+        "The dashboard continued to report an unclassified login surface of length 44. Safe prompt and input event counts were not available; no raw terminal text was persisted.",
+        "The 4 runtime-validated defects of 10 recorded defects are DEFECT-0001, DEFECT-0006, DEFECT-0007, and DEFECT-0010."
+      ]
+    },
+    {
+      "iteration": 15,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 84.7,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": null,
+      "defect_closure_rate": 45.5,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 762,
+        "process_survived": false,
+        "replacement_process_started": true,
+        "metric_samples": 30,
+        "metrics_start": "2026-10-29T07:41:36.9070395-06:00",
+        "metrics_end": "2026-10-29T07:56:06-06:00",
+        "sampler_stopped": "2026-10-29T07:56:36.9296829-06:00",
+        "original_pid_samples_running": 6,
+        "original_pid_sampled_elapsed_seconds": 150.0,
+        "average_working_set_mib": 268.1,
+        "minimum_working_set_mib": 263.4,
+        "maximum_working_set_mib": 280.9,
+        "average_private_mib": 226.6,
+        "minimum_private_mib": 222.0,
+        "maximum_private_mib": 234.4,
+        "minimum_thread_count": 93,
+        "maximum_thread_count": 102,
+        "sample_cpu_seconds": 6.204,
+        "sample_elapsed_seconds": 150.0,
+        "sample_one_core_cpu_percent": 4.14,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.2,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "reflex_responses": null,
+        "strategic_responses": null,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The timed window ran from 2026-10-29T07:41:36.9070395-06:00 to 07:56:36.9070395-06:00. Original MTC PID 91696 terminated at 07:44:21 due to a WebView2 MoveFocus ArgumentException; PID 65428 appeared at 07:46:39. Approximate runtime availability was 762 of 900 seconds.",
+        "The sampler tracked PID 91696 only. It recorded 6 running samples over 150 seconds and 24 later samples as not running for that PID; those later records do not describe the replacement process. Docker statistics succeeded in all 30 samples.",
+        "At cutoff the pre-fix worker remained on an unclassified login prompt, and watchdog progress was 0/3. The operator identified the clear-avoids prompt; after the full solution was rebuilt, the live monitor reached authenticated Command at sector 99.",
+        "Post-window LLM history showed Pilot 0, Strategic Review 1, Reflex 2; no Pilot response was recorded. LLM reasoning and regression scores remain not applicable.",
+        "Focused login tests passed 23/23. The first full test run had one transient SQLite fixture cleanup lock; the immediate rerun passed 234/234. The post-fix full solution build succeeded with 0 warnings and 0 errors.",
+        "Five of eleven defects are runtime-validated: DEFECT-0001, DEFECT-0005, DEFECT-0006, DEFECT-0007, and DEFECT-0010. DEFECT-0011 remains under investigation."
+      ]
+    },
+    {
+      "iteration": 16,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 33.3,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "replacement_process_started": false,
+        "metric_samples": 30,
+        "metrics_start": "2026-10-29T07:59:56-06:00",
+        "metrics_end": "2026-10-29T08:14:26-06:00",
+        "sampler_stopped": "2026-10-29T08:14:56.3653984-06:00",
+        "original_pid_samples_running": 30,
+        "average_working_set_mib": 354.3,
+        "minimum_working_set_mib": 314.5,
+        "maximum_working_set_mib": 392.7,
+        "average_private_mib": 302.3,
+        "minimum_private_mib": 266.0,
+        "maximum_private_mib": 339.4,
+        "minimum_thread_count": 92,
+        "maximum_thread_count": 103,
+        "sample_cpu_seconds": 458.984,
+        "sample_elapsed_seconds": 869.99,
+        "sample_one_core_cpu_percent": 52.76,
+        "docker_stats_success_samples": 30,
+        "container_memory_mib_first_sample": {
+          "litellm": 325.1,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.6,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.0,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": 2,
+        "pilot_requests_failed": 3,
+        "pilot_history_visible": 0,
+        "reflex_responses": 49,
+        "strategic_responses": 1,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The exact 900-second sampler window recorded MTC present in 30/30 samples and Docker statistics in 30/30. The monitor reported authenticated Healthy/Command state near cutoff, but exact cumulative connected seconds were not captured, so runtime stability is N/A.",
+        "The old runtime reached 128/128 game-event and 64/64 reactive queue depth. It recorded 1,460 in-window dropped events, including 1,031 server prompts. Pilot counters showed 2 completed and 3 failed requests while the history tab showed zero entries; Reflex history showed 49.",
+        "Four source fixes were applied after the timed run: role-scoped history, event queue pressure handling, latest-state reactive coalescing, and accurate Density Scanner capability text. The focused 52-test set, full 236-test suite, and full solution build passed; live validation remains pending.",
+        "Five of fifteen defects are runtime-validated. Density ownership, known StarDock, Holo Scanner ownership, and WorldTrade execution were not verified."
+      ]
+    },
+    {
+      "iteration": 17,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 29.4,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "metric_samples": 30,
+        "metrics_start": "2026-10-29T08:41:03.6356563-06:00",
+        "metrics_end": "2026-10-29T08:55:33.6209545-06:00",
+        "sampler_stopped": "2026-10-29T08:56:01.5672249-06:00",
+        "sampler_elapsed_seconds": 900.102,
+        "original_pid_samples_running": 30,
+        "average_working_set_mib": 387.2,
+        "minimum_working_set_mib": 369.3,
+        "maximum_working_set_mib": 394.4,
+        "average_private_mib": 335.1,
+        "minimum_private_mib": 318.3,
+        "maximum_private_mib": 342.3,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 95,
+        "sample_cpu_seconds": 21.219,
+        "sample_elapsed_seconds": 869.99,
+        "sample_one_core_cpu_percent": 2.44,
+        "docker_stats_success_samples": 30,
+        "container_memory_mib_first_sample": {
+          "litellm": 325.1,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.2,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.93
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.2,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.0,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 31.94
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": 0,
+        "pilot_requests_failed": 0,
+        "pilot_history_visible": 0,
+        "reflex_responses": 2,
+        "strategic_responses": 1,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "MTC and all five containers were present in 30/30 samples during the exact 900-second scheduled window. Exact cumulative connected seconds were not captured, so connected-time runtime stability is N/A.",
+        "At cutoff, the pre-repair worker had ignored a stale queued prompt and the Pilot had made no requests. The monitor situation was older than newer synchronized ship-status telemetry and still showed Healthy.",
+        "The role-history counts are cutoff totals, not verified per-window deltas; no Pilot response was available for reasoning-quality scoring.",
+        "After the run, guarded heartbeat prompt recovery, stale-state UI labeling, and Qwen3 Pilot thinking traces were implemented. Full Release build and all 237 tests passed; the fixes await live verification.",
+        "Five of seventeen defects are runtime-validated. Density ownership, Holo Scanner ownership, and WorldTrade execution were not verified."
+      ]
+    },
+    {
+      "iteration": 18,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 23.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "metric_samples": 29,
+        "metrics_start": "2026-10-29T09:18:53.8953667-06:00",
+        "metrics_end": "2026-10-29T09:33:49.3920323-06:00",
+        "scheduled_cutoff": "2026-10-29T09:33:53.901-06:00",
+        "original_pid_samples_running": 29,
+        "average_working_set_mib": 361.2,
+        "minimum_working_set_mib": 348.1,
+        "maximum_working_set_mib": 394.0,
+        "average_private_mib": 308.4,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 98,
+        "sample_cpu_seconds": 18.14,
+        "docker_stats_success_samples": 29
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": null,
+        "strategic_responses": null,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": "MTC and all five containers were present in 29/29 samples. The ship remained in sector 97 with no sector-change or client-input event in the 900-second window; an empty Ollama test-action decision was displayed but its final response was not durably captured. Event-log review confirmed a cruiser-to-Escape-Pod transition at sector 99, 11 WorldTrade-related inputs without verified earnings, and repeated login prompts. Scanner eligibility and Escape Pod trade guards were fixed and unit-tested; empty-response fallback was added but awaits live verification. Interaction-history persistence remains open. Five of 21 defects are runtime-validated."
+    },
+    {
+      "iteration": 20,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": 94.7,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 21.7,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": 358,
+        "metric_samples": 6,
+        "metrics_start": "2026-10-30T08:16:35.9156864-06:00",
+        "metrics_end": "2026-10-30T08:19:06.2145038-06:00",
+        "average_working_set_mib": 384.0,
+        "minimum_working_set_mib": 375.9,
+        "maximum_working_set_mib": 391.7,
+        "average_private_mib": 323.8,
+        "minimum_thread_count": 92,
+        "maximum_thread_count": 94,
+        "sample_cpu_seconds": 3.57,
+        "sample_elapsed_seconds": 150.3,
+        "sample_one_core_cpu_percent": 2.37,
+        "container_memory_mib_cutoff": {
+          "litellm": 324.9,
+          "ebm-api-1": 47.71,
+          "openwebui": 691.1,
+          "ebm-apache-1": 6.977,
+          "ebm-db-1": 32.05
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": 0,
+        "pilot_requests_failed": 0,
+        "pilot_history_visible": 0,
+        "reflex_responses": 18,
+        "reflex_contract_failures": 1,
+        "strategic_responses": 1,
+        "aggregate_contract_compliance_percent": 94.7
+      },
+      "notes": [
+        "The first observed productive state was sector 8 at 08:13:07; the agent then reached sector 10. The last confirmed state remained sector 10, 65,421 turns, and 300 credits.",
+        "The worker was stopped early after about six minutes without further sector, turn, or credit progress. The metric sampler covered only 151 seconds and six samples, so runtime stability is not comparable to the 900-second target.",
+        "One of 18 Reflex interactions was rejected for requesting strategic review with escalation false. The revised prompt was active; one accepted result still classified a routine world-state change as urgent. The 94.7% contract proxy covers one Strategic Review and 18 Reflex results, not semantic quality.",
+        "Pilot was not invoked during the deterministic sweep/trading path; one Strategic Review and 18 Reflex calls were visible. No port trade, StarDock, scanner purchase, or WorldTrade result was verified.",
+        "Five of 23 defects are runtime-validated. The prior iteration-19 metrics artifact remains incomplete and is not represented as a successful cycle."
+      ]
+    },
+    {
+      "iteration": 21,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": 66.7,
+      "prompt_quality_score": 66.7,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 20.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 0,
+        "metrics_start": null,
+        "metrics_end": null,
+        "average_working_set_mib": null,
+        "minimum_working_set_mib": null,
+        "maximum_working_set_mib": null,
+        "average_private_mib": null,
+        "minimum_thread_count": null,
+        "maximum_thread_count": null,
+        "sample_cpu_seconds": null,
+        "sample_elapsed_seconds": null,
+        "sample_one_core_cpu_percent": null
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": 0,
+        "pilot_requests_failed": 0,
+        "pilot_history_visible": 0,
+        "reflex_responses": 14,
+        "reflex_contract_failures": 3,
+        "reflex_request_timeouts": 1,
+        "strategic_responses": 1,
+        "strategic_timeouts": 1,
+        "aggregate_contract_compliance_percent": 66.7
+      },
+      "notes": [
+        "The worker made FedSpace movement but was stopped early after the port-trade/AutopilotConfirmation stall; no 900-second sample was collected.",
+        "Of 14 Reflex interactions, 10 completed, three violated the escalation contract, and one timed out at 100 seconds. One Strategic Review request also timed out; 10 completed interactions of 15 total requests gives the 66.7% completion proxy.",
+        "Pilot made no calls. No port transaction, scanner purchase, or WorldTrade result was verified."
+      ]
+    },
+    {
+      "iteration": 22,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": null,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 20.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 0,
+        "metrics_start": null,
+        "metrics_end": null,
+        "average_working_set_mib": null,
+        "minimum_working_set_mib": null,
+        "maximum_working_set_mib": null,
+        "average_private_mib": null,
+        "minimum_thread_count": null,
+        "maximum_thread_count": null,
+        "sample_cpu_seconds": null,
+        "sample_elapsed_seconds": null,
+        "sample_one_core_cpu_percent": null
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": 0,
+        "pilot_requests_failed": 0,
+        "pilot_history_visible": 0,
+        "reflex_responses": 14,
+        "reflex_contract_failures": null,
+        "strategic_responses": 1,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "Release build, MTC RPC safety harness, and the 250-test TradeWars suite passed. The full suite required a rerun after one transient SQLite file-lock failure.",
+        "Native haggle diagnostics recorded a successful Equipment transaction, but no fresh ship snapshot verified the resulting cargo or credits.",
+        "The follow-up attempt started a 15-minute sample window as iteration 23."
+      ]
+    },
+    {
+      "iteration": 24,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 18.5,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 0,
+        "metrics_start": null,
+        "metrics_end": null,
+        "average_working_set_mib": null,
+        "minimum_working_set_mib": null,
+        "maximum_working_set_mib": null,
+        "average_private_mib": null,
+        "minimum_thread_count": null,
+        "maximum_thread_count": null,
+        "sample_cpu_seconds": null,
+        "sample_elapsed_seconds": null,
+        "sample_one_core_cpu_percent": null
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 14,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": 2,
+        "pilot_history_visible": 14,
+        "reflex_responses": 26,
+        "reflex_contract_failures": null,
+        "strategic_responses": 1,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The run moved from sector 805 to known StarDock sector 551, but no scanner, port trade, or WorldTrade result was verified.",
+        "The worker was stopped early after a stale queued game prompt and a stale snapshot; no runtime sampler ran for this run.",
+        "Two notable Pilot failures were observed: an action/target mismatch and empty final content after the 2,048-token limit. A later interaction had a successful retry.",
+        "Focused scanner-routing tests passed 2/2; the full TradeWars suite passed 256/256; the latest Release win-x64 build passed with 0 warnings and 0 errors."
+      ]
+    },
+    {
+      "iteration": 25,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": 66.7,
+      "defect_closure_rate": 18.5,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 31,
+        "metrics_start": "2026-10-30T11:48:42.623-06:00",
+        "metrics_end": "2026-10-30T12:03:44.414-06:00",
+        "average_working_set_mib": 409.5,
+        "minimum_working_set_mib": 377.3,
+        "maximum_working_set_mib": 478.9,
+        "average_private_mib": 348.1,
+        "minimum_thread_count": 89,
+        "maximum_thread_count": 97,
+        "sample_cpu_seconds": 42.37,
+        "sample_elapsed_seconds": 901.9,
+        "sample_one_core_cpu_percent": 4.7
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 24,
+        "pilot_requests_completed": 19,
+        "pilot_requests_failed": 5,
+        "pilot_history_visible": 24,
+        "reflex_responses": 18,
+        "reflex_contract_failures": null,
+        "strategic_responses": 2,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The ship reached StarDock sector 551, but scanner ownership, a completed port trade, and WorldTrade start were not verified.",
+        "The worker was stopped early after stale queued prompt behavior returned. The 900-second MTC sampler measured process health after worker stop, not worker-connected runtime.",
+        "Pilot history recorded 24 interactions: 19 completed, 5 failed (four action/target mismatches and one empty Qwen3 final response).",
+        "A reconnect restored fresh prompts and productive movement once, so recovery scored 100; stale prompt behavior later recurred.",
+        "The first full-suite run encountered a transient SQLite cleanup lock; the immediate full-suite rerun passed 256/256.",
+        "Release MTC build passed with 0 warnings and 0 errors; dashboard health returned HTTP 200 on all 31 process samples."
+      ]
+    },
+    {
+      "iteration": 26,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": 0.0,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": 100.0,
+      "defect_closure_rate": 17.2,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 16,
+        "metrics_start": "2026-10-30T12:43:23.935-06:00",
+        "metrics_end": "2026-10-30T12:50:55.063-06:00",
+        "average_working_set_mib": 447.2,
+        "minimum_working_set_mib": 384.5,
+        "maximum_working_set_mib": 521.3,
+        "average_private_mib": 391.8,
+        "minimum_thread_count": 91,
+        "maximum_thread_count": 98,
+        "sample_cpu_seconds": 105.16,
+        "sample_elapsed_seconds": 451.1,
+        "sample_one_core_cpu_percent": 23.3
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": 0,
+        "reflex_responses": 16,
+        "reflex_contract_failures": 16,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "Verified movement reached StarDock sector 551 from sector 805 via sector 172. No completed trade, scanner purchase, or WorldTrade start was verified.",
+        "Nine native Fuel Ore haggle outcomes at sector 172 reported no transaction; credits stayed at 17 and all 20 holds stayed empty.",
+        "All 16 Reflex world-observation events in the sampled window fell back to deterministic escalation. Pilot and Strategic interaction totals were unavailable.",
+        "The worker stopped at 451.1 sampled seconds with a stale snapshot and RequestShipInformation as the last decision; the 900-second window was not completed.",
+        "Release MTC build and full TradeWars suite passed before the live run; the later field-specific Reflex diagnostics passed 16/16 focused tests but are not yet deployed."
+      ]
+    },
+    {
+      "iteration": 27,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": 100.0,
+      "defect_closure_rate": 20.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 0,
+        "metrics_start": null,
+        "metrics_end": null
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": null,
+        "reflex_contract_failures": null,
+        "strategic_responses": null,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "Meridian made verified movement to sector 206 and MTC refreshed ship state after reconnect. The post-rebuild live session then stalled at a port-trade quantity prompt.",
+        "The 12-hold Fuel Ore quote was 58 credits against 55 available; no transaction was verified. Scanner ownership and WorldTrade start remain unverified.",
+        "Fixed heartbeat prompt synthesis/timestamp handling under DEFECT-0016. The 64 AutonomousTestWorkerTests passed, and the Release win-x64 MTC build passed with 0 warnings and 0 errors.",
+        "Added branch-level common required fields to the Pilot oneOf schema. The provider test class passed 27/27, the Release build passed, and a live Pilot response included action, targetSector, rationale, and citation.",
+        "A post-build attempt was stopped uncounted after no verified game action: the monitor remained at sector 551 with 1 credit and no scanner. It recorded 62 Pilot, 2 Strategic Review, and 100 Reflex interactions by the latest sample; one output-limit failure was recovered by the existing retry.",
+        "The worker window was stopped early because the session was not progressing. No runtime metrics or role-specific LLM contract totals were available.",
+        "Filtered the Pilot script catalog to approved capability references; 27 provider tests and a Release build passed. In the follow-up worker window, the monitor showed a healthy Command snapshot at sector 551 with 1 credit and no Holo Scanner, while the latest decision remained RequestShipInformation. Dashboard history recorded 44 Pilot, 2 Strategic Review, and 94 Reflex interactions, including two empty-output token-limit failures recovered by retry. No movement, trade, scan, scanner purchase, or WorldTrade start was verified; Meridian was stopped around 5:43 PM and the attempt remains uncounted.",
+        "After the stalled attempt, the Pilot schema was tightened to omit RequestShipInformation for fresh healthy snapshots; all 27 provider tests passed and the Release build passed. In iteration 28 the rebuilt worker made verified movement, but later oscillated between sectors 551 and 99 without a scanner; it was stopped early as a safety precaution."
+      ]
+    },
+    {
+      "iteration": 28,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": 100.0,
+      "defect_closure_rate": 20.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 0,
+        "metrics_start": null,
+        "metrics_end": null
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 36,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": true,
+        "reflex_responses": 91,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "Release win-x64 build passed with 0 warnings and 0 errors; all 27 Pilot action-provider tests passed.",
+        "The schema update omitted RequestShipInformation for fresh healthy snapshots. The rebuilt worker chose movement and fresh monitor snapshots showed sector changes, but the ship oscillated between 551 and 99 without a scanner.",
+        "The worker was stopped after roughly 11 minutes when sector 99 reappeared. Last captured state was StarDock sector 551, 1 credit, no Holo Scanner; no trade, scan, scanner purchase, or WorldTrade start was verified.",
+        "Dashboard history showed 36 Pilot and 91 Reflex interactions at the latest sample; no Strategic Review tab/cycle was visible. The final Pilot interaction was still in progress when the agent was stopped.",
+        "DEFECT-0026 regressed. Runtime/resource metrics were not sampled; runtime score remains unavailable."
+      ]
+    },
+    {
+      "iteration": 29,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": null,
+      "autonomous_recovery_score": null,
+      "regression_rate": 100.0,
+      "defect_closure_rate": 20.0,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 0,
+        "metrics_start": null,
+        "metrics_end": null
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": null,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The live port/warp CIM refresh completed. Meridian ran for less than the planned 900 seconds and was stopped after verified snapshots showed sectors 551, 99, and 551.",
+        "The known sector-99 loss risk recurred. No trade, scan, scanner purchase, or WorldTrade start was verified; runtime/resource and LLM contract metrics were unavailable.",
+        "All 67 AutonomousTestWorkerTests passed after adding a scannerless sector-99 guard. The MTC Release build succeeded and was subsequently live-restarted."
+      ]
+    },
+    {
+      "iteration": 30,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": null,
+      "autonomous_recovery_score": null,
+      "regression_rate": 100.0,
+      "defect_closure_rate": 19.4,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 0,
+        "metrics_start": null,
+        "metrics_end": null
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": null,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The rebuilt runtime recorded movement from sector 551 through 206 and back to 551, then failed on an echoed MoveSector prompt before a verified trade.",
+        "The final retry on the Release build stayed at sector 551 with RequestShipInformation as the last decision and no fresh snapshot; it was stopped early and is uncounted.",
+        "The MTC RPC safety harness passed 134 checks, AutonomousTestWorkerTests passed 67/67 in Release, and MTC Release win-x64 publish succeeded.",
+        "An uncounted follow-up observed the scannerless guard block unexplored sector 172. A source planner filter was added afterward; the full worker test class passed 68/68 and the MTC Release net10.0 build succeeded, but the running win-x64 process was not redeployed.",
+        "No scan, scanner purchase, WorldTrade start, resource metrics, or Strategic Review cycle was verified."
+      ]
+    },
+    {
+      "iteration": 31,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": null,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": 100.0,
+      "defect_closure_rate": 19.4,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": true,
+        "observed_productive_seconds": null,
+        "metric_samples": 0,
+        "metrics_start": null,
+        "metrics_end": null
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": null,
+        "reflex_contract_failures": null,
+        "strategic_responses": null,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The runtime made verified movement from StarDock sector 551 to sector 172 and back to 551. The Pilot misread the sector-172 Fuel Ore-selling port; no trade, scan, scanner purchase, or WorldTrade start was verified.",
+        "Meridian was stopped early after the route failed to produce a compatible trade. The no-progress movement counts as productive under the campaign rule because movement was verified; the later hold-only deployment check is uncounted.",
+        "All 69 AutonomousTestWorkerTests passed and the Release win-x64 MTC publish succeeded. After restart, the runtime's latest decision was None with a hold rationale at StarDock sector 551.",
+        "A manual CIM refresh completed, but the read-only Pair Port Trade plan found no complementary pair from the current map data.",
+        "The app auto-started Meridian after restart; it was explicitly stopped after verifying the hold. Runtime metrics and LLM history were unavailable, so those scores remain null."
+      ]
+    }
+  ]
+}

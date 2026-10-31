@@ -1,0 +1,155 @@
+@page "/agents/{AgentId}"
+@using LLMSurvivingProxyAgent.Core
+@inject IAgentStore AgentStore
+@inject IConfiguration Configuration
+
+<PageTitle>@(_agent?.DisplayName ?? "Agent workspace")</PageTitle>
+
+@if (_agent is null)
+{
+    <div class="page-heading">
+        <div>
+            <p class="eyebrow">AGENT SESSION</p>
+            <h1>Agent not found</h1>
+            <p class="page-summary">No saved agent profile matches this workspace.</p>
+        </div>
+        <a class="btn btn-secondary" href="/agents">Agent registry</a>
+    </div>
+}
+else
+{
+    <div class="page-heading">
+        <div>
+            <p class="eyebrow">AGENT SESSION / OVERVIEW</p>
+            <h1>@_agent.DisplayName</h1>
+            <p class="page-summary">Session workspace for this agent's profile, runtime activity, strategy, and settings.</p>
+        </div>
+        <a class="btn btn-primary" href="@($"/agents/{Uri.EscapeDataString(_agent.AgentId)}/settings")">Configure agent</a>
+    </div>
+
+    <AgentWorkspaceNavigation AgentId="@_agent.AgentId" ActivePage="overview" />
+
+    <section class="metric-grid session-metrics" aria-label="Agent status">
+        <article class="metric-card">
+            <span class="eyebrow">SESSION STATUS</span>
+            <strong class="metric-value metric-value-small">
+                <span class="status-dot @StatusClass(_agent.Status)" aria-hidden="true"></span>
+                @_agent.Status
+            </strong>
+            <span class="metric-caption">Recorded profile status</span>
+        </article>
+        <article class="metric-card">
+            <span class="eyebrow">MODEL</span>
+            <strong class="metric-value metric-value-small">@_agent.PreferredModel</strong>
+            <span class="metric-caption">@_agent.PreferredProvider</span>
+        </article>
+        <article class="metric-card">
+            <span class="eyebrow">DECISIONS</span>
+            <strong class="metric-value">@_agent.Statistics.DecisionsMade</strong>
+            <span class="metric-caption">Recorded for this agent profile</span>
+        </article>
+        <article class="metric-card">
+            <span class="eyebrow">MACRO EXECUTIONS</span>
+            <strong class="metric-value">@_agent.Statistics.MacrosExecuted</strong>
+            <span class="metric-caption">Recorded for this agent profile</span>
+        </article>
+    </section>
+
+    <div class="workspace-grid">
+        <section class="surface-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">PROFILE</p>
+                    <h2>Agent details</h2>
+                </div>
+            </div>
+            <dl class="detail-list">
+                <div><dt>Agent ID</dt><dd>@_agent.AgentId</dd></div>
+                <div><dt>Created</dt><dd>@_agent.CreatedDate.ToLocalTime().ToString("g")</dd></div>
+                <div><dt>Recorded goal</dt><dd>@(_agent.Goals.FirstOrDefault() ?? "No goal recorded")</dd></div>
+            </dl>
+            @if (!string.IsNullOrWhiteSpace(_agent.Description))
+            {
+                <p class="profile-description">@_agent.Description</p>
+            }
+        </section>
+
+        <section class="surface-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">LIVE SESSION</p>
+                    <h2>Terminal availability</h2>
+                </div>
+            </div>
+            <p>
+                The native terminal is currently attached to the single Meridian desktop session. This web workspace
+                does not open a game connection or send TradeWars commands.
+            </p>
+            @if (string.Equals(Configuration["LLMControlCenter:EmbeddedHost"], "true", StringComparison.OrdinalIgnoreCase))
+            {
+                <p class="inline-note">Use the desktop Agent Sessions navigation to open the native terminal.</p>
+            }
+            else
+            {
+                <p class="inline-note">Open the LLM Control Center desktop client for native terminal access.</p>
+            }
+        </section>
+
+        <section class="surface-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">KNOWLEDGE</p>
+                    <h2>Shared catalog</h2>
+                </div>
+            </div>
+            <p>The current knowledge catalog is shared at the controller level; it is not isolated per agent.</p>
+            <a href="/knowledge">Open knowledge catalog</a>
+        </section>
+    </div>
+
+    <section class="surface-card activity-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">RECENT ACTIVITY</p>
+                <h2>Agent journal</h2>
+            </div>
+            <a href="@($"/agents/{Uri.EscapeDataString(_agent.AgentId)}/runtime")">Open runtime</a>
+        </div>
+        @if (_agent.Journal.Count == 0)
+        {
+            <p class="empty-inline">No journal entries have been recorded for this agent.</p>
+        }
+        else
+        {
+            <ol class="journal-list">
+                @foreach (var entry in _agent.Journal.OrderByDescending(item => item.OccurredAt).Take(5))
+                {
+                    <li>
+                        <span class="journal-time">@entry.OccurredAt.ToLocalTime().ToString("g")</span>
+                        <span class="journal-event">@entry.Kind</span>
+                        <span>@entry.Message</span>
+                    </li>
+                }
+            </ol>
+        }
+    </section>
+}
+
+@code {
+    [Parameter]
+    public string AgentId { get; set; } = string.Empty;
+
+    private AgentContainer? _agent;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _agent = await AgentStore.GetAgentAsync(AgentId);
+    }
+
+    private static string StatusClass(AgentStatus status) => status switch
+    {
+        AgentStatus.Running or AgentStatus.Thinking => "status-live",
+        AgentStatus.Paused => "status-paused",
+        _ => "status-idle"
+    };
+}

@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Core\LLMSurvivingProxyAgent.Core.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.TradeWars\LLMSurvivingProxyAgent.TradeWars.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Models\LLMSurvivingProxyAgent.Models.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Macros\LLMSurvivingProxyAgent.Macros.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,617 @@
+			TWX Proxy Script Pack 2 v1.09
+			-----------------------------
+
+******* Pack Contents:
+
+2_BuyDown.ets - Buy down script used to buy products from a
+port down onto a planet in the same sector.
+
+2_Evil.ets - Combo RTR/SDT/SST script capable of running with
+a near limitless number of ships.  Uses proper port calculation
+methods to perform SDT - meaning this script should be used over
+2_SDT.ets whereever possible.
+
+2_MassColonise.ets - Advanced colonising script that finds its
+own fuel source and attempts to fully colonise every planet in the
+sector.  Very powerful script.
+
+2_MassUpgrade.ets - Will attempt to upgrade the citadel level of
+every planet in the sector.  Seeks out materials and colonists if
+there aren't enough on the planet.  Even goes out and checks ports for
+products.
+
+2_Probe.ets - A basic avoid plotting probe script.  Run from stardock,
+will send probes out to every sector in a list (i.e. deadend or bubble list).
+Avoids sectors where figs are hit.
+
+2_SDF.ets - Steal-Dump-Flee script.
+
+2_SDT.ets - Steal-Dump-Transport script.
+
+2_Sentinel.ets - A bot script which polls the online user list and
+CLV every 30 seconds, detailing any changes on sub-space and displaying
+a popup window to let you keep track of activity while you aren't
+watching the game.
+
+2_SSF.ets - Sell-Steal-Flee script.
+
+2_SSFAtt.ets - An attack script for the 2_SDF and 2_SSF scripts.
+Used to make up the other side of the Steal-Flee combination.
+
+2_SSM.ets - Sell-Steal-Move script.
+
+2_SST.ets - Sell-Steal-Transport script.
+
+2_TCol.ets - Advanced Trans-colonisation script.
+
+2_WorldSSM.ets - Will search out evil pairs and SSM them using a 
+cumulative formulae.  Automatically warps back to class 0 ports
+and refurbs itself on bust.
+
+2_WorldTrade.ets - Searches out trade pairs intelligently and works
+between them.  Could be considered a blue version of WorldSSM.
+
+2_ZTM.ets - Multiple pass ZTM script.
+
+
+
+******* Script Details:
+
+Name:		BuyDown
+
+Features:	- Product haggling
+		- Will not try to buy more than is on the port
+		- Can be used for fuel, organics and equipment
+		- Fast-buy option
+
+Warnings:	Make sure you have enough turns and credits onhand
+		for this script.  It has no detection for credits
+		so if you run out it'll probably mess up.  Make
+		sure your holds are empty and there is room on the planet
+		when you run this script.
+
+Usage:		Run this script from the target planets surface.
+		You'll need a port selling the product your trying
+		to buy from it.  This script will work with any
+		haggle percentage, even if it is a zero or negative
+		number - this makes the script very useful to be
+		used as preparation for a mega-rob.  Haggle factor will
+		vary depending on port, usually 2-5 works best.  A haggle
+		factor of 0 will cause the script to fastbuy.
+
+
+
+Name:		Evil
+
+Features:	- Cumulative SST option
+		- Cumulative SDT option
+		- Cumulative RTR
+		- Use of a near limitless number of ships
+		- Full haggling support
+		- Highest rob calculation
+		- Works at high speed
+		- Works with any number of planets in the sector, with any products on them
+		- Calculated port upgrading during SST
+		- Calculated number of steals per sell during SDT
+
+Warnings:	You need to be evil to run this script, don't run it under ports you've
+		busted at.  The script will steal first from the ship your in, so make
+		sure your not under the last port you stole at.
+
+Usage:		Run this script from the command prompt, while sitting in the first ship
+		you want to steal/rob in.  Key in the details for the ships your using.
+		A haggle factor of 2-5 usually works best, depending on the ports your working.
+
+
+
+Name:		MassColonise
+
+Features:	- Automatic fuel source location
+		- Automatic fuel requirements calculations
+		- High speed colonising
+		- Colonises EVERY planet in the sector
+		- Can take fuel from sector port if necessary
+		- Will obtain new fuel source if current one expires
+		- Will not place more colonists on a planet than would
+		  be productive in its best category
+		- Will immediately stop if terra runs out of colonists
+		- Does not colonise useless planets (i.e. Vaporous)
+		- Will not colonise if player alignment is too low
+		- A window detailing all script activities and fuel remaining
+		- Will auto continue colonising when disconnected (and logged back in)
+
+Warnings:	Make sure you own all the planets in the sector you launch
+		the script in, or that they do not have level 2 or above
+		citadels and are owned by the enemy.  Make sure there are
+		no obstructions in the sector (i.e. enemy mines/figs), and
+		that the navhaz is not high enough to be a threat.  Make sure
+		you also have a transwarp drive and enough cargo holds to
+		make a return trip to terra with colonists.  Make sure you also
+		have no avoids placed in direct route to terra - this will cause
+		the script to miscalculate its fuel requirements and reduce
+		efficency.  Do not run this script if you are red or you do not
+		have figs placed in the target sector.  Finally, make sure you have
+		enough turns to run this script - it was designed for unlimited turn
+		games and does not track your turns as it runs.
+
+Usage:		Run this script from the target sector.  So long as you've taken
+		into account all the above warnings, it should colonise every planet
+		in the sector to the best of its ability.  It will stop working
+		if it runs out of fuel, colonists, or planets to colonise.  This
+		script is very powerful when used in combination with 2_MassUpgrade.
+
+
+
+
+Name:		MassUpgrade
+
+Features:	- Will try to upgrade every planet in a sector
+		- Will shift products between planets to achieve upgrade
+		- Will navigate the game searching for ports/planets which
+		  contain products to upgrade planets with if there is not
+		  enough available
+		- Will return to the last place products were found via express
+		  warp to speed up product attainment and reduce turn consumption
+		- Will not upgrade planets which are at their maximum level
+		- Product searching algorithm navigates with the use of a density
+		  scanner and can not be easily obstructed or pwarped.
+		- Script cannot be obstructed by small quantities of enemy figs or
+		  mines
+		- A window detailing all activities of the script
+
+Warnings:	Make sure you own all the planets in the sector you are upgrading in,
+		this script will not invade them for you.  Make sure you have enough
+		cash onhand to purchase products from ports if there isn't enough
+		available on the planets in the sector your working in.  Also it is
+		important that you have enough colonists in the sector to upgrade all
+		planets - as colonists cannot be found on ports (unfortunately) and
+		the script will go looking for them if it can't find any in the area.
+
+		The seeking algorithm of this script will attack enemy toll figs and
+		shouldn't get hung up on things in space, although it is not bullet
+		proof.  If there is someone trying to kill you while you seek products
+		and attack their toll figs, you are still VERY vulnerable to traps
+		and direct attacks.
+
+Usage:		Run this script in the target sector, after taking into consideration
+		the above warnings.  It will stop only when all planets have been
+		upgraded to the best of its abilities.
+
+
+
+
+Name:		Probe
+
+Features:	- Avoid plot probing of sector list
+		- Auto probe refurb
+		- Logging of unreachable areas
+		- Does not probe to explored areas
+
+Warnings:	Make sure you have enough cash on you to buy a good number of probes.
+		This script must be run from the stardock, so ensure no one has it boxed in
+		with figs.  Best run while fedsafe.
+
+Usage:		Run this script from the game's stardock.  It will buy probes every time it
+		runs out, so make sure you have cash on you.  The script will work from
+		the bubble and deadend lists exported from TWX Proxy.  The 'starting index'
+		it asks is position in the probe list to start at (usually this should be 1).
+
+
+
+
+
+Name:		SDF
+
+Features:	- Full haggling support
+		- Uses a cumulative formulae
+		- Works at high speed
+		- Will automatically sell products from dump planets
+		- Automatic calculation of steal amount
+		- Minimal input required
+		- Works with any number of planets in either sector
+		- Works with fuel/organics on any of the planets
+		- Option to broadcast bust information on radio for teammates
+
+Warnings:	Make sure you have the standard SDF setup with your teammates or
+		you may get some bazzaire results.  Do not run this script unless
+		you are red.  Do not run this script under ports you have busted at.
+		Make sure your holds are empty when you load this script.  Make sure
+		you have at least one planet in each sector and that it is owned by you.
+		Make sure you have enough figs/shields onhand so your teammates don't kill 
+		you by accident!
+
+Usage:		This script will make the first steal from the sector you load it in -
+		the ports will need to have enough equipment onhand for you to be
+		able to complete your specified number of runs and then sell those
+		products back from the planets.  The steal factor can be obtained from
+		the * display at the game menu prompt - in default games this should
+		be set to 30 (which is 100%).  You will need to have a proper SDF/SSF
+		area set up to use this script, for more information on SDF/SSF refer
+		to a TW tutorial.  Run this script from the sector prompt.  Haggle factor
+		should typically be set between 2 and 5 (depending on the ports).
+
+
+
+
+Name:		SDT (Obsolete - recommend 2_Evil instead)
+
+Features:	- Full haggling support
+		- Handles each ship independantly
+		- Uses a cumulative forumlae
+		- Works at high speed
+		- Will automatically sell products from dump planets
+		- Automatic calculation of steal amount
+		- Minimal input required
+		- Works with any number of planets in either sector
+		- Works with fuel/organics on any of the planets
+		- Option to broadcast bust information on radio for teammates
+		- Automatic attainment and management of cargo holds on both ships
+
+Warnings:	Do not run this script unless you are red.  Do not run this script under
+		ports you have busted at.  Make sure the cargo holds of BOTH ships are
+		empty when you load the script.  Both ports must have enough equipment on
+		each of them for the script to be able to steal down and sell.  Make sure
+		you have at least one planet in each sector and that it is owned by you.
+
+Usage:		This script will make the first steal from the sector you load it in -
+		the ports will need to have enough equipment onhand for you to be able
+		to complete your specified number of runs and then sell those products back
+		from the planets.  The steal factor can be obtained from the * display at
+		the game menu prompt - in default games this should be set to 30 (which is
+		100%).  Run this script from the sector prompt.  Haggle factor
+		should typically be set between 2 and 5 (depending on the ports).
+
+
+
+
+
+Name:		Sentinel
+
+Features:	- Broadcasting of #/CLV changes on sub-space
+		- Display of these changes in pop-up windows
+                - Stripping of rank/corp information to display
+                  target player name only
+                - Automatically resumes if disconnected and logged back in
+                  (works well with login scripts)
+                - Easy configuration
+
+Warnings:	Don't attempt to key around the script unless using burst or you
+		risk messing it up.  This script can use a fair amount of processor
+                power (especially with ANSI on) when there is alot of activity
+                in the game.  So long as the script is kept at the command prompt
+                there should be no risk of it going haywire.  Because of the 30
+                second refresh time, players that leave and join the game quickly
+		will not show up as having left in the first place.
+
+Usage:		Load this script from the sector command prompt.  It will regularly
+		poll the online user and CLV listings, picking up any changes and
+		reporting them on your sub-space radio for teammates.  People on
+		your team (especially combat players) will find this information to
+		be invaluable while they run turns.  This script is only really useful
+		in games with a high (or non-existant) timelimit.
+
+
+
+
+
+
+Name:		SSF
+
+Features:	- Full haggling support
+		- Uses a cumulative formulae
+		- Works at high speed
+		- Automatic calculation of steal amount
+		- Automatic upgrade of low ports
+		- Minimal input required
+		- Option to broadcast bust information on radio for teammates
+
+Warnings:	Make sure you have the standard SSF setup with your teammates or
+		you may get some bazzaire results.  Do not run this script unless
+		you are red.  Do not run this script under ports you have busted at.
+		Make sure your holds are empty when you load this script.  Make sure
+		you have enough figs/shields onhand so your teammates don't kill you
+		by accident!
+
+Usage:		This script will make the first steal from the sector you load it in -
+		the ports will need to have enough equipment onhand for you to be able
+		to load up your holds (for max turn efficency).  The steal factor can 
+		be obtained from the * display at the game menu prompt - in default 
+		games this should be set to 30 (which is 100%).  You will need to have 
+		a proper SSF area set up to use this script, for more information 
+		on SDT/SSF refer to a TW tutorial.  Run this script from the sector prompt.
+		Haggle factor should typically be set between 2 and 5 (depending on the ports).
+
+
+
+
+Name:		SSFAtt
+
+Features:	- Auto attacking for SSF
+		- Target position calculation
+
+Warnings:	Make sure the only ship in the sector is the one your attacking, also
+		that you have figs to attack with, and that the ship your attacking has
+		enough figs/shields to prevent it from being destroyed.
+
+Usage:		Load this from the sector prompt.  Key in the text to wait for on attacks and
+		the name of the person you are attacking.  Normally you could use something 
+  		like 'R Xide  1' or 'R Xide  2', the planet blast off messages would work too.
+
+
+
+
+Name:		SSM
+
+Features:	- Full haggling support
+		- Uses a cumulative formulae
+		- Works at high speed
+		- Automatic calculation of steal amount
+		- Automatic upgrade of low ports
+		- Minimal input required
+
+Warnings:	This script will make the first steal from the sector you load it in -
+		the ports will need to have enough equipment onhand for you to be able
+		to load up your holds (for max turn efficency).  Make sure both sectors
+		are clear of obstruction.  You need to be red for this script.
+
+Usage:		Load this from the sector prompt of the first port to steal from.  The 
+		steal factor can be obtained from the * display at the game menu prompt - 
+		in default games this should be set to 30 (which is 100%).  
+		Haggle factor should typically be set between 2 and 5 (depending on the ports).
+
+
+
+
+Name:		SST
+
+Features:	- Full haggling support
+		- Handles each ship independantly
+		- Uses a cumulative forumlae
+		- Works at high speed
+		- Automatic calculation of steal amount
+		- Automatic upgrade of ports on steal failure
+		- Minimal input required
+		- Automatic attainment and management of cargo holds on both ships
+		- Checks for equipment on first run, holds don't need to be empty
+
+Warnings:	Do not run this script unless you are red.  Do not run this script under
+		ports you have busted at.  Make sure the distance between both ships is
+		small enough to transport (or you will fake bust).
+
+Usage:		This script will make its first steal from the sector it is loaded in.  
+		The ships can have either equipment in their holds or empty - if equipment
+		is loaded the script will sell it before attempting its first steal.
+		The steal factor can be obtained from the * display at the game menu prompt -
+		in default games this should be set to 30 (which is 100%).
+		Haggle factor should typically be set between 2 and 5 (depending on the ports).
+
+
+
+
+Name:		TCol
+
+Features:	- High speed colonisation
+		- Automatic fuel requirements calculation
+		- Will stop if terra is out of colonists
+		- Will stop before turns fall below a specified limit
+		- Can work using planetary transporter
+		- Can work using planet fuel
+		- Can work using fuel from a different planet
+		- Can work using fuel from a port in the same sector
+		- Can work using planetary transporter on a different planet
+
+Warnings:	You must have 1000 or more alignment and a fig in the sector you
+		are colonising or you will fuse.  Script will misbehave if it runs
+		out of fuel.  Make sure you do not have avoids set in a direct warp
+		lane to/from terra, or the script will miscalculate its fuel requirements
+		and its efficency will be reduced.
+
+Usage:		Launch this script from the target planet surface.  Your holds must be
+		empty when you load it.
+
+
+
+
+Name:		World SSM
+
+Features:	- Automatic seeking of evil pairs
+		- Intelligent single step warp method
+		- Fast express warp method
+		- Automatic deployment of toll figs
+		- Cumulative formula SSM
+		- Automatic refurb and limpet checks
+		- Automatic fig/shield purchase to keep ship intact
+		- Evasion of harmful sectors and limpets
+		- Automatic upgrade of ports on first steal
+		- Cannot be easily pwarped
+		- Progress window displaying current script operations
+		  and cash made
+		- Auto resume on disconnect
+
+Warnings:	Only reds can run this script.  Do not launch this script from
+		fedspace.  Do not run this script in low turn games as it consumes
+		turns VERY quickly.  Make sure you have a decent amount of cash when
+		you first load the script to cope with early busts and port upgrades.
+		Express warp method will speed up the script but make it MUCH more
+		vulnerable.
+
+		Note that this script is extremely vulnerable to traps.  It moves all
+		round the game and makes regular visits to class 0 ports where it can
+		easily pick up limpets on the way out.  Experienced hunters will have
+		this script tracked down and killed in less than 5 minutes.
+
+Usage:		Load this script in a non fedspace sector with enough credits onhand
+		to cope with early busts and to upgrade ports (100k should be fine).
+		The steal factor can be obtained from the * display at the game menu prompt -
+		in default games this should be set to 30 (which is 100%).
+
+
+
+
+Name:		WorldTrade
+
+Features:	- Automatic seeking of port pairs
+		- Intelligent movement algorithm
+		- Evasion of harmful sectors
+		- Will not trade ports below profit margin
+		- Intelligent and fully automatic PPT
+		- Haggling support
+		- Automatic dropping of toll figs under port pairs
+		- Progress window shows current operation and cash onhand
+		- Auto resume on disconnect
+
+Warnings:	Do not run this script from fedspace.  Use only in high turn
+		games.  Make sure you have at least 5k credits to begin trading
+		with.  You will also need a holo scanner.  This script is extremely
+		vulnerable to port CIM checks as its nature leaves it in isolated
+		areas for a long time.
+
+Usage:		Load this script in a non fedspace sector.
+		Haggle factor should typically be set to 5, or 0 if you want it to trade quicker.
+		Use the menus to set the navigation method best for the game your in.  These
+		settings have the following meanings:
+
+                Holo-Scan Pref - Never: Doesn't holo scan
+                               - Standard: Holo scans on odd densities
+                               - Always: Holo scans everywhere
+                Evasion Pref   - Standard: Avoids unusual sectors, but not toll figs
+                               - Paranoid: Avoids everything, including toll figs
+                               - None: Avoids NOTHING (can be dangerous)
+                Attack Pref    - Standard: Attacks at fig prompts
+                               - Rapid (Intelligent): Predicts which sectors have figs in them,
+				 and keys the attack before it hits the figs.  Good way of preventing
+				 a pdrop.
+			       - Rapid (Crazy): Does rapid attacks everywhere, even those with
+			         0 or 100 density.  For those that are paranoid of being pdropped.
+			       - Pay: As standard, although will pay tolls.
+		
+
+
+
+Name:		ZTM
+
+Features:	- Multiple pass ZTM at high speed
+		- Reverse sector mapping method
+		- Source -> destination mapping method
+		- Incremental mapping method
+		- Bubble list -> Souce mapping method
+		- Auto resume on disconnect
+
+Warnings:	Don't try this manually.
+
+Usage:		This version of the TWX Proxy ZTM script is much faster than the
+		1_ZTM.ts in the previous pack, although not as accurate.  I find
+		to get a good picture of the game and an accurate bubble list, you
+		should do at least 3 passes of Source -> destination/incremental
+		mappings then export a bubble list and map at least 3 times to
+		different sources using the exported list.
+
+		For example:
+
+		Pass 1:  Reverse sector mapping
+		Pass 2:  Incremental mapping (using an incremental of 1)
+		Pass 3:  Incremental mapping (using an incremental of 2)
+		Pass 4:  Exported bubble list to sector 1 mapping
+		Pass 5:  Another exported bubble list to sector 50 mapping
+		Pass 6:  Another exported bubble list to sector 51 mapping
+
+		Doing the above would get you an accurate picture of the game.
+		Depending upon connection/server speed this could easily be done
+		in under 3 hours.
+
+
+
+
+******* Changes in v1.09:
+
+2_Worldtrade.ets 
+	- Fixed a bug preventing the script from resuming properly after a disconnect
+	- Fixed a bug that was causing the script to drop figs even when the user
+	  didn't ask for it.
+	- No longer tries to trade at ports with navhaz or mines in them
+
+2_MassUpgrade.ets
+	- Script now checks for holo scanner before starting upgrades
+	- Navigation algorithm has been upgraded.  It will now pay tolls and won't be
+	  hung up as easily.
+
+
+******* Changes in v1.08:
+
+2_TCol.ets 
+	- Now has the option to use a planet transporter on another planet
+	- Will now work in unlimited turn games
+
+2_Worldtrade.ets 
+	- Fixed a bug that was preventing the script from paying tolls
+	- Fixed a bug that was causing the script to freeze in certain rare haggling situations
+	- Added another attack option
+	- Made improvements to the modularity of the script (alot was rewritten).  Trigger
+	  errors and haggling problems should now be solved.
+
+2_MassColonise.ets
+	- Script now checks for corp/personal figs in sector before colonising (bwarp protection).
+
+2_SSM.ets
+	- Fixed a bug that was causing the script to freeze in certain rare haggling situations
+
+2_SST.ets
+	- Fixed a bug that was causing the script to freeze in certain rare haggling situations
+
+2_SSF.ets
+	- Fixed a bug that was causing the script to freeze in certain rare haggling situations
+
+NEW SCRIPTS:
+	2_Evil.ets
+	2_Probe.ets
+	2_Sentinel.ets
+
+
+******* Changes in v1.07:
+
+
+2_BuyDown.ets
+	- Took many of the delays out of the script when used with a zero haggle factor,
+	  should now run much faster when not haggling
+
+2_ZTM.ets
+	- Fixed a bug where calculating between reverse sectors was being reset by the
+	  progress window
+	- Fixed a bug which was preventing the script from resuming properly on disconnect
+
+2_MassColonise.ets 
+	- Fixed a serious bug where the script would mess up when its fuel ran out (when
+	  taking fuel from a planet)
+	- Reduced the colonising delay to a quarter its normal length
+
+2_SDF.ets 
+	- Fixed a haggle bug where the script would stall if the haggle offer was rejected 
+	  when selling equipment from the planet
+
+2_SDT.ets 
+	- Fixed the haggle bug (as in SDF)
+	- Fixed a bug where the script would try to steal once too many on its
+	  first run
+
+2_SSM.ets 
+	- Fixed a bug where the script would error out if the port rejected its offer
+
+2_WorldSSM.ets 
+	- Fixed a bug where the script would stall if it fake busted.
+	- Reduced the delay to half its original length
+
+2_WorldTrade.ets 
+	- Fixed a bug which stopped the script from haggling as it was supposed to.
+	- Will now resume correctly if disconnected and reconnected
+	- Made the dropping of toll figs at ports optional
+
+
+
+
+
+
+I'll be adding new scripts as time permits.  I know of most of the bugs in the above
+and am working to fix them.  Check back to http://www.twxproxy.com regularly for the
+latest news.  All future versions and additions to script pack 2 will be compatible
+with all standing reg keys.  If you have any questions or bug reports, feel free to
+contact me, my email address is xide@clan.co.nz

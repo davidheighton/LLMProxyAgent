@@ -1,0 +1,34 @@
+# .NET build and test output
+**/bin/
+**/obj/
+**/TestResults/
+**/publish/
+.vs/
+**/.vs/
+
+# Local runtime state, game captures, and browser profiles
+**/logs/
+**/MTC.exe.WebView2/
+LLMControlCenter/games/
+**/*.sqlite
+**/*.sqlite-*
+**/*.db
+**/*.db-*
+**/*.xdb
+**/*.log
+**/*.jsonl
+**/*.tmp
+
+# Test/build-generated corpus bundles
+LLMSurvivingProxyAgent/**/artifacts/
+
+# Captured campaign telemetry and prompt history
+reports/*-dashboard-events.txt
+reports/*-debug.log
+reports/*-metrics.jsonl
+reports/*-history.txt
+reports/*-pilot-history.txt
+reports/*-strategic-history.txt
+reports/*-llm-history.txt
+reports/pre-reset-*/events/
+reports/pre-reset-*/database/

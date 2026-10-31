@@ -1,0 +1,119 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TwxProxyConfig>
+  <TwxpCfg>
+    <Section Name="Bot:1045">
+      <Entry Key="LoginScript" Value="Disabled" />
+      <Entry Key="Name" Value="Legacy Mombot 3.1045" />
+      <Entry Key="NameVar" Value="FILE:_MOM_{GAME}.bot" />
+      <Entry Key="Script" Value="Mombot3\__mom_bot3_1045.cts" />
+      <Entry Key="Theme" Value="10|~A[~DMom 1044~A]~5|^[0m^[1;36m|^[0m^[1;35m|^[0m^[31m|^[0m^[33m|^[0m^[1;31m" />
+    </Section>
+    <Section Name="Bot:Mom">
+      <Entry Key="CommsVar" Value="$SWITCHBOARD~BOT_NAME" />
+      <Entry Key="LoginScript" Value="Disabled" />
+      <Entry Key="Name" Value="Mind Over Matter Bot" />
+      <Entry Key="NameVar" Value="$BOT~BOT_NAME" />
+      <Entry Key="Script" Value="Mombot\mombot.cts" />
+      <Entry Key="Theme" Value="8|~A[~CMombot~A]~5|^[0m^[1;36m|^[0m^[1;35m|^[0m^[32m|^[0m^[35m|^[0m^[1;33m" />
+    </Section>
+    <Section Name="Bot:Zed">
+      <Entry Key="LoginScript" Value="z-login.cts" />
+      <Entry Key="Name" Value="Zed Bot Unleashed" />
+      <Entry Key="NameVar" Value="$Z_BOTNAME" />
+      <Entry Key="Script" Value="z-bot.cts" />
+      <Entry Key="Theme" Value="9|~B&lt;&lt;-=Z=-&gt;&gt;|^[0m^[1;37m|^[0m^[1;37m|^[0m^[1;37m|^[0m^[1;37m|^[0m^[1;37m" />
+    </Section>
+    <Section Name="QuickLoad">
+      <Entry Key="2_" Value="Xide Pack2" />
+      <Entry Key="Al_" Value="Alexio" />
+      <Entry Key="ck_" Value="Cherokee" />
+      <Entry Key="dny_" Value="Dynarri" />
+      <Entry Key="end_" Value="Ender" />
+      <Entry Key="ep_" Value="ElderProphit" />
+      <Entry Key="Ignore" Value="LIBRARY,SOURCE,COMMAND" />
+      <Entry Key="Kaus_" Value="Kaus" />
+      <Entry Key="ls_" Value="Lonestar" />
+      <Entry Key="oz_" Value="Ozz" />
+      <Entry Key="ph_" Value="Parrothead" />
+      <Entry Key="pro_" Value="Promethies" />
+      <Entry Key="ram_" Value="Rammer" />
+      <Entry Key="rin_" Value="Rincrast" />
+      <Entry Key="vid_" Value="Vid Kid" />
+      <Entry Key="wild_" Value="Wildstar" />
+      <Entry Key="z_" Value="Zed / Archie" />
+    </Section>
+    <Section Name="QuickLoadc">
+      <Entry Key="1_" Value="Xide Pack1" />
+    </Section>
+    <Section Name="TWX Proxy">
+      <Entry Key="LastUpdateCheck" Value="7/16/2026" />
+      <Entry Key="UpdateAvailable" Value="True" />
+      <Entry Key="Upgrade" Value="230401" />
+    </Section>
+  </TwxpCfg>
+  <SharedPaths>
+    <ProgramDirectory>C:\Projects\TWBot\LLMControlCenter</ProgramDirectory>
+    <ScriptsDirectory>C:\Projects\TWBot\LLMProxyScripts</ScriptsDirectory>
+  </SharedPaths>
+  <MtcPrefs>
+    <DebugLoggingEnabled>true</DebugLoggingEnabled>
+    <VerboseDebugLogging>true</VerboseDebugLogging>
+    <ScriptTraceDebugLogging>false</ScriptTraceDebugLogging>
+    <AutoRecorderDebugLogging>true</AutoRecorderDebugLogging>
+    <TriggerDebugLogging>false</TriggerDebugLogging>
+    <DebugPortHaggleEnabled>true</DebugPortHaggleEnabled>
+    <DebugPlanetHaggleEnabled>false</DebugPlanetHaggleEnabled>
+    <EnableRedAlertMode>true</EnableRedAlertMode>
+    <ShowHaggleDetails>false</ShowHaggleDetails>
+    <ShowBottomBar>true</ShowBottomBar>
+    <ShowCommWindow>true</ShowCommWindow>
+    <ClassicCommWindowHeight>140</ClassicCommWindowHeight>
+    <DeckCommWindowHeight>150</DeckCommWindowHeight>
+    <ShowNotesPanel>false</ShowNotesPanel>
+    <TerminalFontSize>14</TerminalFontSize>
+    <ScrollbackLines>2000</ScrollbackLines>
+    <PreparedVmEnabled>true</PreparedVmEnabled>
+    <VmMetricsEnabled>false</VmMetricsEnabled>
+    <PreparedScriptCacheLimitKb>512</PreparedScriptCacheLimitKb>
+    <MombotHotkeyPrewarmLimitKb>256</MombotHotkeyPrewarmLimitKb>
+    <PortHaggleMode>clamp-heuristic</PortHaggleMode>
+    <PlanetHaggleMode>cherokee-planet</PlanetHaggleMode>
+    <CommandDeckSkinEnabled>false</CommandDeckSkinEnabled>
+    <CommandDeckLayoutVersion>4</CommandDeckLayoutVersion>
+    <LastNativeMombotBotName></LastNativeMombotBotName>
+    <MainWindowPosition X="8" Y="105" Width="2048" Height="1208.8" />
+    <GameAgent>
+      <Provider>ollama</Provider>
+      <LmStudioEndpoint>http://127.0.0.1:1234/v1/chat/completions</LmStudioEndpoint>
+      <LmStudioPort>1234</LmStudioPort>
+      <OllamaPort>11434</OllamaPort>
+      <OpenAiApiKey></OpenAiApiKey>
+      <AnthropicApiKey></AnthropicApiKey>
+      <ContextLimitCharacters>32768</ContextLimitCharacters>
+      <ProviderModels>
+        <Model Provider="lmstudio">local-model</Model>
+        <Model Provider="ollama">qwen3:1.7b</Model>
+      </ProviderModels>
+    </GameAgent>
+    <JsonRpc>
+      <Enabled>false</Enabled>
+      <BindAddress>127.0.0.1</BindAddress>
+      <Port>7623</Port>
+      <AuthToken>734d7bc130b79e43b516ca28d98f55e136f2754f460a724781b008dd189537d1</AuthToken>
+      <ApprovalLevel>approve-actions</ApprovalLevel>
+    </JsonRpc>
+    <RecentFiles>
+      <File>C:\Projects\TWBot\LLMControlCenter\games\Meridian Game D.json</File>
+      <File>C:\Projects\TWBot\LLMControlCenter\games\_2002.json</File>
+      <File>C:\twxproxy\games\Meridian Game E.json</File>
+      <File>C:\twxproxy\games\Meridian Game D.json</File>
+    </RecentFiles>
+    <Macros />
+    <CommandDeckPanels />
+    <StatusPanelSections>
+      <Section Id="trader" Visible="true" Order="0" />
+      <Section Id="online" Visible="true" Order="1" OnlineRefreshIntervalSeconds="60" />
+      <Section Id="ship" Visible="true" Order="2" />
+    </StatusPanelSections>
+  </MtcPrefs>
+</TwxProxyConfig>

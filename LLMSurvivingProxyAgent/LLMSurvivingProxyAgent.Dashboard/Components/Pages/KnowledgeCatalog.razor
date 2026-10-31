@@ -1,0 +1,217 @@
+@page "/knowledge"
+@using LLMSurvivingProxyAgent.Knowledge
+@inject IKnowledgeStore KnowledgeStore
+@inject KnowledgeMiningService MiningService
+
+<PageTitle>Knowledge Catalog</PageTitle>
+
+<h1>Knowledge Catalog</h1>
+<p class="text-secondary">
+    Deterministic static analysis of configured script and documentation roots. Sources are never executed;
+    extracted guidance is a reviewable lead, not authoritative game state.
+</p>
+
+@if (_triggerPatternSources.Count > 0)
+{
+    <section class="card mb-3">
+        <div class="card-body">
+            <h2 class="h5">Reactive trigger patterns across source scripts</h2>
+            <p class="small text-secondary">
+                Counts are distinct mined documents per trigger type. Handler evidence is a static candidate;
+                urgency, runtime firing, and outcome are not inferred.
+            </p>
+            <ul class="mb-0">
+                @foreach (var pattern in _triggerPatternSources.GroupBy(source => source.Title).OrderBy(group => group.Key))
+                {
+                    <li>
+                        <strong>@pattern.Key</strong> — @pattern.Sum(source => source.SourceCount) source documents
+                        (@string.Join(", ", pattern.OrderBy(source => source.RootId)
+                            .Select(source => $"{source.RootId}: {source.SourceCount}"))).
+                    </li>
+                }
+            </ul>
+        </div>
+    </section>
+}
+
+<div class="d-flex gap-2 align-items-center mb-3">
+    <button class="btn btn-primary" @onclick="MineConfiguredSourcesAsync" disabled="@_mining">
+        @(_mining ? "Mining..." : "Mine configured sources")
+    </button>
+    <span class="text-secondary">Allowlisted roots: @string.Join(", ", MiningService.ConfiguredRoots.Select(root => root.Id))</span>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_status))
+{
+    <div class="alert alert-info" role="status">@_status</div>
+}
+
+<div class="row g-2 align-items-end mb-3">
+    <div class="col-md-5">
+        <label class="form-label" for="knowledge-query">Search</label>
+        <input id="knowledge-query" class="form-control" @bind="_query" @bind:event="oninput" />
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="knowledge-category">Category</label>
+        <InputSelect id="knowledge-category" class="form-select" @bind-Value="_category">
+            <option value="">All categories</option>
+            @foreach (var category in Enum.GetValues<KnowledgeCategory>())
+            {
+                <option value="@category">@category</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="col-md-3">
+        <button class="btn btn-outline-primary" @onclick="SearchAsync">Search catalog</button>
+    </div>
+</div>
+
+<p class="small text-secondary">@_documents.Count source documents · @_nodes.Count matching knowledge items</p>
+
+@if (_nodes.Count == 0)
+{
+    <p>No knowledge items found. Mine the configured sources to populate the catalog.</p>
+}
+else
+{
+    @foreach (var node in _nodes)
+    {
+        <article class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between gap-3">
+                    <h2 class="h5">@node.Title</h2>
+                    <span class="badge text-bg-secondary">@node.Category</span>
+                </div>
+                <p>@node.Summary</p>
+                <p class="small text-secondary mb-2">
+                    Confidence: @node.Confidence.ToString("P0") · Basis: @node.Basis
+                </p>
+                @{
+                    var details = node.Evidence.FirstOrDefault(item => item.Details is not null)?.Details;
+                }
+                @if (details is not null)
+                {
+                    <dl class="row small mb-2">
+                        @if (!string.IsNullOrWhiteSpace(details.Message))
+                        {
+                            <dt class="col-sm-3">Message</dt><dd class="col-sm-9">@details.Message</dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.MessageTemplate))
+                        {
+                            <dt class="col-sm-3">Message template</dt><dd class="col-sm-9"><code>@details.MessageTemplate</code></dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.Channel))
+                        {
+                            <dt class="col-sm-3">Channel</dt><dd class="col-sm-9">@details.Channel</dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.Participants))
+                        {
+                            <dt class="col-sm-3">Participants</dt><dd class="col-sm-9">@details.Participants</dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.Trigger))
+                        {
+                            <dt class="col-sm-3">Trigger</dt><dd class="col-sm-9">@details.Trigger</dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.Action))
+                        {
+                            <dt class="col-sm-3">Action</dt><dd class="col-sm-9">@details.Action</dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.Intent))
+                        {
+                            <dt class="col-sm-3">Intent</dt><dd class="col-sm-9">@details.Intent</dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.Rationale))
+                        {
+                            <dt class="col-sm-3">Rationale</dt><dd class="col-sm-9">@details.Rationale</dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.RequiredAction))
+                        {
+                            <dt class="col-sm-3">Required action</dt><dd class="col-sm-9">@details.RequiredAction</dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.ExpectedResponse))
+                        {
+                            <dt class="col-sm-3">Expected response</dt><dd class="col-sm-9">@details.ExpectedResponse</dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(details.Role))
+                        {
+                            <dt class="col-sm-3">Role</dt><dd class="col-sm-9">@details.Role</dd>
+                        }
+                        @if (details.Steps is { Count: > 0 })
+                        {
+                            <dt class="col-sm-3">Steps</dt>
+                            <dd class="col-sm-9">
+                                <ol class="mb-0">
+                                    @foreach (var step in details.Steps)
+                                    {
+                                        <li>@step</li>
+                                    }
+                                </ol>
+                            </dd>
+                        }
+                    </dl>
+                }
+                @foreach (var evidence in node.Evidence)
+                {
+                    <blockquote class="border-start ps-3 mb-1">
+                        <span class="small text-secondary">Line @evidence.LineNumber · @evidence.Signal</span>
+                        <div><code>@evidence.Text</code></div>
+                    </blockquote>
+                }
+                <p class="small text-secondary mt-2 mb-0">
+                    @DocumentPath(node.DocumentId)
+                </p>
+            </div>
+        </article>
+    }
+}
+
+@code {
+    private IReadOnlyList<KnowledgeDocumentSummary> _documents = [];
+    private IReadOnlyList<KnowledgeNode> _nodes = [];
+    private IReadOnlyList<KnowledgeCategorySourceCount> _triggerPatternSources = [];
+    private KnowledgeCategory? _category;
+    private string _query = string.Empty;
+    private string? _status;
+    private bool _mining;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshDocumentsAsync();
+        await SearchAsync();
+    }
+
+    private async Task MineConfiguredSourcesAsync()
+    {
+        _mining = true;
+        _status = null;
+        try
+        {
+            var reports = await MiningService.MineConfiguredRootsAsync();
+            _status = string.Join(" · ", reports.Select(report =>
+                $"{report.RootId}: {report.FilesMined} mined, {report.FilesUnchanged} unchanged, " +
+                $"{report.FilesTooLarge} skipped (>4 MB)"));
+            await RefreshDocumentsAsync();
+            await SearchAsync();
+        }
+        finally
+        {
+            _mining = false;
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        _nodes = await KnowledgeStore.SearchAsync(_query, _category, limit: 300);
+        _triggerPatternSources = await KnowledgeStore.GetCategorySourceCountsAsync(
+            KnowledgeCategory.ReactiveTriggerPattern);
+    }
+
+    private async Task RefreshDocumentsAsync() =>
+        _documents = await KnowledgeStore.GetDocumentsAsync(limit: 1000);
+
+    private string DocumentPath(string documentId)
+    {
+        var document = _documents.FirstOrDefault(item => item.Id == documentId);
+        return document is null ? "Source document unavailable" : $"{document.RootId}/{document.RelativePath}";
+    }
+}

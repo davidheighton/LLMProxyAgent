@@ -1,0 +1,20 @@
+Observed live smoke attempt 24-03 after MTC Release rebuild.
+
+Pilot:
+- 0 LLM calls were shown during the smoke attempt.
+
+Strategic Review:
+- 1 call was present in retained history, timestamped 10/30/2026 10:47 AM and completed in 1m 30s.
+- The assessment was not applied because the reasoning provider returned an incomplete or invalid assessment.
+- Background work showed no strategic cycle during the worker run; this call predates the observed worker activity.
+
+Reflex:
+- 13 interactions were shown by the end of observation.
+
+Worker/game action:
+- The selected TradeAtCurrentPort operation attempted to buy Fuel Ore for a compatible buyer in adjacent sector 290.
+- The trade was interrupted by AutopilotConfirmation. Meridian selected DeclineAutopilotEngagement and then waited for a fresh authenticated Command prompt.
+- No trade, movement, scan, scanner purchase, or WorldTrade start was verified.
+
+Retention limitation:
+- The dashboard exposed role counts and interaction-card summaries, but full prompt and response bodies were not captured in the durable attempt artifacts.

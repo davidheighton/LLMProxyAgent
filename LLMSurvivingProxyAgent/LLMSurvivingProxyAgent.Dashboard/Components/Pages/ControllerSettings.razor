@@ -1,0 +1,69 @@
+@page "/controller-settings"
+@inject IConfiguration Configuration
+
+<PageTitle>Controller Settings</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">CONTROL PLANE / SYSTEM</p>
+        <h1>Controller settings</h1>
+        <p class="page-summary">Safe, read-only information about this Control Center host and its current safety boundaries.</p>
+    </div>
+</div>
+
+<section class="settings-grid">
+    <article class="surface-card">
+        <p class="eyebrow">HOST MODE</p>
+        <h2>@(_embeddedHost ? "Embedded desktop" : "Standalone web")</h2>
+        <p>@(_embeddedHost
+            ? "The dashboard is hosted inside the LLM Control Center desktop client."
+            : "The dashboard is running as a standalone web application.")</p>
+    </article>
+    <article class="surface-card">
+        <p class="eyebrow">DASHBOARD LISTENER</p>
+        <h2>@(_embeddedHost ? "Loopback only" : "Host configured")</h2>
+        <p>@(_embeddedHost
+            ? "The embedded dashboard is configured to bind to 127.0.0.1."
+            : "The standalone listener follows the host's configured URL and binding.") This view does not expose connection secrets.</p>
+    </article>
+    <article class="surface-card">
+        <p class="eyebrow">GAME COMMANDS</p>
+        <h2>@(_autonomousGameplayEnabled ? "Development option enabled" : "Autonomous gameplay disabled")</h2>
+        <p>Viewing this dashboard does not connect to TradeWars or issue a command. Gameplay execution status is shown without exposing credentials.</p>
+    </article>
+    <article class="surface-card">
+        <p class="eyebrow">SESSION OWNERSHIP</p>
+        <h2>@(_embeddedHost ? "Single desktop session" : "No native terminal")</h2>
+        <p>@(_embeddedHost
+            ? "The native MTC terminal is currently attached to Meridian. Per-agent independent live sessions are not yet implemented."
+            : "The standalone web host does not own a native MTC terminal session.")</p>
+    </article>
+</section>
+
+<section class="notice-card">
+    <span class="notice-mark" aria-hidden="true">i</span>
+    <div>
+        <h2>Configuration changes</h2>
+        <p>
+            Secrets, listener endpoints, and runtime execution settings are intentionally read-only here.
+            Change them through the host's secured configuration and deployment workflow.
+        </p>
+    </div>
+</section>
+
+@code {
+    private bool _embeddedHost;
+    private bool _autonomousGameplayEnabled;
+
+    protected override void OnInitialized()
+    {
+        _embeddedHost = string.Equals(
+            Configuration["LLMControlCenter:EmbeddedHost"],
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        _autonomousGameplayEnabled = string.Equals(
+            Configuration["AutonomousGameplay:Enabled"],
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+    }
+}

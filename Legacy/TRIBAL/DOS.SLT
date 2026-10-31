@@ -1,0 +1,24 @@
+// dos.slc
+// Returns to the Telix directory after shelling to DOS.
+//
+// If the capture file is open it will be closed during the shell, then returned
+// to its original state after returning to Telix.
+
+main()
+{
+    str cap[64];
+    int flag;
+
+    cap = _capture_fname;
+    if((flag = capture_stat())>0)
+        capture("*close*");
+    dos("",0);
+  //newdir( _telix_dir );
+    if(flag == 1)
+        capture(cap);
+    else if (flag == 2) {
+        capture(cap);
+        capture("*pause*");
+    }
+    _scr_chk_key = 1;
+}

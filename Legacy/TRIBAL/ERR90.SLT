@@ -1,0 +1,80 @@
+main()
+{
+    _scr_chk_key=0;
+    write_file_entry_name();
+    capture("*close*");
+    _scr_chk_key=1;
+    exittelix(90,0);
+}
+
+fputsi( int integer, int fhandle )//write an integer to a file
+{
+    str buf[20];
+    itos(integer,buf);
+    inschrs("^M^J",buf,0,2);
+    fputs(buf,fhandle);
+}
+///////////////////////////////////////////////////////////////////////////////
+write_file_entry_name()
+{
+    str fname[64],buf[80];
+    int f;
+
+    if(!getenv("temp",fname)) {
+        soft_wind("^"Temp^" Environment variable not found!",30);
+        return 0;
+    }
+    append_backslash(fname);
+    strcat(fname,"Entrynam.txt");
+    //status_wind( fname, 20 );
+    if(filefind(fname,0,buf))
+        return 1;
+    if((f=fopen(fname,"w"))==0) {
+        fclearerr(f);
+        buf="Open Error ";
+        strcat(buf,fname);
+        soft_wind(buf,40);
+        return 0;
+    }
+    fputs(_entry_name   ,f);
+    fputsi(get_baud()   ,f);
+    fputsi(get_parity() ,f);
+    fputsi(get_datab()  ,f);
+    fputsi(get_stopb()  ,f);
+    fputs("^M^J_entry_name, baud, parity, data bits, stop bits,",f);
+    fputs("^M^Jcomm params used by (Tlxtwase) Tlxtw Twassist Exit Routine, If this is not",f);
+    fputs("^M^Jthe name of the bbs currently logged onto, delete this file and run Bbsname",f);
+    fputs("^M^J(Ctrl-B).",f);
+    fclose(f);
+    return 1;
+}
+//////////////////////////////////////////////////////////////////////////////
+//                         Soft Wind
+soft_wind(str message, int duration)
+{
+    int old_chk_key;
+    old_chk_key = _scr_chk_key;
+    _scr_chk_key = 0;
+    int l, h, x, y, key = 0, ts;
+    cursor_onoff(0);
+    x=getx(); y=gety();
+    l = strlen(message)/2;
+    h = vsavearea(37-l, 10, 43+l, 14);
+    box(37-l, 10, 43+l, 14, 3, 0, 5 );
+    pstraxy(message, 40-l  , 12, 11 );
+    ts = timer_start(duration);
+    while( !key && !time_up(ts)) key=inkey();
+    vrstrarea(h);
+    cursor_onoff(1);
+    gotoxy(x,y);
+    timer_free(ts);
+    _scr_chk_key = old_chk_key;
+    return key;
+}
+///////////////////////////////////////////////////////////////////////////////
+append_backslash( str string )
+{
+    if(subchr(string,strlen(string)-1)!='\')strcat(string,"\");
+    return string;
+}
+/////////////////////////////////////////////////////////////////////////////

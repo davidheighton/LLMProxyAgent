@@ -1,0 +1,1440 @@
+{
+  "campaign": "TradeWars autonomous reliability improvement",
+  "iteration_limit": 20,
+  "updated_through_iteration": 30,
+  "defects": [
+    {
+      "id": "DEFECT-0001",
+      "title": "Fixed CIM paths depend on the TWX interpreter base directory",
+      "description": "Loading a nested TWX script can change the interpreter base directory, causing fixed CIM script references to resolve under the wrong directory.",
+      "first_discovered_iteration": 1,
+      "last_seen_iteration": 1,
+      "status": "VALIDATED",
+      "severity": "HIGH",
+      "root_cause": "The MTC RPC boundary passed relative paths whose resolution depended on mutable TWX interpreter state.",
+      "affected_components": [
+        "LLMControlCenter RPC integration",
+        "MTC fixed CIM scripts"
+      ],
+      "fixes_applied": [
+        "Resolve the fixed CIM names against the configured scripts root utilities directory.",
+        "Report a clear error if a required fixed script is missing."
+      ],
+      "validation_results": [
+        "MTC RPC safety harness passed.",
+        "MTC build succeeded with 0 warnings and 0 errors.",
+        "Runtime log confirmed both CIM scripts loaded and compiled from the configured utilities directory."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": [
+        "The test fixture was updated to provide quick-status evidence required by ship-status verification."
+      ]
+    },
+    {
+      "id": "DEFECT-0002",
+      "title": "Reflex confidence scale is unspecified",
+      "description": "The Reflex model returned confidence values above 1, including percentage-style values, which the deterministic assessment gate rejects.",
+      "first_discovered_iteration": 1,
+      "last_seen_iteration": 1,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "The prompt and structured-output schema declared confidence as a number without specifying the gate's inclusive 0-to-1 fraction range.",
+      "affected_components": [
+        "Ollama Reflex reasoning provider",
+        "Reflex assessment gate",
+        "Reactive LLM interaction history"
+      ],
+      "fixes_applied": [
+        "Require a decimal fraction from 0 to 1 in the Reflex system prompt.",
+        "Add JSON Schema minimum 0 and maximum 1.",
+        "Validate the assessment before marking the LLM interaction successful.",
+        "Return a specific confidence-range validation error."
+      ],
+      "validation_results": [
+        "Regression tests cover schema bounds, accepted fractional confidence, out-of-range rejection, and failed-history recording.",
+        "Full TradeWars regression suite passed: 230 passed, 0 failed.",
+        "Live-model verification is pending in iteration 2."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": [
+        "Eight of the 14 captured Reflex responses had confidence outside [0,1]."
+      ]
+    },
+    {
+      "id": "DEFECT-0003",
+      "title": "Strategic objective fields conflict with selected decision",
+      "description": "A Strategic Review selected continue while also returning selectedProposalId and newObjective fields, causing service validation to reject the assessment.",
+      "first_discovered_iteration": 1,
+      "last_seen_iteration": 1,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "The prompt said to use null where appropriate, and the schema allowed objective fields independently of the chosen decision.",
+      "affected_components": [
+        "Ollama Strategic reasoning provider",
+        "Strategic review validation",
+        "LLM interaction history"
+      ],
+      "fixes_applied": [
+        "Specify mutually exclusive objective-field requirements for all decisions.",
+        "Validate objective fields in the provider before marking an interaction successful.",
+        "Reject selectedProposalId when the decision is proposeAndSelect."
+      ],
+      "validation_results": [
+        "Regression tests assert prompt rules, reject inconsistent provider output, and verify service fallback behavior.",
+        "Full TradeWars regression suite passed: 230 passed, 0 failed.",
+        "Live-model verification is pending in iteration 2."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": []
+    },
+    {
+      "id": "DEFECT-0004",
+      "title": "Strategic prompt confuses Dock Shopper with port trading",
+      "description": "The Strategic Review recommended starDockShopper for buying Organics, although that script is for StarDock hardware purchases and upgrades.",
+      "first_discovered_iteration": 1,
+      "last_seen_iteration": 1,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "The prompt listed approved script names but did not define their distinct operational responsibilities.",
+      "affected_components": [
+        "Ollama Strategic reasoning provider",
+        "Early-game strategy prompt"
+      ],
+      "fixes_applied": [
+        "Restrict starDockShopper to verified StarDock hardware purchases and upgrades.",
+        "Identify worldTrade as the port-pair trading script, gated by verified Holo Scanner ownership at StarDock."
+      ],
+      "validation_results": [
+        "Prompt regression assertion passes.",
+        "Live-model verification is pending in iteration 2."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0003"
+      ],
+      "notes": []
+    },
+    {
+      "id": "DEFECT-0005",
+      "title": "Pilot remains idle without a recognized authenticated prompt",
+      "description": "The Pilot made no LLM calls during the 15-minute run. After an automatic transport reconnect, the worker waited for a recognized login prompt instead of returning to a fresh authenticated Command prompt.",
+      "first_discovered_iteration": 1,
+      "last_seen_iteration": 15,
+      "status": "VALIDATED",
+      "severity": "HIGH",
+      "root_cause": "The login prompt decoder did not recognize the server's 'Do you wish to clear some avoids? (Y/N) [N]' prompt. The existing-account login worker safely ignored the unclassified surface and therefore never sent the default-preserving N response or reached authenticated Command, where the normal runtime watchdog becomes active.",
+      "affected_components": [
+        "MTC auto-reconnect",
+        "Autonomous login state",
+        "Terminal prompt decoder",
+        "Autonomous Pilot worker"
+      ],
+      "fixes_applied": [
+        "Classify the clear-avoids prompt as ClearAvoids and answer N during login so existing sector avoids are preserved.",
+        "Add decoder and login-worker regression coverage for the exact prompt and response."
+      ],
+      "validation_results": [
+        "MTC process remained running for the full 15-minute window.",
+        "Transport reconnect completed in approximately 5.011 seconds.",
+        "The worker did not resume Pilot activity before the end of either 15-minute run.",
+        "Iteration 2 ended connected, but the worker still had no verified game situation or authenticated Command prompt.",
+        "Iteration 3 remained connected for the full 900-second window but again reported an unclassified login surface and no authenticated Command prompt.",
+        "Iteration 4 ran with the rebuilt bare-name prompt parser and still reported an unclassified surface; the exact text remains unavailable, so the source parser gap is not a confirmed live cause.",
+        "Iteration 5 reported a nonempty unclassified surface with safe text length 44. Authentication still did not complete; the exact prompt and root cause remain unknown.",
+        "Iteration 6 remained connected for the exact 900-second window without authenticated Command readiness. Safe aggregation found 27 prompt events (17 unclassified) and five length-44 surfaces with two distinct fingerprints. Seven client-input events occurred in the first five seconds, with none later; no LLM calls were recorded.",
+        "Iteration 7 remained connected for the exact 900-second window without authenticated Command readiness. Safe aggregation found 26 prompt events (17 unclassified) and five length-44 surfaces with two distinct fingerprints, matching both fingerprints from iteration 6. Six client-input events occurred in the first five seconds, with none later; no LLM calls were recorded.",
+        "Iteration 8 remained connected for the exact 900-second window without authenticated Command readiness. Safe aggregation found 31 prompt events, including five length-44 surfaces. Eight client-input events occurred between 05:26:24 and 05:26:29, with none later. The dashboard continued to report an unclassified login surface; the exact prompt and root cause remain unknown.",
+        "Iteration 9 remained connected for the exact 900-second window without authenticated Command readiness. Safe aggregation found 35 prompt events, including five length-44 surfaces. Eight client-input events occurred between 05:48:19 and 05:48:25, with none later. Pilot model telemetry and all three role-history pages showed zero requests or interactions; the exact prompt and root cause remain unknown.",
+        "Iteration 10 remained connected for the exact 900-second window without authenticated Command readiness. Safe aggregation found 31 prompt events, including five length-44 surfaces. Eight client-input events occurred between 06:06:41 and 06:06:46, with none later. Pilot model telemetry and all three role-history pages again showed zero requests or interactions; the exact prompt and root cause remain unknown.",
+        "Iteration 11 remained connected for the exact 900-second window without authenticated Command readiness. Safe aggregation found 33 prompt events, including five length-44 surfaces. Eight client-input events occurred between 06:24:36 and 06:24:41, with none later. Pilot model telemetry and all three role-history pages again showed zero requests or interactions; the exact prompt and root cause remain unknown.",
+        "Iteration 12 remained connected for the exact 900-second window without authenticated Command readiness. Safe aggregation found 30 prompt events, including five length-44 surfaces. Eight client-input events occurred between 06:42:10 and 06:42:15, with none later. Pilot model telemetry and all three role-history pages again showed zero requests or interactions; the exact prompt and root cause remain unknown.",
+        "Iteration 13 remained connected for the exact 900-second window without authenticated Command readiness. Safe aggregation found 31 prompt events, including five length-44 surfaces. Eight client-input events occurred between 06:59:41 and 06:59:46, with none later. Pilot model telemetry and all three role-history pages again showed zero requests or interactions; the exact prompt and root cause remain unknown.",
+        "Iteration 14 remained connected and running for the exact 900-second window without authenticated Command readiness. The dashboard continued to report an unclassified length-44 login surface. Pilot, Strategic Review, and Reflex histories each showed zero interactions; no safe prompt or client-input event counts were available from the dashboard, and the exact prompt and root cause remain unknown.",
+        "Iteration 15 operator identified the exact unclassified prompt: 'Do you wish to clear some avoids? (Y/N) [N]'. The decoder did not recognize it and the login worker ignored it. Added ClearAvoids classification and an explicit N response; focused login tests passed (23/23), the full suite passed (234/234) on rerun, and the post-fix live monitor reached authenticated Command at sector 99."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0008"
+      ],
+      "notes": [
+        "Capture prompt text and authentication state before introducing any automated response.",
+        "Iterations 2 and 3 added/verified safe classified-prompt reporting; the exact server prompt is still unavailable in the captured logs.",
+        "No scanner purchase or WorldTrade start was verified.",
+        "Iteration 5 remained connected for the full window but again did not reach authenticated Command readiness. The agent was stopped at post-window inspection.",
+        "MTC may forward an unclassified isPrompt line to the worker, which safely ignores unknown surfaces. Iterations 6 through 13 recorded initial client-input events only, followed by no later inputs. The same two distinct safe length-44 fingerprints recurred in iterations 6 and 7; iterations 8 through 13 again had five length-44 surfaces. Iteration 14 continued to report a length-44 surface, but event counts were not available. Iteration 15 identified the prompt as the clear-avoids question; the login sequence now answers N and reached authenticated Command in the rebuilt live session."
+      ]
+    },
+    {
+      "id": "DEFECT-0006",
+      "title": "Dashboard model telemetry disagrees with LLM history",
+      "description": "The model telemetry panel showed zero requests and qwen3:1.7b while the Strategic Review transcript identified qwen3:8b.",
+      "first_discovered_iteration": 1,
+      "last_seen_iteration": 4,
+      "status": "VALIDATED",
+      "severity": "LOW",
+      "root_cause": "The monitor's provider counters are Pilot-only, while LLM history includes Pilot, Strategic Review, and Reflex interactions. The generic panel label implied a shared scope.",
+      "affected_components": [
+        "Agent Monitor model telemetry",
+        "LLM interaction history",
+        "Provider usage counters"
+      ],
+      "fixes_applied": [
+        "Rename the monitor tab and telemetry heading to identify the Pilot-only scope.",
+        "Document that Reflex and Strategic Review interaction counts are shown in LLM history."
+      ],
+      "validation_results": [
+        "Iteration 2 confirmed Pilot completed/failed requests were 0/0 and all three LLM history pages had 0 interactions.",
+        "Updated dashboard and README source; build succeeded with 0 warnings and 0 errors.",
+        "Iteration 3 live dashboard showed the Pilot model label and separate role-specific history tabs."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": []
+    },
+    {
+      "id": "DEFECT-0007",
+      "title": "LiteLLM health status conflicts with local readiness",
+      "description": "Docker reported LiteLLM unhealthy while its local liveness and readiness endpoints returned HTTP 200.",
+      "first_discovered_iteration": 1,
+      "last_seen_iteration": 2,
+      "status": "VALIDATED",
+      "severity": "LOW",
+      "root_cause": "The healthcheck invoked curl, which is not installed in the python:3.9-slim LiteLLM image; the application readiness endpoint itself was healthy.",
+      "affected_components": [
+        "LiteLLM container health check",
+        "Local readiness and liveness endpoints"
+      ],
+      "fixes_applied": [
+        "Replace the missing curl healthcheck dependency with Python's built-in urllib client.",
+        "Recreate the LiteLLM container after iteration 2."
+      ],
+      "validation_results": [
+        "Compose configuration validated and the in-container HTTP readiness probe returned 200.",
+        "After the iteration 2 window, the recreated container reported healthy and the readiness endpoint returned 200."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": [
+        "Compose emitted an obsolete version-field warning and reported the existing openwebui container as an orphan; neither was removed."
+      ]
+    },
+    {
+      "id": "DEFECT-0008",
+      "title": "Authenticated movement prompt is omitted from login recovery",
+      "description": "The existing-account login session treated the recognized MoveSector prompt as ignored, unlike other authenticated gameplay prompts, leaving the worker waiting instead of attaching to the live game session.",
+      "first_discovered_iteration": 2,
+      "last_seen_iteration": 2,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "MoveSector was missing from TradeWarsLoginPromptSequence's authenticated-command allowlist even though it is a gameplay-only prompt.",
+      "affected_components": [
+        "TradeWars existing-account login sequence",
+        "Autonomous Pilot worker readiness"
+      ],
+      "fixes_applied": [
+        "Accept MoveSector as evidence of an authenticated session when authenticated-command attachment is enabled.",
+        "Include only a classified prompt surface or the word unclassified in the worker's login-wait activity; never expose raw terminal text."
+      ],
+      "validation_results": [
+        "Focused regression tests passed: authenticated MoveSector attachment and safe login-wait diagnostics.",
+        "Full TradeWars regression suite passed: 232 passed, 0 failed.",
+        "Iteration 3 ran the rebuilt binary, but no classified MoveSector prompt occurred; this branch remains unverified live."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0005"
+      ],
+      "notes": [
+        "The exact prompt observed by the iteration 2 binary remains unknown; this fix closes a confirmed allowlist omission but does not yet prove it caused the live stall."
+      ]
+    },
+    {
+      "id": "DEFECT-0009",
+      "title": "Bare BBS name prompt is not recognized",
+      "description": "The existing login scripts accept the BBS name prompt 'Please enter your name' without a parenthetical suffix, but the telemetry decoder required the suffix and classified the bare form as unknown.",
+      "first_discovered_iteration": 3,
+      "last_seen_iteration": 3,
+      "status": "FIXED",
+      "severity": "HIGH",
+      "root_cause": "The NamePrompt regular expression required a parenthesized suffix not present in the bare prompt used by the existing login scripts.",
+      "affected_components": [
+        "TradeWars telnet telemetry decoder",
+        "Autonomous login prompt sequence"
+      ],
+      "fixes_applied": [
+        "Recognize the bare 'Please enter your name' form as a BBS name prompt.",
+        "Add regression coverage for the unparenthesized form."
+      ],
+      "validation_results": [
+        "Focused autonomous game login tests passed: 17 passed, 0 failed.",
+        "Full TradeWars regression suite passed: 233 passed, 0 failed.",
+        "MTC solution build succeeded with 0 warnings and 0 errors.",
+        "Iteration 4 ran the rebuilt binary but still reported an unclassified surface. Since the exact text was not retained, it is unknown whether the bare-name pattern was exercised; this is not a verified cause or live remedy.",
+        "Iteration 5 reported an unclassified surface of length 44, but raw text remained omitted; this does not establish whether the bare-name pattern was exercised."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0005"
+      ],
+      "notes": [
+        "The mismatch is confirmed from existing login-script behavior and decoder coverage; it is a plausible cause of iteration 3's unclassified status, not a confirmed match to the exact live prompt."
+      ]
+    },
+    {
+      "id": "DEFECT-0010",
+      "title": "Unclassified login diagnostics omit prompt-text presence",
+      "description": "The worker reports only 'unclassified' when it cannot classify a terminal prompt, so operators cannot tell whether the event carried no prompt text or carried nonempty text that matched no known surface.",
+      "first_discovered_iteration": 4,
+      "last_seen_iteration": 5,
+      "status": "VALIDATED",
+      "severity": "MEDIUM",
+      "root_cause": "The login-wait activity intentionally omitted raw terminal text but also omitted safe metadata that could distinguish empty data from an unrecognized surface.",
+      "affected_components": [
+        "Autonomous Pilot login diagnostics",
+        "MTC dashboard activity",
+        "MTC worker logging"
+      ],
+      "fixes_applied": [
+        "Include only the unclassified prompt text length in dashboard activity; never include the raw text.",
+        "Log the first unclassified surface per connection with text length, explicitly stating that no input was sent and raw text was omitted."
+      ],
+      "validation_results": [
+        "Regression coverage verifies nonempty unclassified prompt text is not exposed and its length is reported.",
+        "Focused worker and login tests passed: 67 passed, 0 failed.",
+        "Full TradeWars regression suite passed: 233 passed, 0 failed.",
+        "MTC solution build succeeded with 0 warnings and 0 errors.",
+        "Iteration 5 dashboard live-validated that an unclassified nonempty prompt is represented by safe text length 44 while the raw terminal text remains omitted."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0005",
+        "DEFECT-0009"
+      ],
+      "notes": [
+        "The first unclassified observation is logged once per connection to avoid repetitive warning spam.",
+        "Iteration 5 confirmed the dashboard diagnostic live; the actual login prompt remains unknown."
+      ]
+    },
+    {
+      "id": "DEFECT-0011",
+      "title": "Unhandled WebView2 focus exception terminates MTC",
+      "description": "MTC terminated during the timed run after an unhandled ArgumentException was thrown while the WebView2 control received focus during window activation.",
+      "first_discovered_iteration": 15,
+      "last_seen_iteration": 15,
+      "status": "INVESTIGATING",
+      "severity": "HIGH",
+      "root_cause": "The .NET Runtime event shows System.ArgumentException from ICoreWebView2Controller.MoveFocus, through Avalonia.Controls.Win.WebView2.WebView2BaseAdapter.Focus and NativeWebView.OnGotFocus during WindowBase.HandleActivated. The exact invalid focus state or triggering condition is unconfirmed.",
+      "affected_components": [
+        "MTC main window activation",
+        "Avalonia WebView2 focus handling",
+        "MTC process lifecycle"
+      ],
+      "fixes_applied": [],
+      "validation_results": [
+        "Windows .NET Runtime event 1026 recorded MTC.exe termination at 2026-10-29 07:44:21 with the WebView2 MoveFocus stack trace.",
+        "A new MTC process appeared at 07:46:39 and the terminal was connected at the end of the timed window; the restart mechanism is not confirmed."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": [
+        "Do not suppress the exception with a broad handler; determine the triggering focus state and apply a narrow fix."
+      ]
+    },
+    {
+      "id": "DEFECT-0012",
+      "title": "Cross-role history retention hides Pilot interactions",
+      "description": "High-volume Reflex activity could crowd Pilot interactions out of the agent-wide history limit, and the dashboard filtered a mixed-role page after retrieval, leaving the Pilot tab empty despite nonzero Pilot request counters.",
+      "first_discovered_iteration": 16,
+      "last_seen_iteration": 16,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "The store retained a fixed number of interactions across all roles per agent, while the dashboard fetched only a limited mixed-role page before filtering by selected role.",
+      "affected_components": [
+        "LLM interaction history store",
+        "Agent Monitor history tabs"
+      ],
+      "fixes_applied": [
+        "Retain up to 100 interactions independently for each role.",
+        "Query each role's history independently and combine the three supported histories for tab counts and selection."
+      ],
+      "validation_results": [
+        "Role-specific retention and overflow regression tests pass.",
+        "Full TradeWars test suite passed: 236 passed, 0 failed.",
+        "Full solution build succeeded with 0 warnings and 0 errors.",
+        "Live visibility under high Reflex volume remains to be verified in iteration 17."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": [
+        "The iteration-16 Pilot counters showed 2 completed and 3 failed requests while the history tab showed zero entries."
+      ]
+    },
+    {
+      "id": "DEFECT-0013",
+      "title": "Game-event queue saturation drops actionable prompts",
+      "description": "The bounded game-event queue reached capacity during the autonomous run, and prompt events were among the events dropped while the single consumer was busy.",
+      "first_discovered_iteration": 16,
+      "last_seen_iteration": 16,
+      "status": "FIXED",
+      "severity": "HIGH",
+      "root_cause": "The bounded channel rejected incoming events when full while model/action work occupied its single consumer; synchronized-status events that the worker ignored also consumed queue capacity.",
+      "affected_components": [
+        "Proxy game-event hub",
+        "Autonomous test worker",
+        "MTC game-agent event integration"
+      ],
+      "fixes_applied": [
+        "Evict older queued events and count evictions when the bounded queue is full.",
+        "Stop publishing synchronized ship-status events to a worker path that ignores them.",
+        "Ignore server prompts older than 45 seconds so stale queued prompts are not acted on."
+      ],
+      "validation_results": [
+        "Stale queued-prompt regression coverage passes.",
+        "Full TradeWars test suite passed: 236 passed, 0 failed.",
+        "Full solution build succeeded with 0 warnings and 0 errors.",
+        "The iteration-16 live run used the pre-fix runtime; queue-drop reduction remains to be verified in iteration 17."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0014"
+      ],
+      "notes": [
+        "The in-window debug log counted 1,460 dropped events, including 1,031 ServerPrompt events."
+      ]
+    },
+    {
+      "id": "DEFECT-0014",
+      "title": "Reactive ship snapshots accumulate stale queued work",
+      "description": "Fire-and-forget submission of every changed ship snapshot allowed stale Reflex observations to accumulate behind active model work until the reactive queue reached capacity.",
+      "first_discovered_iteration": 16,
+      "last_seen_iteration": 16,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "Every changed snapshot was submitted independently to a sequential runtime queue with capacity 64, without replacing superseded pending state.",
+      "affected_components": [
+        "Dashboard reactive game-agent integration",
+        "Reactive LLM submission queue"
+      ],
+      "fixes_applied": [
+        "Serialize reactive observation submissions and coalesce pending snapshots to the latest state.",
+        "Log coalescing periodically so sustained input pressure remains observable."
+      ],
+      "validation_results": [
+        "Full TradeWars test suite passed: 236 passed, 0 failed.",
+        "Full solution build succeeded with 0 warnings and 0 errors.",
+        "Queue depth and coalescing behavior require live verification in iteration 17."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0013"
+      ],
+      "notes": [
+        "Iteration 16 recorded a reactive queue depth of 64/64 and 148 processed Reflex observations."
+      ]
+    },
+    {
+      "id": "DEFECT-0015",
+      "title": "Dock Shopper capability omits Density Scanner support",
+      "description": "The agent-facing Dock Shopper capability description omitted Density Scanner support even though the script supports that scanner purchase path.",
+      "first_discovered_iteration": 16,
+      "last_seen_iteration": 16,
+      "status": "FIXED",
+      "severity": "LOW",
+      "root_cause": "The capability description did not reflect the script's supported Density Scanner purchase behavior.",
+      "affected_components": [
+        "Dashboard agent capability description",
+        "Dock Shopper selection guidance"
+      ],
+      "fixes_applied": [
+        "Update Dock Shopper's capability description to state support for Density or Holo Scanner purchases."
+      ],
+      "validation_results": [
+        "Full TradeWars test suite passed: 236 passed, 0 failed.",
+        "Full solution build succeeded with 0 warnings and 0 errors.",
+        "Live selection and purchase behavior remains to be verified."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": [
+        "Density Scanner alone satisfies the WorldTrade scanner prerequisite. Holo Scanner also provides density scans and remains optional."
+      ]
+    },
+    {
+      "id": "DEFECT-0016",
+      "title": "Stale queued prompt leaves authenticated worker idle",
+      "description": "A stale ServerPrompt could leave the authenticated worker idle while presence heartbeats continued. Iteration 27 traced the recurrence to empty heartbeat prompts being filled from the terminal buffer and heartbeat timestamps being mistaken for prompt-observation timestamps.",
+      "first_discovered_iteration": 17,
+      "last_seen_iteration": 27,
+      "status": "FIXED",
+      "severity": "HIGH",
+      "root_cause": "GameAgentRuntime.NormalizeEvent synthesized an empty heartbeat prompt from the terminal buffer. The worker also fell back to the heartbeat event timestamp when promptObservedAt was absent, and MTC prompt waiters compared heartbeat timestamps instead of the original observation time. A stale screen prompt could therefore appear fresh, while a genuine current prompt could be rejected as old.",
+      "affected_components": [
+        "AutonomousTestWorker stale-prompt recovery",
+        "MTC game-agent prompt telemetry",
+        "MTC dashboard prompt publication",
+        "MtcGameCommandSender prompt waiters"
+      ],
+      "fixes_applied": [
+        "Cache the latest prompt surface in MTC and clear it on client input, non-prompt server output, connect, and disconnect.",
+        "Include the still-current prompt surface in presence heartbeats.",
+        "Do not synthesize heartbeat prompt surfaces from terminal-buffer contents; carry promptObservedAt and an explicit promptIsCurrent confirmation.",
+        "Re-queue heartbeat prompts only when their original observation is fresh or MTC explicitly confirms the cached prompt is still current.",
+        "Normalize prompt timestamps before MTC command-sender freshness and in-flight prompt checks."
+      ],
+      "validation_results": [
+        "Added a regression test that proves a stale queued Command prompt is recovered from a fresh prompt-bearing heartbeat.",
+        "Focused worker and Ollama provider tests passed: 74 passed, 0 failed.",
+        "Full Release solution build succeeded with 0 warnings and 0 errors.",
+        "Full TradeWars test suite passed: 237 passed, 0 failed, 0 skipped.",
+        "Live runtime verification is pending; iteration 17 used the pre-repair runtime.",
+        "Iteration 24 reported an ignored stale queued game prompt; the snapshot remained stale and Pilot idle through the observation period. The heartbeat-to-requeue transition was not captured.",
+        "Iteration 25 again ignored a stale queued prompt after reconnect; the worker was stopped after stale state returned. No fresh heartbeat-to-requeue transition was captured.",
+        "Iteration 27 reproduced the stale-prompt stall at a port quantity prompt. The source trace confirmed heartbeat surface synthesis and timestamp fallback as the race.",
+        "Added regressions proving a heartbeat without prompt-observation metadata cannot recover a stale prompt, while an explicitly current heartbeat can. All 64 AutonomousTestWorkerTests passed; Release win-x64 MTC build passed with 0 warnings and 0 errors.",
+        "The rebuilt MTC reconnected and refreshed ship state at sector 206, but no post-rebuild trade or scanner action was verified; live port-prompt recovery remains pending."
+      ],
+      "regression_count": 3,
+      "related_defects": [
+        "DEFECT-0005",
+        "DEFECT-0013"
+      ],
+      "notes": [
+        "The stale-prompt guard remains fail-closed; old prompt payloads are never directly acted upon. Confirm the repaired heartbeat-to-prompt recovery with a verified live transaction before runtime validation."
+      ]
+    },
+    {
+      "id": "DEFECT-0017",
+      "title": "Monitor presents a stale ship snapshot as Healthy",
+      "description": "The live monitor continued to label an old GameSituationReport as Healthy after newer ship-status telemetry had arrived, obscuring that the displayed sector and ship state were stale.",
+      "first_discovered_iteration": 17,
+      "last_seen_iteration": 17,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "The worker status store retained its last situation while heartbeat telemetry advanced the overall UpdatedAt timestamp, and the monitor displayed the stored synchronization enum without checking the situation capture time.",
+      "affected_components": [
+        "AutonomousTestWorkerStatusStore situation freshness",
+        "Agent Monitor verified-state panel"
+      ],
+      "fixes_applied": [
+        "Display Stale when the retained situation is older than 30 seconds.",
+        "Warn that stale game state will not be used for autonomous action until fresh state is captured."
+      ],
+      "validation_results": [
+        "Full Release solution build succeeded with 0 warnings and 0 errors.",
+        "Full TradeWars test suite passed: 237 passed, 0 failed, 0 skipped.",
+        "Live dashboard freshness behavior is pending verification."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0016"
+      ],
+      "notes": [
+        "Iteration 17 showed a situation captured around 08:37 while newer synchronized ship-status telemetry arrived around 08:39."
+      ]
+    },
+    {
+      "id": "DEFECT-0018",
+      "title": "WorldTrade eligibility incorrectly requires Holo Scanner",
+      "description": "The Pilot/strategy guidance and deterministic worker treated Holo Scanner as mandatory for WorldTrade even though the user confirmed Density Scanner alone is sufficient and Holo also provides density scans.",
+      "first_discovered_iteration": 18,
+      "last_seen_iteration": 18,
+      "status": "FIXED",
+      "severity": "HIGH",
+      "root_cause": "Scanner capability was modeled as a two-scanner requirement rather than a disjunction; the prompts and worker prerequisite were stricter than the actual game requirement.",
+      "affected_components": [
+        "Ollama Pilot and Strategic prompts",
+        "AutonomousTestWorker scanner/WorldTrade gates",
+        "autonomous-bot knowledge source"
+      ],
+      "fixes_applied": [
+        "Allow verified Density or Holo Scanner ownership for WorldTrade.",
+        "Avoid redundant Density Scanner purchase when Holo is verified.",
+        "Clarify that Holo is optional and supports density scans."
+      ],
+      "validation_results": [
+        "Added regression tests for WorldTrade eligibility with either scanner.",
+        "Focused tests passed: 89 passed, 0 failed.",
+        "Full Release build and test suite passed: 242 passed, 0 failed.",
+        "Live WorldTrade execution remains unverified."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0015"
+      ],
+      "notes": [
+        "Fresh synchronized ownership on the active ship remains required."
+      ]
+    },
+    {
+      "id": "DEFECT-0019",
+      "title": "Port trading is not blocked for Escape Pod or one-hold ships",
+      "description": "The action provider and worker could allow port-trading decisions while the active ship was an Escape Pod or had one or fewer holds, risking non-progressive trade actions after ship loss.",
+      "first_discovered_iteration": 18,
+      "last_seen_iteration": 18,
+      "status": "FIXED",
+      "severity": "HIGH",
+      "root_cause": "No deterministic ship-capacity safety guard was applied before port-trade action validation and execution.",
+      "affected_components": [
+        "OllamaAutonomousTestActionProvider port-trade validation",
+        "AutonomousTestWorker port-trade execution gate"
+      ],
+      "fixes_applied": [
+        "Reject port-trade actions for Escape Pods and ships with one or fewer holds.",
+        "Defer WorldTrade until scanner ownership is verified."
+      ],
+      "validation_results": [
+        "Added provider and worker regression coverage for Escape Pod/one-hold safety.",
+        "Focused tests passed: 89 passed, 0 failed.",
+        "Full Release build and test suite passed: 242 passed, 0 failed.",
+        "Live ship reacquisition and trading remain unverified."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": [
+        "An Escape Pod must reacquire a suitable ship before any port trade or WorldTrade routine."
+      ]
+    },
+    {
+      "id": "DEFECT-0020",
+      "title": "Empty Ollama final content fails the Pilot action",
+      "description": "Empty final-content responses from Qwen3 have recurred despite raising the response budget. Attempt 24-01 first reproduced the issue at 512 tokens; iterations 24 and 25 recorded empty final content at a 2048-token limit.",
+      "first_discovered_iteration": 18,
+      "last_seen_iteration": 25,
+      "status": "REGRESSED",
+      "severity": "HIGH",
+      "root_cause": "Qwen3 consumed the generated-token budget in its thinking channel, leaving final content empty. This first occurred at 512 tokens; iterations 24 and 25 reproduced empty final content after the budget had been raised to 2048. The no-thinking fallback and fail-closed parser did not guarantee a usable structured decision.",
+      "affected_components": [
+        "OllamaAutonomousTestActionProvider",
+        "Qwen Pilot request/response contract"
+      ],
+      "fixes_applied": [
+        "Retry once with Qwen thinking disabled when the first response has empty final content.",
+        "Report safe response metadata without using thinking text as an action.",
+        "Keep structured action parsing fail-closed.",
+        "Raised the Pilot response token budget to 2048."
+      ],
+      "validation_results": [
+        "Added a regression test for the empty-thinking fallback.",
+        "Uncounted attempt 24-01 confirmed a 512-token generation limit exhausted by Qwen3 thinking.",
+        "Updated focused action-provider tests passed: 25 passed, 0 failed; full TradeWars suite passed: 252 passed, 0 failed.",
+        "Release MTC rebuild and live validation of the 2048-token budget remain pending.",
+        "Iteration 24 again exhausted the 2048-token generation budget in the thinking channel and returned empty final content; a separate Pilot response also used a non-movement action with a target sector.",
+        "Iteration 25 recorded an empty response at 11:48 AM with contentLength=0, thinkingLength=9157, doneReason=length, and evalCount=2048; the fallback path completed a later action, but did not prevent the empty first response."
+      ],
+      "regression_count": 3,
+      "related_defects": [],
+      "notes": [
+        "Keep the no-thinking fallback and fail-closed parsing; do not use thinking text as an action. Increasing the token budget alone did not prevent the live failure."
+      ]
+    },
+    {
+      "id": "DEFECT-0021",
+      "title": "LLM prompt and response history is lost when MTC stops",
+      "description": "The archived game event stream does not include LLM prompts or final responses, and the in-memory interaction history was unavailable after MTC stopped, preventing post-run analysis of the empty Pilot response.",
+      "first_discovered_iteration": 18,
+      "last_seen_iteration": 24,
+      "status": "INVESTIGATING",
+      "severity": "MEDIUM",
+      "root_cause": "Interaction history is retained in process memory and no per-run durable export was captured before shutdown.",
+      "affected_components": [
+        "LLM interaction history store",
+        "Agent Monitor history/export workflow",
+        "reliability campaign evidence collection"
+      ],
+      "fixes_applied": [],
+      "validation_results": [
+        "Confirmed the five archived event files contain game events but no durable LLM prompt/reply transcript.",
+        "Uncounted attempt 24-01 captured 74 accessible Pilot interaction-card summaries before restart, but those summaries did not expose prompt bodies or model responses.",
+        "A future live run must export prompts and final responses before MTC stops."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0012"
+      ],
+      "notes": [
+        "Persist or export prompts and user-visible final responses locally; do not treat hidden/internal reasoning as a decision or substitute for structured output."
+      ]
+    },
+    {
+      "id": "DEFECT-0022",
+      "title": "Reflex misclassifies routine ship-state changes as urgent",
+      "description": "Reflex responses repeatedly failed the contract for routine WorldObservationChanged events and used deterministic fallback escalation. Iteration 26 recorded 16 additional fallback assessments after the schema update; the retained event cards expose only a generic validation error, so the exact invalid field is unconfirmed.",
+      "first_discovered_iteration": 20,
+      "last_seen_iteration": 26,
+      "status": "REGRESSED",
+      "severity": "MEDIUM",
+      "root_cause": "The prompt and deterministic assessment gate described the escalation relationship, but the structured schema allowed escalate=false alongside a requestStrategicReview intent. The model repeatedly emitted this invalid combination.",
+      "affected_components": [
+        "Ollama Reflex reasoning prompt",
+        "Reflex assessment gate",
+        "Reactive LLM interaction history"
+      ],
+      "fixes_applied": [
+        "Clarify that WorldObservationChanged and numeric ship-state changes are informational or routine by default.",
+        "Require evidence of immediate threat or time-sensitive danger before using urgent or emergency classifications.",
+        "Add mutually exclusive oneOf schema branches so non-escalated assessments cannot include requestStrategicReview, while escalated assessments must set escalate=true."
+      ],
+      "validation_results": [
+        "Added prompt-contract assertions for routine world observations and numeric state changes.",
+        "Full TradeWars regression suite passed: 250 passed, 0 failed.",
+        "Windows x64 Release build passed with 0 warnings and 0 errors.",
+        "Iteration 21 recorded three repeated non-escalated Strategic Review requests from Reflex; live contract failure reproduced after the prompt clarification.",
+        "Uncounted attempt 24-03 again recorded WorldObservationChanged responses requesting Strategic Review without escalation; deterministic fallback rejected the assessment.",
+        "Clarified that requestStrategicReview is forbidden when escalate=false and for routine/informational non-communication events; the prompt-contract regression passed 1/1.",
+        "Iteration 26 live history again recorded a routine WorldObservationChanged assessment with a review intent and no escalation; deterministic fallback rejected it.",
+        "Added schema-branch regression assertions; all 14 ReactiveIntelligenceTests passed, the full TradeWars suite passed 256/256, and the Release MTC build succeeded with 0 warnings and 0 errors.",
+        "Iteration 26 produced 16 more deterministic Reflex fallbacks while the schema update was deployed. The UI retained only the generic malformed-assessment reason, so the specific invalid field could not be confirmed.",
+        "Added field-specific validation failures and regression tests; focused ReactiveIntelligenceTests passed 16/16. This diagnostic change is not yet deployed to the running MTC process."
+      ],
+      "regression_count": 4,
+      "related_defects": [
+        "DEFECT-0002"
+      ],
+      "notes": [
+        "The deterministic gate remains fail-closed; do not weaken escalation validation. Deploy the field-specific diagnostics, capture the failing gate reason, and verify live Qwen outputs before closing this defect."
+      ]
+    },
+    {
+      "id": "DEFECT-0023",
+      "title": "Autopilot confirmation blocks port-trade recovery",
+      "description": "Port trades repeatedly encounter AutopilotConfirmation while the worker and command sender disagree about the current prompt. In uncounted attempt 24-03, a port trade was interrupted, the worker displayed AutopilotConfirmation and selected DeclineAutopilotEngagement, but it never returned to a verified Command prompt and made no trade progress.",
+      "first_discovered_iteration": 20,
+      "last_seen_iteration": 24,
+      "status": "INVESTIGATING",
+      "severity": "MEDIUM",
+      "root_cause": "The sender correctly fails closed unless a fresh timestamped AutopilotConfirmation is available, and heartbeat prompt metadata now preserves the original observation time. Runtime still stalled after the decline path, so whether the terminal ignored the N input or the server failed to emit a fresh Command prompt remains unconfirmed.",
+      "affected_components": [
+        "MTC server-prompt event capture",
+        "Autonomous worker prompt recovery",
+        "MtcGameCommandSender autopilot safety gate",
+        "FedSpace port-trade operation"
+      ],
+      "fixes_applied": [
+        "Require the latest timestamped server prompt to classify as fresh Command before sending the port menu key.",
+        "Add safety-harness regressions proving AutopilotConfirmation and stale Command prompts send no trade input.",
+        "Carry the original prompt observation timestamp through presence heartbeats and reject heartbeat-copied prompts after the original prompt expires."
+      ],
+      "validation_results": [
+        "Release runtime moved from sector 1 through the FedSpace sweep to sector 10.",
+        "The trade action logged a safe abort after encountering AutopilotConfirmation.",
+        "The command sender refused a later decline when no fresh matching prompt was available.",
+        "Added a fresh timestamped Command-prompt guard before the initial P input and regression tests for AutopilotConfirmation and stale Command state.",
+        "MTC safety harness passed; full TradeWars suite passed 250/250 after an isolated transient SQLite cleanup failure.",
+        "Iteration 22 native haggle diagnostics recorded a successful Equipment transaction after the guard, but the dashboard did not capture a fresh post-trade ship snapshot.",
+        "Heartbeat prompt freshness regressions passed; full TradeWars suite passed 255/255 and the Release win-x64 MTC build succeeded with 0 warnings and 0 errors.",
+        "Uncounted attempt 24-03 remained in sector 805 with 64 credits; AutopilotConfirmation handling did not return to Command, and no movement, trade, scan, or scanner purchase was verified."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0016"
+      ],
+      "notes": [
+        "Keep the fresh-prompt guard fail-closed. Do not send N based on stale cached prompt state. Capture the prompt/event timeline and MTC input acknowledgment to determine why the runtime did not return to Command."
+      ]
+    },
+    {
+      "id": "DEFECT-0024",
+      "title": "Ollama inference requests time out during autonomous review",
+      "description": "Iteration 21 showed one Reflex and one Strategic Review request canceled by the configured 100-second HttpClient timeout. The timeouts delayed autonomous review and recovery.",
+      "first_discovered_iteration": 21,
+      "last_seen_iteration": 21,
+      "status": "INVESTIGATING",
+      "severity": "MEDIUM",
+      "root_cause": "Unconfirmed. The client timeout is confirmed; Ollama service load, model latency, and request queueing have not been distinguished.",
+      "affected_components": [
+        "Ollama qwen3:1.7b Reflex provider",
+        "Ollama qwen3:8b Strategic Review provider",
+        "Autonomous decision and recovery loop"
+      ],
+      "fixes_applied": [],
+      "validation_results": [
+        "Live LLM history recorded two 100-second HttpClient timeout cancellations in iteration 21."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0022"
+      ],
+      "notes": [
+        "Capture service-side latency/queue metrics before changing timeout or retry policy; do not mask inference stalls with unbounded retries."
+      ]
+    },
+    {
+      "id": "DEFECT-0025",
+      "title": "Pilot schema offers Dock Shopper when readiness is false",
+      "description": "During uncounted attempt 24-01, the Pilot repeatedly selected RunStarDockShopper while the ship was in sector 933, not verified StarDock sector 551, and the worker reported missing prerequisites. The deterministic worker rejected the action, so the session made no progress.",
+      "first_discovered_iteration": 24,
+      "last_seen_iteration": 24,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "The structured action schema listed RunStarDockShopper unconditionally; the prompt and downstream validator carried the readiness constraints, but the model could still select the unavailable action.",
+      "affected_components": [
+        "OllamaAutonomousTestActionProvider",
+        "Pilot structured-output action schema"
+      ],
+      "fixes_applied": [
+        "Exclude RunStarDockShopper from the schema unless game actions are enabled, readiness is verified, the action has not already been attempted at this sector, and the shopper stage is inactive."
+      ],
+      "validation_results": [
+        "Added schema assertions for unavailable and verified-ready Dock Shopper states.",
+        "Focused action-provider tests passed: 25 passed, 0 failed; full TradeWars suite passed: 252 passed, 0 failed.",
+        "Live validation remains pending; attempt 24-01 was stopped before any movement, trade, or scan."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0020"
+      ],
+      "notes": [
+        "This was an uncounted stalled attempt, not a productive iteration.",
+        "Keep worker-side prerequisite validation fail-closed even with the dynamic schema."
+      ]
+    },
+    {
+      "id": "DEFECT-0026",
+      "title": "Stale trading objective caused scannerless route oscillation",
+      "description": "While the ship lacked a Density or Holo Scanner, stale/funding trade objectives have repeatedly competed with scanner-first routing. Earlier movement oscillated between sectors 933 and 556; iterations 28 and 29 showed movement between StarDock sector 551 and known high-risk sector 99. Iteration 31 moved from 551 to known sector 172 and returned to 551 after the Pilot incorrectly described its Fuel Ore-selling port as a place to sell cargo. No trade or scanner purchase was verified.",
+      "first_discovered_iteration": 24,
+      "last_seen_iteration": 31,
+      "status": "REGRESSED",
+      "severity": "HIGH",
+      "root_cause": "Persistent map exploration alone is insufficient to make a scannerless route useful or safe, and the Pilot may misread a port's buy/sell profile as a compatible trade. Iteration 31 showed a known safe sector can still create an unproductive 551-to-172-to-551 loop when no verified trade opportunity exists. Earlier live runs also confirmed dangerous movement through sector 99.",
+      "affected_components": [
+        "AutonomousTestWorker scanner-acquisition objective selection",
+        "Verified shortest-hop StarDock movement policy",
+        "Port-trade route selection and scannerless movement safety"
+      ],
+      "fixes_applied": [
+        "Override stale non-FedSpace trading objectives with a scanner-first StarDock objective when scanner absence and StarDock location are verified.",
+        "Constrain movement to the next verified adjacent hop on the known shortest route to StarDock.",
+        "When FedSpace is Complete or Skipped and no Density Scanner is owned, keep scanner acquisition as the objective at StarDock despite a stale trading objective; permit only compatible port-pair trades for funding.",
+        "Before sending a movement command, block scannerless entry outside sectors 1-10 and StarDock unless the target is recorded as explored.",
+        "Block scannerless entry into sector 99 regardless of its persistent Explored flag.",
+        "Filter scannerless adjacent movement candidates to sectors 1-10, StarDock, or already-explored sectors before building the Pilot context; suppress remote port-trade opportunities whose next hop is unsafe, while retaining the final execution guard.",
+        "At StarDock, hold when the scanner is absent, the Dock Shopper is not ready, the ship has at most 1 credit and no cargo, and no verified compatible trade opportunity exists; do not act on a model-invented trade rationale.",
+        "Accept a single-commodity complementary port profile and search for fresh directed trade pairs up to three hops apart outside FedSpace, while retaining scannerless movement guards."
+      ],
+      "validation_results": [
+        "Added RoutesScannerlessShipTowardStarDockDespiteStaleTradingObjective regression coverage.",
+        "Focused regression passed; full TradeWars suite passed 254/254 with serialized xUnit execution, then 255/255 after prompt-freshness changes.",
+        "Live runtime moved from sector 933 to 805, breaking the previously observed 933/556 oscillation; StarDock arrival and scanner acquisition were not verified.",
+        "Added KeepsScannerAcquisitionObjectiveAtStarDockDespiteStaleTradingObjective coverage; both scanner-routing tests passed and the full TradeWars suite passed 256/256.",
+        "Iteration 25's updated Release binary reached known StarDock sector 551 from sector 172. It later proposed returning to the known port in sector 172 to fund the scanner, but no fresh post-move state, trade, or scanner purchase was verified.",
+        "Iteration 28 loaded the updated Release build and recorded verified sector snapshots at 551, 99, and 551 while the ship had 1 credit and no scanner. The session was stopped before the 15-minute window to avoid further unscanned movement into known dangerous sector 99. No trade or scanner purchase was verified.",
+        "Uncounted attempt 29: the Release runtime selected sector 172, which the MTC map identified as uncharted. With no verified scanner, the worker reported that movement was blocked; the verified sector remained 551 and no trade, scan, or scanner purchase occurred. Focused AutonomousTestWorkerTests passed 65/65 and the Release win-x64 build succeeded with 0 warnings and 0 errors.",
+        "Iteration 29: after a successful port/warp CIM refresh, the live monitor recorded sectors 551, 99, and 551. Meridian was stopped immediately after the high-risk sector appeared. Added an unconditional scannerless sector-99 block and a regression test; all 67 AutonomousTestWorkerTests passed. The MTC Release build succeeded and was subsequently live-restarted.",
+        "Iteration 30: the rebuilt runtime selected a scanner-funding target and recorded movement through sector 206, then failed on an echoed MoveSector prompt. Added a sender regression fix and harness coverage. In a separate uncounted restart, the Pilot proposed unexplored sector 172 without a verified scanner; the worker blocked movement and the ship remained at StarDock 551. A subsequent source repair filters unsafe scannerless routes before Pilot selection; all 68 AutonomousTestWorkerTests passed.",
+        "Iteration 31: the published runtime moved 551 to 172 and back to 551 without trading; the Pilot misread the known sector's Fuel Ore-selling port. A later CIM refresh completed, but the read-only Pair Port Trade plan still reported no complementary pair. Added a StarDock hold for the verified no-funds/no-cargo/no-scanner state. All 69 AutonomousTestWorkerTests passed; the published runtime then recorded a hold at StarDock 551. Scanner purchase and WorldTrade remain outstanding.",
+        "Uncounted source/test follow-up: the macro rejected a valid one-product profile and the general runtime provider searched only direct seller-to-buyer warps. Updated both; all 16 MacroExecutionTests passed and the MTC RPC safety harness passed, including a fresh three-hop non-FedSpace pair. The active MTC still has the old loaded code, so live funding behavior and scanner acquisition remain unverified."
+      ],
+      "regression_count": 3,
+      "related_defects": [
+        "DEFECT-0025"
+      ],
+      "notes": [
+        "Keep this defect REGRESSED until the connected runtime blocks sector 99 without a verified scanner and the objective produces a safe funding route and scanner purchase. The uncounted follow-up blocked a proposed scannerless move to unexplored sector 172, but no safe funding route was selected.",
+        "The planner now hides unsafe scannerless routes from the Pilot as well as blocking execution. A live StarDock hold was observed for the one-credit/no-cargo state, but keep the broader defect REGRESSED until scanner acquisition succeeds and sector 99 is verified blocked.",
+        "Correlate the funding objective, selected adjacent target, MTC command submission/acknowledgment, and resulting sector snapshot before changing route arbitration.",
+        "Do not treat an explored sector as a trade opportunity; require provider-verified port compatibility and adequate ship state before leaving StarDock.",
+        "The one-product and three-hop source fixes are not runtime-validated. MTC auto-starts Meridian after restart, so verify and stop the worker safely before replacing the running process or attempting a live check."
+      ]
+    },
+    {
+      "id": "DEFECT-0031",
+      "title": "Movement sender treats echoed MoveSector prompt as fatal",
+      "description": "After the MTC sender submitted a movement destination, the terminal surfaced `To which Sector [551] ? 860` before the resulting command prompt. The sender treated this expected echoed MoveSector surface as an unexpected prompt and failed the action before it could observe the fresh movement result.",
+      "first_discovered_iteration": 30,
+      "last_seen_iteration": 30,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "PreventMultiHopMovementAsync handled AutopilotConfirmation, StopInSector, and Command after destination submission, but omitted MoveSector. A destination-echo observation therefore threw immediately instead of waiting for the subsequent result prompt.",
+      "affected_components": [
+        "MtcGameCommandSender movement prompt observation",
+        "Autonomous move execution"
+      ],
+      "fixes_applied": [
+        "Ignore a post-submission MoveSector echo while waiting for the next fresh movement result prompt.",
+        "Add an RPC safety harness case covering a MoveSector echo followed by a fresh Command prompt."
+      ],
+      "validation_results": [
+        "MTC RPC safety harness passed 134 checks, including the MoveSector echo regression case.",
+        "Release win-x64 MTC publish succeeded.",
+        "Live validation remains pending; the next runtime retry stalled before another movement."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0016"
+      ],
+      "notes": [
+        "The sender only waits through the prompt and does not submit additional input; if no fresh result prompt arrives, the existing timeout remains fail-closed."
+      ]
+    },
+    {
+      "id": "DEFECT-0027",
+      "title": "Pilot pairs a non-movement action with a target sector",
+      "description": "Pilot responses have paired non-movement actions with nonzero target sectors. The action provider rejected each malformed decision, so none was executed; repeated retries delay autonomous progress.",
+      "first_discovered_iteration": 24,
+      "last_seen_iteration": 25,
+      "status": "FIXED",
+      "severity": "MEDIUM",
+      "root_cause": "The original schema exposed the union of movement and non-movement target-sector values without encoding their action dependency. The model could pair a valid adjacent sector with a non-movement action, which the parser rejected after generation.",
+      "affected_components": [
+        "OllamaAutonomousTestActionProvider decision schema",
+        "Pilot action prompt and parser"
+      ],
+      "fixes_applied": [
+        "Add mutually exclusive oneOf schema branches: MoveToAdjacentSector requires a verified adjacent target; all other actions require targetSector=0.",
+        "Retain the deterministic parser rejection and add regression assertions for both schema branches."
+      ],
+      "validation_results": [
+        "Iteration 24 live Pilot history recorded a non-movement action with targetSector=551; the provider rejected it rather than executing it.",
+        "Iteration 25 recorded four additional non-movement/target-sector mismatches; all were rejected before execution.",
+        "Focused provider and routing tests passed 4/4; full TradeWars suite passed 256/256.",
+        "Local Ollama accepted a oneOf schema smoke test. Live validation of the provider's full oneOf schema is pending."
+      ],
+      "regression_count": 1,
+      "related_defects": [
+        "DEFECT-0020",
+        "DEFECT-0025"
+      ],
+      "notes": [
+        "Do not coerce malformed output into a successful action. Verify the oneOf constraint under live Qwen inference before closing the defect."
+      ]
+    },
+    {
+      "id": "DEFECT-0028",
+      "title": "Stale ship snapshot blocks progress at StarDock",
+      "description": "During iteration 26, Meridian remained authenticated at Command in sector 551 but the verified ship snapshot stayed stale at 65,440 turns. The last decision remained RequestShipInformation and no fresh status response or further gameplay progress was observed.",
+      "first_discovered_iteration": 26,
+      "last_seen_iteration": 27,
+      "status": "INVESTIGATING",
+      "severity": "MEDIUM",
+      "root_cause": "Unconfirmed. The available dashboard and metric samples do not correlate the server's Command prompt timestamp, the submitted ship-information and quick-status inputs, their acknowledgments, and a fresh snapshot event.",
+      "affected_components": [
+        "AutonomousTestWorker stale-snapshot recovery",
+        "MtcGameCommandSender.RefreshShipInformationAsync",
+        "MTC server-prompt and ship-status telemetry"
+      ],
+      "fixes_applied": [
+        "Filter Pilot context catalog entries to references explicitly exposed as approved script capabilities, rather than forwarding all unreviewed script filenames.",
+        "Exclude RequestShipInformation from the Pilot action enum while synchronization and the ship snapshot are healthy and the snapshot is at most 30 seconds old."
+      ],
+      "validation_results": [
+        "Iteration 26 remained at sector 551 with a stale snapshot through the end of the 451.1-second sampled worker window.",
+        "The terminal remained connected and authenticated at Command, while the dashboard reported no active TWX interpreter scripts.",
+        "An uncounted post-build attempt remained at sector 551 with 1 credit and no scanner; the monitor continued to report RequestShipInformation despite healthy synchronization. The worker was stopped after no verified game action.",
+        "The Pilot catalog filter is covered by the provider test class (27/27 passed), and the Release win-x64 build passed. Its effect on live inference latency and movement execution is still being observed.",
+        "The follow-up worker ran for roughly 15 minutes. At 5:41 PM, the monitor showed a healthy authenticated Command session with a current snapshot at sector 551, 65,330 turns, 1 credit, and no Holo Scanner; the latest decision remained RequestShipInformation. Pilot history showed 44 interactions, Strategic Review 2, and Reflex 94, including two empty-output token-limit failures that each retried. No movement, trade, scan, scanner purchase, or WorldTrade start was verified. Meridian was stopped at 5:43 PM; this attempt is uncounted.",
+        "Filtered RequestShipInformation from the Pilot enum for healthy snapshots no older than 30 seconds. All 27 AutonomousTestActionProviderTests passed and the Release win-x64 build passed.",
+        "The updated Release build was live-exercised: the monitor recorded movement decisions and verified sector changes. However, the ship oscillated between sectors 551 and 99 without a scanner, so the status-action gate did not solve the overall routing failure.",
+        "Uncounted attempt 29: after MTC restart, the authenticated Command snapshot at sector 551 aged stale and no new Pilot LLM call was recorded (Pilot 0, Strategic Review 1, Reflex 5). Meridian was stopped without game progress; the terminal remained connected."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0017"
+      ],
+      "notes": [
+        "Keep command guards fail-closed. Capture timestamped server prompts, submitted input, RPC acknowledgments, and synchronized snapshot events before changing refresh behavior. A model movement decision alone is not proof that the MTC command was sent or that the postcondition occurred.",
+        "The latest run showed a fresh healthy snapshot while the selected action was still RequestShipInformation. After Meridian stopped, the snapshot naturally aged past the 30-second freshness limit. The precise reason no movement or trade was selected remains unconfirmed.",
+        "The provider now removes RequestShipInformation from the action enum for a healthy snapshot no older than 30 seconds. This prevents a repeated status no-op when the model obeys the schema, but a fresh route and actual movement still need live verification.",
+        "Uncounted attempt 29 restarted MTC with the terminal connected and Meridian running. The monitor later showed a stale snapshot at sector 551; Pilot history contained no calls, while Strategic Review and Reflex showed 1 and 5 interactions. The agent was stopped without gameplay progress. Correlate fresh prompt timestamps, ship-status requests, and acknowledgments before changing refresh behavior."
+      ]
+    },
+    {
+      "id": "DEFECT-0029",
+      "title": "Repeated Fuel Ore haggles do not produce a verified trade",
+      "first_discovered_iteration": 26,
+      "last_seen_iteration": 27,
+      "status": "INVESTIGATING",
+      "severity": "MEDIUM",
+      "root_cause": "Unconfirmed. The logs show repeated no-transaction outcomes but do not establish whether repeated port prompts, native haggle recovery, or Pilot re-selection caused the retries.",
+      "affected_components": [
+        "AutonomousTestWorker port-trade selection and verification",
+        "MtcGameCommandSender.CompletePortTradeAsync",
+        "MTC native port-haggle handling"
+      ],
+      "fixes_applied": [],
+      "validation_results": [
+        "Iteration 26 recorded nine no-transaction Fuel Ore haggle outcomes at sector 172; each retained 17 credits and 20 empty holds.",
+        "Iteration 27's 12-hold Fuel Ore quote was 58 credits against 55 available, so no purchase was verified. A later quantity prompt stalled; prompt-timestamp recovery was repaired under DEFECT-0016, but a completed trade is still unverified.",
+        "No completed port transaction, scanner purchase, or WorldTrade start was verified."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0023"
+      ],
+      "notes": [
+        "Trace the prompt and input sequence for one failed transaction. Do not infer that a port trade succeeded from the action decision or return to Command."
+      ]
+    },
+    {
+      "id": "DEFECT-0030",
+      "title": "Pilot oneOf branches omit required shared response fields",
+      "description": "Movement and non-movement structured-output branches constrained action and targetSector but omitted the root-required rationale and citation fields. Ollama could therefore return branch-valid JSON that failed Pilot validation because rationale was missing, preventing the decision from being used.",
+      "first_discovered_iteration": 27,
+      "last_seen_iteration": 27,
+      "status": "VALIDATED",
+      "severity": "HIGH",
+      "root_cause": "The oneOf branches were built with only action-specific properties, while rationale, citedKnowledgeNodeId, and conditional scriptInputResponse were declared only at the root. The provider follows the selected branch contract and did not reliably include root-only fields.",
+      "affected_components": [
+        "OllamaAutonomousTestActionProvider structured response schema",
+        "Pilot action decision validation"
+      ],
+      "fixes_applied": [
+        "Include rationale and citedKnowledgeNodeId in both oneOf branches and require them at branch level.",
+        "Require a non-empty rationale and include scriptInputResponse in each branch only when an approved script prompt is present."
+      ],
+      "validation_results": [
+        "AutonomousTestActionProviderTests passed 27/27, including assertions for branch-level required fields, non-empty rationale, and conditional scriptInputResponse.",
+        "Release win-x64 LLM Control Center build succeeded with 0 warnings and 0 errors.",
+        "After deployment, the live Pilot produced a complete structured MoveToAdjacentSector response with targetSector, rationale, and citedKnowledgeNodeId. No game movement or postcondition was verified."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0020",
+        "DEFECT-0027"
+      ],
+      "notes": [
+        "A valid Pilot response validates the model/schema contract only; do not treat it as proof of command execution or gameplay progress."
+      ]
+    }
+  ],
+  "known_patterns": [
+    {
+      "name": "Stale or inconsistent autopilot prompt telemetry",
+      "frequency": 4,
+      "first_seen_iteration": 20,
+      "last_seen_iteration": 27,
+      "severity_trend": "HIGH; stale heartbeat prompt data again stalled a port-trade quantity response. The timestamp/synthesis race is source-fixed and regression-tested, but live recovery is pending.",
+      "recommended_long_term_fix": "Preserve empty heartbeat prompts, carry original prompt observation timestamps plus explicit current-prompt confirmation, and correlate the resulting worker event with input acknowledgment and a verified transaction."
+    },
+    {
+      "name": "Scannerless stale-objective movement oscillation",
+      "frequency": 3,
+      "first_seen_iteration": 24,
+      "last_seen_iteration": 30,
+      "severity_trend": "HIGH; iteration 29 again recorded sector transitions 551 to 99 to 551. Iteration 30's rebuilt runtime selected a scanner-funding route and moved through sector 206, but failed before a trade. An uncounted follow-up safely blocked an unexplored-sector move to 172 without a scanner; the sector-99 guard remains unverified live.",
+      "recommended_long_term_fix": "Keep scanner acquisition deterministic, preserve bounded FedSpace survey/trade phases, and do not treat persistent exploration flags as a scanner substitute for known high-risk sectors."
+    },
+    {
+      "name": "Movement sender rejects echoed destination prompt",
+      "frequency": 1,
+      "first_seen_iteration": 30,
+      "last_seen_iteration": 30,
+      "severity_trend": "MEDIUM; the sender now waits through a MoveSector echo and the MTC RPC harness passes, but the live fix has not yet been exercised.",
+      "recommended_long_term_fix": "Correlate each destination submission with prompt timestamps and the subsequent Command/sector snapshot; never treat an echoed input prompt as completed movement."
+    },
+    {
+      "name": "Reflex urgency over-classifies routine state changes",
+      "frequency": 4,
+      "first_seen_iteration": 20,
+      "last_seen_iteration": 26,
+      "severity_trend": "HIGH; 16 additional world-observation events fell back after the oneOf schema was deployed; the event UI did not expose the specific validation failure",
+      "recommended_long_term_fix": "Keep the deterministic gate fail-closed, capture field-specific validation failures, and verify the exact structured output against the live Qwen provider before changing the contract."
+    },
+    {
+      "name": "Stale ship-status refresh at authenticated Command",
+      "frequency": 3,
+      "first_seen_iteration": 26,
+      "last_seen_iteration": 28,
+      "severity_trend": "MEDIUM; RequestShipInformation repeated at sector 551 during the earlier fresh-snapshot run; the action enum now blocks that choice for healthy snapshots, but stale refreshes still need end-to-end verification.",
+      "recommended_long_term_fix": "Correlate fresh server-prompt events, submitted I/quick-status inputs, RPC acknowledgments, and ship snapshot events; keep command guards fail-closed."
+    },
+    {
+      "name": "Repeated no-transaction port haggle",
+      "frequency": 2,
+      "first_seen_iteration": 26,
+      "last_seen_iteration": 27,
+      "severity_trend": "MEDIUM; nine no-transaction outcomes persisted from iteration 26, and iteration 27's 12-hold quote exceeded available credits; no transaction was verified",
+      "recommended_long_term_fix": "Trace one full port prompt and input sequence, then prevent repeated attempts without a new verified opportunity or state change."
+    },
+    {
+      "name": "Ollama inference timeout",
+      "frequency": 1,
+      "first_seen_iteration": 21,
+      "last_seen_iteration": 21,
+      "severity_trend": "MEDIUM; two model roles hit the same 100-second request timeout in one iteration",
+      "recommended_long_term_fix": "Correlate client timeout events with Ollama queue, model-load, and inference latency telemetry before adjusting timeout or retry behavior."
+    },
+    {
+      "name": "Unbounded model numeric fields",
+      "frequency": 8,
+      "first_seen_iteration": 1,
+      "last_seen_iteration": 1,
+      "severity_trend": "MEDIUM; remediation added, awaiting live verification",
+      "recommended_long_term_fix": "Mirror deterministic validator bounds in both structured-output schemas and prompts; keep invalid responses visibly failed."
+    },
+    {
+      "name": "Model output contract under-specification",
+      "frequency": 3,
+      "first_seen_iteration": 1,
+      "last_seen_iteration": 24,
+      "severity_trend": "MEDIUM; a live Pilot again selected an action with unmet prerequisites; schema now removes unavailable Dock Shopper actions, live verification pending",
+      "recommended_long_term_fix": "Define decision-specific field contracts and validate before recording success or applying outcomes."
+    },
+    {
+      "name": "Qwen3 thinking exhausts structured-response budget",
+      "frequency": 3,
+      "first_seen_iteration": 24,
+      "last_seen_iteration": 25,
+      "severity_trend": "HIGH; empty final content recurred at 2048 tokens in iterations 24 and 25 after the original 512-token failure",
+      "recommended_long_term_fix": "Retain fail-closed parsing and the no-thinking retry; diagnose model-specific thinking/output behavior and verify that a structured final decision is actually produced."
+    },
+    {
+      "name": "Non-movement action paired with a target sector",
+      "frequency": 5,
+      "first_seen_iteration": 24,
+      "last_seen_iteration": 25,
+      "severity_trend": "MEDIUM; five invalid Pilot responses were rejected across iterations 24 and 25, including four in iteration 25",
+      "recommended_long_term_fix": "Express the relationship between action kind and targetSector in the structured schema where supported, retain parser validation, and test the exact malformed response."
+    },
+    {
+      "name": "Agent readiness lost after reconnect",
+      "frequency": 15,
+      "first_seen_iteration": 1,
+      "last_seen_iteration": 15,
+      "severity_trend": "HIGH; clear-avoids prompt identified and login fix live-validated in iteration 15",
+      "recommended_long_term_fix": "Persist exact terminal prompt and authentication state transitions; resume only from a recognized safe prompt."
+    },
+    {
+      "name": "Unhandled WebView2 focus exception terminates MTC",
+      "frequency": 1,
+      "first_seen_iteration": 15,
+      "last_seen_iteration": 15,
+      "severity_trend": "HIGH; one fatal occurrence, root cause unconfirmed",
+      "recommended_long_term_fix": "Identify the invalid WebView2 focus transition and handle that specific lifecycle case without broadly suppressing UI exceptions."
+    },
+    {
+      "name": "Unclassified prompt diagnostics are too coarse",
+      "frequency": 2,
+      "first_seen_iteration": 3,
+      "last_seen_iteration": 4,
+      "severity_trend": "MEDIUM; safe length metadata live-validated in iteration 5",
+      "recommended_long_term_fix": "Retain privacy-safe prompt metadata and correlate decoder events with authentication state without logging raw terminal content."
+    },
+    {
+      "name": "BBS name prompt parser is too restrictive",
+      "frequency": 1,
+      "first_seen_iteration": 3,
+      "last_seen_iteration": 3,
+      "severity_trend": "HIGH; parser gap corrected, awaiting live verification",
+      "recommended_long_term_fix": "Keep prompt classification aligned with the actual supported login flow and verify each recognized prompt against a live authenticated transition without exposing raw terminal text."
+    },
+    {
+      "name": "Healthcheck depends on a missing image executable",
+      "frequency": 1,
+      "first_seen_iteration": 1,
+      "last_seen_iteration": 2,
+      "severity_trend": "LOW; corrected and container health validated in iteration 2",
+      "recommended_long_term_fix": "Verify every container healthcheck command exists in the exact base image and test the recreated container, not only the compose file."
+    },
+    {
+      "name": "Cross-role interaction history crowding",
+      "frequency": 1,
+      "first_seen_iteration": 16,
+      "last_seen_iteration": 16,
+      "severity_trend": "MEDIUM; per-role retention and retrieval implemented, live verification pending",
+      "recommended_long_term_fix": "Keep retention and retrieval role-scoped end to end; test dashboard role switching while one role produces substantially more events than others."
+    },
+    {
+      "name": "Bounded event queue saturation and prompt loss",
+      "frequency": 1,
+      "first_seen_iteration": 16,
+      "last_seen_iteration": 16,
+      "severity_trend": "HIGH; latest-event preservation and event-noise reduction implemented, live verification pending",
+      "recommended_long_term_fix": "Measure queue depth, evictions, and event age under load; prioritize freshness and ensure actionable prompts cannot be starved by telemetry."
+    },
+    {
+      "name": "Reactive snapshot backlog",
+      "frequency": 1,
+      "first_seen_iteration": 16,
+      "last_seen_iteration": 16,
+      "severity_trend": "MEDIUM; latest-state coalescing implemented, live verification pending",
+      "recommended_long_term_fix": "Coalesce superseded state observations before model submission and expose pending/in-flight queue metrics."
+    },
+    {
+      "name": "Agent capability description drift",
+      "frequency": 1,
+      "first_seen_iteration": 16,
+      "last_seen_iteration": 16,
+      "severity_trend": "LOW; description corrected, live verification pending",
+      "recommended_long_term_fix": "Keep capability metadata aligned with the actual script capability and cover high-impact selection guidance with source-level assertions."
+    },
+    {
+      "name": "Stale queued prompt leaves worker idle",
+      "frequency": 3,
+      "first_seen_iteration": 17,
+      "last_seen_iteration": 25,
+      "severity_trend": "HIGH; iterations 24 and 25 again discarded stale queued prompts without subsequent fresh actions; heartbeat requeue path remains unverified",
+      "recommended_long_term_fix": "Keep delayed prompts fail-closed while correlating stale events with a fresh authoritative prompt heartbeat; test and instrument the no-new-server-output case."
+    },
+    {
+      "name": "Stale monitor situation shown as healthy",
+      "frequency": 1,
+      "first_seen_iteration": 17,
+      "last_seen_iteration": 17,
+      "severity_trend": "MEDIUM; capture-age warning implemented, live verification pending",
+      "recommended_long_term_fix": "Expose situation capture age independently from worker heartbeat age and never present an old synchronization status as current."
+    },
+    {
+      "name": "Transient SQLite fixture cleanup locks",
+      "frequency": 3,
+      "first_seen_iteration": 5,
+      "last_seen_iteration": 17,
+      "severity_trend": "LOW; isolated tests and final full-suite reruns pass, root cause unconfirmed",
+      "recommended_long_term_fix": "Capture fixture disposal failures with exact connection lifetimes and reproduce before changing cleanup or database behavior."
+    },
+    {
+      "name": "Unscanned movement through sector 99 risks ship loss",
+      "frequency": 3,
+      "first_seen_iteration": 18,
+      "last_seen_iteration": 29,
+      "severity_trend": "CRITICAL; iteration 18 confirmed a cruiser-to-Escape-Pod transition at sector 99. Iteration 29 again reached sector 99 and returned to 551; the Release binary predates the new unconditional scanner guard.",
+      "recommended_long_term_fix": "Require verified Density or Holo Scanner ownership before sector-99 entry, regardless of persistent map exploration flags, and correlate every move decision with terminal acknowledgments and fresh ship status."
+    },
+    {
+      "name": "WorldTrade actions lack scanner and earnings verification",
+      "frequency": 1,
+      "first_seen_iteration": 18,
+      "last_seen_iteration": 18,
+      "severity_trend": "HIGH; WorldTrade-related inputs observed without verified script completion or positive credit delta.",
+      "recommended_long_term_fix": "Require active-ship Density or Holo Scanner ownership and confirm fresh credits/holds after the WorldTrade routine."
+    },
+    {
+      "name": "LLM interaction history is unavailable after shutdown",
+      "frequency": 1,
+      "first_seen_iteration": 18,
+      "last_seen_iteration": 18,
+      "severity_trend": "MEDIUM; model response failure could not be diagnosed from durable prompt/reply evidence.",
+      "recommended_long_term_fix": "Persist or export redacted prompt and final-response records during the run, before MTC stops."
+    }
+  ],
+  "scorecard_history": [
+    {
+      "iteration": 1,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 99.44,
+      "llm_reasoning_score": 40.0,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": 0.0,
+      "defect_closure_rate": 14.3,
+      "notes": "Prompt-quality score is source-contract coverage after repair; LLM score is the limited pre-repair confidence/decision-field compliance proxy. See reports/scorecard.json."
+    },
+    {
+      "iteration": 2,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 25.0,
+      "notes": "No LLM responses or previously fixed prompt-contract outputs were exercised, so LLM reasoning and regression scores are not applicable. Runtime remained connected for the full 900-second window; 2 of 8 defects are runtime-validated."
+    },
+    {
+      "iteration": 3,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 33.3,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The process and connection survived the exact 900-second window, but no authenticated Command prompt or verified game state was reached. Three of nine defects are runtime-validated."
+    },
+    {
+      "iteration": 4,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 30.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The process and connection survived the exact 900-second window, but the rebuilt name-prompt parser did not change the unclassified activity. Three of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 5,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected for the exact 900-second window; the dashboard reported an unclassified prompt length of 44. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 6,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected for the exact 900-second window, but the agent did not reach authenticated Command readiness. Safe aggregation found 17 unclassified prompt events, including five length-44 surfaces with two distinct fingerprints; seven login-sequence inputs occurred in the initial five seconds, then none. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 7,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected for the exact 900-second window, but the agent did not reach authenticated Command readiness. Safe aggregation found 17 unclassified prompt events, including five length-44 surfaces whose two distinct fingerprints matched iteration 6; six login-sequence inputs occurred in the initial five seconds, then none. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 8,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected for the exact 900-second window, but the agent did not reach authenticated Command readiness. Safe aggregation found 31 prompt events, including five length-44 surfaces; eight client-input events occurred in the first five seconds, then none. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 9,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected for the exact 900-second window, but the agent did not reach authenticated Command readiness. Safe aggregation found 35 prompt events, including five length-44 surfaces; eight client-input events occurred in the first six seconds, then none. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 10,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected for the exact 900-second window, but the agent did not reach authenticated Command readiness. Safe aggregation found 31 prompt events, including five length-44 surfaces; eight client-input events occurred in the first five seconds, then none. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 11,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected for the exact 900-second window, but the agent did not reach authenticated Command readiness. Safe aggregation found 33 prompt events, including five length-44 surfaces; eight client-input events occurred in the first five seconds, then none. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 12,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected for the exact 900-second window, but the agent did not reach authenticated Command readiness. Safe aggregation found 30 prompt events, including five length-44 surfaces; eight client-input events occurred in the first five seconds, then none. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 13,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected for the exact 900-second window, but the agent did not reach authenticated Command readiness. Safe aggregation found 31 prompt events, including five length-44 surfaces; eight client-input events occurred in the first five seconds, then none. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 14,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 0.0,
+      "regression_rate": null,
+      "defect_closure_rate": 40.0,
+      "notes": "No LLM response or previously fixed model-output contract was exercised. The terminal remained connected and MTC survived the exact 900-second window, but the agent did not reach authenticated Command readiness. The dashboard reported an unclassified length-44 surface; safe prompt and input event counts were not available. Four of ten defects are runtime-validated."
+    },
+    {
+      "iteration": 15,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 84.7,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": null,
+      "defect_closure_rate": 45.5,
+      "notes": "The timed window ran for exactly 900 seconds, but original MTC PID 91696 terminated at 07:44:21 with an unhandled WebView2 MoveFocus ArgumentException; a replacement PID appeared at 07:46:39. The pre-fix runtime remained stuck on the unclassified clear-avoids prompt and watchdog progress was 0/3 at cutoff. After rebuilding, the live monitor reached authenticated Command at sector 99. Focused login tests passed 23/23 and the full 234-test suite passed on rerun after one transient SQLite fixture cleanup lock. Five of eleven defects are runtime-validated."
+    },
+    {
+      "iteration": 16,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 33.3,
+      "notes": "The exact 900-second sampler window recorded MTC present in 30/30 samples and Docker statistics in 30/30, with authenticated Healthy/Command state near cutoff; exact cumulative connected seconds were not captured. The old runtime showed saturated event/reactive queues, 1,460 in-window dropped events, 2 completed and 3 failed Pilot requests, and no visible Pilot history. Four source fixes were applied afterward; all 236 tests and the full build passed. Five of fifteen defects are runtime-validated."
+    },
+    {
+      "iteration": 17,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 29.4,
+      "notes": "MTC and all five containers were present in 30/30 samples over the 900-second window, but exact cumulative connected seconds were not captured. The pre-repair worker ignored a stale queued prompt and made no Pilot requests; a newer ship-status event also postdated the monitor situation. After the run, guarded heartbeat prompt recovery, stale-state UI labeling, and Qwen3 Pilot thinking traces were implemented. Full Release build and all 237 tests passed; the fixes await live verification. Five of seventeen defects are runtime-validated."
+    },
+    {
+      "iteration": 18,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 23.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "metric_samples": 29,
+        "metrics_start": "2026-10-29T09:18:53.8953667-06:00",
+        "metrics_end": "2026-10-29T09:33:49.3920323-06:00",
+        "scheduled_cutoff": "2026-10-29T09:33:53.901-06:00",
+        "original_pid_samples_running": 29,
+        "average_working_set_mib": 361.2,
+        "minimum_working_set_mib": 348.1,
+        "maximum_working_set_mib": 394.0,
+        "average_private_mib": 308.4,
+        "minimum_thread_count": 88,
+        "maximum_thread_count": 98,
+        "sample_cpu_seconds": 18.14,
+        "docker_stats_success_samples": 29
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": null,
+        "strategic_responses": null,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": "MTC and all five containers were present in 29/29 samples. The ship remained in sector 97 with no sector-change or client-input event in the 900-second window; an empty Ollama test-action decision was displayed but its final response was not durably captured. Event-log review confirmed a cruiser-to-Escape-Pod transition at sector 99, 11 WorldTrade-related inputs without verified earnings, and repeated login prompts. Scanner eligibility and Escape Pod trade guards were fixed and unit-tested; empty-response fallback was added but awaits live verification. Interaction-history persistence remains open. Five of 21 defects are runtime-validated."
+    }
+  ]
+}

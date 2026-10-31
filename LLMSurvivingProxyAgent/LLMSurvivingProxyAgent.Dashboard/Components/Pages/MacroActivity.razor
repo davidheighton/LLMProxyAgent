@@ -1,0 +1,161 @@
+@page "/macro-activity"
+@page "/agents/{AgentId}/activity"
+@using LLMSurvivingProxyAgent.Agent
+@using LLMSurvivingProxyAgent.Core
+@using LLMSurvivingProxyAgent.Macros
+@using LLMSurvivingProxyAgent.TradeWars
+@inject IAgentStore AgentStore
+@inject IWorldStateStore WorldStateStore
+@inject NavigationService Navigation
+@inject MacroRegistry Registry
+@inject MacroExecutionEngine ExecutionEngine
+@inject IMacroTelemetryStore TelemetryStore
+
+<PageTitle>Macro Activity</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(AgentId))
+{
+    <AgentWorkspaceNavigation AgentId="@AgentId" ActivePage="activity" />
+}
+
+<h1>Macro Activity</h1>
+<p class="text-secondary">
+    Deterministic offline plans only. These macros do not connect to TradeWars or send game commands.
+</p>
+
+<div class="row g-3 align-items-end mb-4">
+    <div class="col-md-4">
+        <label class="form-label" for="agent">Agent</label>
+        <InputSelect id="agent" class="form-select" @bind-Value="_agentId">
+            @foreach (var agent in _agents)
+            {
+                <option value="@agent.AgentId">@agent.DisplayName</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="sector">Current sector</label>
+        <InputNumber id="sector" class="form-control" @bind-Value="_currentSector" />
+    </div>
+</div>
+
+<h2 class="h5">Available macros</h2>
+<div class="row g-3 mb-4">
+    @foreach (var macro in Registry.Descriptors)
+    {
+        <div class="col-lg-6">
+            <section class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <h3 class="h6 card-title">@macro.Name</h3>
+                        <span class="badge text-bg-secondary">@macro.Category</span>
+                    </div>
+                    <p>@macro.Description</p>
+                    <p class="small text-secondary mb-2"><strong>Expected:</strong> @macro.ExpectedOutcome</p>
+                    <p class="small text-secondary"><strong>Requirements:</strong> @string.Join("; ", macro.Requirements)</p>
+                    <button class="btn btn-outline-primary"
+                            @onclick="() => ExecuteMacroAsync(macro.Id)"
+                            disabled="@(_agents.Count == 0)">
+                        Run plan
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+</div>
+
+@if (_latest is not null)
+{
+    <div class="alert alert-info" role="status">
+        <strong>@_latest.MacroName — @_latest.Status:</strong> @_latest.Result
+        @if (!string.IsNullOrWhiteSpace(_latest.Notes))
+        {
+            <div class="small mt-1">@_latest.Notes</div>
+        }
+    </div>
+}
+
+<h2 class="h5">Recent executions</h2>
+@if (_records.Count == 0)
+{
+    <p>No macro executions have been recorded.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Started</th>
+                    <th>Agent</th>
+                    <th>Macro</th>
+                    <th>Status</th>
+                    <th>Result / notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var record in _records)
+                {
+                    <tr>
+                        <td>@record.StartTime.ToLocalTime().ToString("g")<br /><small>Ended @record.EndTime.ToLocalTime().ToString("t")</small></td>
+                        <td>@AgentName(record.AgentId)</td>
+                        <td>@record.MacroName</td>
+                        <td>@record.Status</td>
+                        <td>
+                            @record.Result
+                            @if (record.PlanSectors.Count > 0)
+                            {
+                                <div class="small">Plan: @string.Join(" → ", record.PlanSectors)</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(record.Notes))
+                            {
+                                <div class="small text-secondary">@record.Notes</div>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? AgentId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "agentId")]
+    public string? RequestedAgentId { get; set; }
+
+    private IReadOnlyList<AgentContainer> _agents = [];
+    private IReadOnlyList<MacroExecutionRecord> _records = [];
+    private string _agentId = string.Empty;
+    private int? _currentSector;
+    private MacroExecutionRecord? _latest;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _agents = await AgentStore.GetAgentsAsync();
+        var requestedId = AgentId ?? RequestedAgentId;
+        _agentId = _agents.FirstOrDefault(agent => agent.AgentId == requestedId)?.AgentId
+                   ?? _agents.FirstOrDefault()?.AgentId
+                   ?? string.Empty;
+        await RefreshHistoryAsync();
+    }
+
+    private async Task ExecuteMacroAsync(string macroId)
+    {
+        _latest = await ExecutionEngine.ExecuteAsync(
+            _agentId,
+            macroId,
+            _currentSector,
+            WorldStateStore,
+            Navigation);
+        await RefreshHistoryAsync();
+    }
+
+    private async Task RefreshHistoryAsync() =>
+        _records = await TelemetryStore.GetRecentAsync(limit: 100);
+
+    private string AgentName(string agentId) =>
+        _agents.FirstOrDefault(agent => agent.AgentId == agentId)?.DisplayName ?? agentId;
+}

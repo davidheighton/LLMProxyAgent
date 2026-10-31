@@ -1,0 +1,694 @@
+@page "/agents/{AgentId}/monitor"
+@using LLMSurvivingProxyAgent.Core
+@using LLMSurvivingProxyAgent.Runtime
+@using Markdig
+@implements IDisposable
+@inject IAgentStore AgentStore
+@inject IAgentSessionController AgentSessionController
+@inject AutonomousTestWorkerStatusStore AutonomousStatusStore
+@inject IAgentRuntime RuntimeService
+@inject ILlmInteractionHistoryStore InteractionHistoryStore
+@inject ProxyGameEventHub GameEventHub
+
+<PageTitle>@(_agent?.DisplayName is { Length: > 0 } name ? $"{name} Live Monitor" : "Agent Live Monitor")</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">AGENT SESSION / LIVE MONITOR</p>
+        <h1>@(_agent?.DisplayName is { Length: > 0 } displayName ? $"{displayName} live monitor" : "Agent live monitor")</h1>
+        <p class="page-summary">Live connection, model, background work, and watchdog telemetry. This view refreshes automatically.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="@RuntimeHref">Runtime &amp; controls</a>
+</div>
+
+<AgentWorkspaceNavigation AgentId="@AgentId" ActivePage="monitor" />
+
+<section class="metric-grid" aria-label="Live agent status">
+    <article class="metric-card">
+        <span class="eyebrow">GAME CONNECTION</span>
+        <strong class="metric-value @(GameConnected ? "metric-value-safe" : "text-secondary")">@(GameConnected ? "Connected" : "Disconnected")</strong>
+        <span class="metric-caption">@ConnectionDescription</span>
+    </article>
+    <article class="metric-card">
+        <span class="eyebrow">AGENT</span>
+        <strong class="metric-value @(AgentRunning ? "metric-value-safe" : "text-secondary")">@(AgentRunning ? "Running" : "Stopped")</strong>
+        <span class="metric-caption">@_workerStatus.Activity</span>
+    </article>
+    <article class="metric-card">
+        <span class="eyebrow">LAST HEARTBEAT</span>
+        <strong class="metric-value">@HeartbeatAge</strong>
+        <span class="metric-caption">@(_workerStatus.LastHeartbeatAt?.ToLocalTime().ToString("T") ?? "Waiting for first heartbeat")</span>
+    </article>
+    <article class="metric-card">
+        <span class="eyebrow">LAST UPDATED</span>
+        <strong class="metric-value">@StatusAge</strong>
+        <span class="metric-caption">@(_workerStatus.UpdatedAt == DateTimeOffset.MinValue ? "No worker telemetry received" : _workerStatus.UpdatedAt.ToLocalTime().ToString("T"))</span>
+    </article>
+</section>
+
+<div class="nav nav-tabs mb-3" role="tablist" aria-label="Live monitor panels">
+    <button class="nav-link @TabClass("overview")" id="monitor-overview-tab" role="tab"
+            aria-selected="@TabSelected("overview")" aria-controls="monitor-overview-panel"
+            @onclick="ShowOverview">Overview</button>
+    <button class="nav-link @TabClass("model")" id="monitor-model-tab" role="tab"
+            aria-selected="@TabSelected("model")" aria-controls="monitor-model-panel"
+            @onclick="ShowModel">Pilot model</button>
+    <button class="nav-link @TabClass("background")" id="monitor-background-tab" role="tab"
+            aria-selected="@TabSelected("background")" aria-controls="monitor-background-panel"
+            @onclick="ShowBackground">Background work</button>
+    <button class="nav-link @TabClass("history")" id="monitor-history-tab" role="tab"
+            aria-selected="@TabSelected("history")" aria-controls="monitor-history-panel"
+            @onclick="ShowHistory">LLM history</button>
+    <button class="nav-link @TabClass("timers")" id="monitor-timers-tab" role="tab"
+            aria-selected="@TabSelected("timers")" aria-controls="monitor-timers-panel"
+            @onclick="ShowTimers">Checks &amp; timers</button>
+</div>
+
+@if (_activeTab == "overview")
+{
+    <section class="card" id="monitor-overview-panel" role="tabpanel" aria-labelledby="monitor-overview-tab">
+        <div class="card-body">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">CURRENT SESSION</p>
+                    <h2 class="h5">Verified game state</h2>
+                </div>
+                <span class="status-label">@SituationSynchronization</span>
+            </div>
+            @if (_workerStatus.Situation is { } situation)
+            {
+                @if (IsSituationStale)
+                {
+                    <p class="alert alert-warning">
+                        The last verified game snapshot is older than 30 seconds. Meridian will not use it for an autonomous action until fresh state is captured.
+                    </p>
+                }
+                <div class="row g-3">
+                    <div class="col-md-3"><strong>Presence</strong><br />@situation.Presence</div>
+                    <div class="col-md-3"><strong>Authentication</strong><br />@situation.Authentication</div>
+                    <div class="col-md-3"><strong>Prompt</strong><br />@(situation.CurrentPrompt ?? "Unknown")</div>
+                    <div class="col-md-3"><strong>Captured</strong><br />@situation.CapturedAt.ToLocalTime().ToString("g")</div>
+                </div>
+                @if (situation.Snapshot is { } snapshot)
+                {
+                    <hr />
+                    <div class="row g-3">
+                        <div class="col-md-3"><strong>Sector</strong><br />@(snapshot.CurrentSector?.ToString() ?? "Unknown")</div>
+                        <div class="col-md-3"><strong>Turns</strong><br />@(snapshot.Turns?.ToString("N0") ?? "Unknown")</div>
+                        <div class="col-md-3"><strong>Credits</strong><br />@(snapshot.SynchronizedCredits?.ToString("N0") ?? "Unknown")</div>
+                        <div class="col-md-3"><strong>Holo scanner</strong><br />@(snapshot.HoloScannerInstalled is true ? "Installed" : snapshot.HoloScannerInstalled is false ? "Not installed" : "Unknown")</div>
+                    </div>
+                }
+            }
+            else
+            {
+                <p class="text-secondary mb-0">No game situation has been reported yet. Connect the MTC terminal and start the agent from <a href="@RuntimeHref">Runtime &amp; controls</a>.</p>
+            }
+            @if (!string.IsNullOrWhiteSpace(_workerStatus.LastAction))
+            {
+                <hr />
+                <p><strong>Last decision:</strong> @_workerStatus.LastAction</p>
+                <p class="mb-0"><strong>Decision summary:</strong> @_workerStatus.LastRationale</p>
+            }
+        </div>
+    </section>
+}
+else if (_activeTab == "model")
+{
+    <section class="card" id="monitor-model-panel" role="tabpanel" aria-labelledby="monitor-model-tab">
+        <div class="card-body">
+            <p class="eyebrow">PILOT MODEL &amp; REQUEST TELEMETRY</p>
+            <div class="row g-3">
+                <div class="col-md-3"><strong>Provider</strong><br />@ModelProvider</div>
+                <div class="col-md-3"><strong>Model</strong><br />@ModelName</div>
+                <div class="col-md-3"><strong>Thinking mode</strong><br />@ModelThinkingMode</div>
+                <div class="col-md-3"><strong>Request state</strong><br />@RequestState</div>
+                <div class="col-md-3"><strong>Completed requests</strong><br />@_workerStatus.ModelRequestsCompleted</div>
+                <div class="col-md-3"><strong>Failed requests</strong><br />@_workerStatus.ModelRequestFailures</div>
+                <div class="col-md-3"><strong>Last latency</strong><br />@FormatDuration(_workerStatus.LastModelRequestDuration)</div>
+                <div class="col-md-3"><strong>Last request</strong><br />@(_workerStatus.LastModelRequestAt?.ToLocalTime().ToString("g") ?? "Not recorded")</div>
+            </div>
+            @if (_workerStatus.ModelRequestStartedAt is { } requestStartedAt)
+            {
+                <p class="mt-3 mb-0"><strong>Current request started:</strong> @requestStartedAt.ToLocalTime().ToString("g") · elapsed @FormatElapsed(DateTimeOffset.UtcNow - requestStartedAt)</p>
+            }
+            @if (!string.IsNullOrWhiteSpace(_workerStatus.LastModelRequestError))
+            {
+                <p class="alert alert-warning mt-3 mb-0"><strong>Last request result:</strong> @_workerStatus.LastModelRequestError</p>
+            }
+            <p class="small text-secondary mt-3 mb-0">Token totals are not available in this dashboard telemetry. The desktop Game Agent window's Monitor tab reports backend token usage when the provider supplies it.</p>
+        </div>
+    </section>
+}
+else if (_activeTab == "background")
+{
+    <section class="card" id="monitor-background-panel" role="tabpanel" aria-labelledby="monitor-background-tab">
+        <div class="card-body">
+            <p class="eyebrow">BACKGROUND PROCESSES</p>
+            <div class="row g-3 mb-4">
+                <div class="col-md-3"><strong>Runtime pipeline</strong><br />@(_runtimeStatus.IsRunning ? "Running" : "Stopped")</div>
+                <div class="col-md-3"><strong>Reactive queue</strong><br />@_runtimeStatus.ReactiveQueueDepth</div>
+                <div class="col-md-3"><strong>Strategic queue</strong><br />@_runtimeStatus.StrategicQueueDepth</div>
+                <div class="col-md-3"><strong>Worker activity</strong><br />@_workerStatus.Activity</div>
+                <div class="col-md-3"><strong>Game event queue</strong><br />@GameEventHub.QueueDepth / @ProxyGameEventHub.Capacity</div>
+                <div class="col-md-3"><strong>Dropped game events</strong><br />@GameEventHub.DroppedEventCount</div>
+                <div class="col-md-3"><strong>Last reactive cycle</strong><br />@FormatTimestamp(_runtimeStatus.LastReactiveCycleAt)</div>
+                <div class="col-md-3"><strong>Last strategic cycle</strong><br />@FormatTimestamp(_runtimeStatus.LastStrategicCycleAt)</div>
+            </div>
+            <h2 class="h6">Active TWX scripts</h2>
+            @if (_workerStatus.Situation?.IntegratedGameClient is { } integratedClient)
+            {
+                @if (integratedClient.RunningScripts.Count == 0)
+                {
+                    <p class="text-secondary">No active interpreter scripts were observed in the latest session snapshot.</p>
+                }
+                else
+                {
+                    <ul>
+                        @foreach (var script in integratedClient.RunningScripts)
+                        {
+                            <li>@script.Name @(script.Paused ? "(paused)" : string.Empty) @if (!string.IsNullOrWhiteSpace(script.Reference)) { <span class="text-secondary">· @script.Reference</span> }</li>
+                        }
+                    </ul>
+                }
+            }
+            else
+            {
+                <p class="text-secondary mb-0">Script activity has not been reported yet.</p>
+            }
+        </div>
+    </section>
+}
+else if (_activeTab == "history")
+{
+    <section class="card" id="monitor-history-panel" role="tabpanel" aria-labelledby="monitor-history-tab">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between gap-2">
+                <div>
+                    <p class="eyebrow">PROMPT / MODEL / OUTCOME TRACE</p>
+                    <h2 class="h5">@HistoryPageTitle</h2>
+                </div>
+                <a class="btn btn-sm btn-outline-secondary" href="@StrategyHref">Strategy &amp; objectives</a>
+            </div>
+            <p class="small text-secondary">
+                @HistoryPageDescription
+                Up to @LlmInteractionHistoryStore.MaximumInteractionsPerAgent interactions per role are kept in memory per agent; history clears when the client restarts.
+            </p>
+            <div class="nav nav-pills mb-3" role="tablist" aria-label="LLM review pages">
+                <button class="nav-link @HistoryTabClass("Pilot")" id="monitor-pilot-history-tab" role="tab"
+                        aria-selected="@HistoryTabSelected("Pilot")" aria-controls="monitor-history-content"
+                        @onclick="ShowPilotHistory">
+                    Pilot (@HistoryCount("Pilot"))
+                </button>
+                <button class="nav-link @HistoryTabClass("Strategic Review")" id="monitor-strategy-history-tab" role="tab"
+                        aria-selected="@HistoryTabSelected("Strategic Review")" aria-controls="monitor-history-content"
+                        @onclick="ShowStrategicHistory">
+                    Strategic Review (@HistoryCount("Strategic Review"))
+                </button>
+                <button class="nav-link @HistoryTabClass("Reflex")" id="monitor-reflex-history-tab" role="tab"
+                        aria-selected="@HistoryTabSelected("Reflex")" aria-controls="monitor-history-content"
+                        @onclick="ShowReflexHistory">
+                    Reflex (@HistoryCount("Reflex"))
+                </button>
+            </div>
+            <div id="monitor-history-content" role="tabpanel" aria-labelledby="@ActiveHistoryTabId">
+            @if (_interactionHistory.Count == 0 || CurrentInteractions.Count == 0)
+            {
+                @if (_activeHistoryRole == "Pilot")
+                {
+                    <p class="text-secondary mb-0">@PilotInvocationStatus</p>
+                }
+                else if (_activeHistoryRole == "Reflex")
+                {
+                    <p class="text-secondary mb-0">@ReflexInvocationStatus</p>
+                }
+                else
+                {
+                    <p class="text-secondary mb-0">
+                        @(_interactionHistory.Count == 0
+                            ? "No LLM interactions have been captured for this agent yet."
+                            : $"No {HistoryPageTitle.ToLowerInvariant()} have been captured yet.")
+                    </p>
+                }
+            }
+            else
+            {
+                <div class="row g-3">
+                    <div class="col-lg-4">
+                        <div class="list-group" aria-label="@($"Recent {_activeHistoryRole} calls")">
+                            @foreach (var interaction in CurrentInteractions)
+                            {
+                                <button type="button"
+                                        class="list-group-item list-group-item-action @(SelectedInteractionId == interaction.InteractionId ? "active" : string.Empty)"
+                                        aria-pressed="@(SelectedInteractionId == interaction.InteractionId ? "true" : "false")"
+                                        @onclick="() => SelectInteraction(interaction.InteractionId)">
+                                    <span class="d-flex justify-content-between gap-2">
+                                        <strong>@interaction.Role</strong>
+                                        <span>@InteractionStatus(interaction)</span>
+                                    </span>
+                                    <span class="d-block small">@interaction.Provider / @interaction.Model · attempt @interaction.Attempt</span>
+                                    <span class="d-block small">@interaction.StartedAt.ToLocalTime().ToString("g") · @InteractionDuration(interaction)</span>
+                                    @if (!string.IsNullOrWhiteSpace(interaction.Error))
+                                    {
+                                        <span class="d-block small text-warning">@interaction.Error</span>
+                                    }
+                                </button>
+                            }
+                        </div>
+                    </div>
+                    <div class="col-lg-8">
+                        @if (SelectedInteraction is { } selectedInteraction)
+                        {
+                            <p class="mb-1">
+                                <strong>@selectedInteraction.Role</strong> · @selectedInteraction.Provider / @selectedInteraction.Model ·
+                                @InteractionStatus(selectedInteraction)
+                            </p>
+                            @if (!string.IsNullOrWhiteSpace(selectedInteraction.AppliedOutcome))
+                            {
+                                <p class="alert alert-info py-2"><strong>Applied strategy outcome:</strong> @selectedInteraction.AppliedOutcome</p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(selectedInteraction.Error))
+                            {
+                                <p class="alert alert-warning py-2"><strong>Request / validation result:</strong> @selectedInteraction.Error</p>
+                            }
+                            <details open class="mb-3">
+                                <summary><strong>Prompt sent</strong></summary>
+                                @foreach (var part in FormatPrompt(selectedInteraction.Prompt))
+                                {
+                                    <section class="monitor-prompt-part">
+                                        <h3>@part.Role</h3>
+                                        @if (part.IsJson)
+                                        {
+                                            <pre class="monitor-transcript">@part.Text</pre>
+                                        }
+                                        else
+                                        {
+                                            <div class="monitor-markdown">@((MarkupString)part.Html)</div>
+                                        }
+                                    </section>
+                                }
+                                <details class="mt-2">
+                                    <summary>Raw prompt text</summary>
+                                    <pre class="monitor-transcript">@selectedInteraction.Prompt</pre>
+                                </details>
+                            </details>
+                            <details open class="mb-3">
+                                <summary><strong>Formatted model response</strong></summary>
+                                @{
+                                    var responsePart = FormatModelResponse(selectedInteraction.Response);
+                                }
+                                @if (string.IsNullOrWhiteSpace(responsePart.Text))
+                                {
+                                    <p class="text-secondary mt-2">Waiting for the model response.</p>
+                                }
+                                else if (responsePart.IsJson)
+                                {
+                                    <pre class="monitor-transcript">@responsePart.Text</pre>
+                                }
+                                else
+                                {
+                                    <div class="monitor-markdown">@((MarkupString)responsePart.Html)</div>
+                                }
+                            </details>
+                            <details>
+                                <summary><strong>Raw transport response</strong></summary>
+                                <pre class="monitor-transcript">@selectedInteraction.Response</pre>
+                            </details>
+                        }
+                        else
+                        {
+                            <p class="text-secondary">Select an interaction to inspect its prompt and response.</p>
+                        }
+                    </div>
+                </div>
+            }
+            </div>
+        </div>
+    </section>
+}
+else
+{
+    <section class="card" id="monitor-timers-panel" role="tabpanel" aria-labelledby="monitor-timers-tab">
+        <div class="card-body">
+            <p class="eyebrow">WATCHDOG &amp; SCHEDULED CHECKS</p>
+            <div class="row g-3">
+                <div class="col-md-4"><strong>Watchdog progress</strong><br />@_workerStatus.WatchdogUnchangedCycles / @AutonomousActionWatchdog.RequiredUnchangedCycles unchanged cycles</div>
+                <div class="col-md-4"><strong>Next watchdog review</strong><br />@WatchdogReviewStatus</div>
+                <div class="col-md-4"><strong>Last presence heartbeat</strong><br />@(_workerStatus.LastHeartbeatAt?.ToLocalTime().ToString("g") ?? "Not received")</div>
+            </div>
+            <p class="small text-secondary mt-3 mb-0">The monitor refreshes every two seconds. Watchdog cooldown and heartbeat values reflect runtime telemetry; no check is scheduled unless the runtime reports it.</p>
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public string AgentId { get; set; } = string.Empty;
+
+    private AgentContainer? _agent;
+    private AgentSessionControlStatus _sessionControlStatus = new(false, false, false);
+    private AutonomousTestWorkerStatus _workerStatus =
+        new("meridian", false, "Offline", DateTimeOffset.MinValue, null, null, null);
+    private AgentRuntimeStatus _runtimeStatus = new(false, 0, 0, null, null);
+    private IReadOnlyList<LlmInteractionRecord> _interactionHistory = [];
+    private CancellationTokenSource? _refreshCancellation;
+    private string _activeTab = "overview";
+    private string _activeHistoryRole = "Pilot";
+    private string? SelectedInteractionId { get; set; }
+    private static readonly MarkdownPipeline TranscriptMarkdownPipeline =
+        new MarkdownPipelineBuilder().DisableHtml().Build();
+    private static readonly System.Text.RegularExpressions.Regex TranscriptMessageHeader =
+        new(@"(?im)^\[(?<role>system|user|assistant)\]$", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex TerminalEscapeSequence =
+        new(@"\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001B\\))",
+            System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    private static readonly System.Text.Json.JsonSerializerOptions TranscriptJsonOptions = new()
+    {
+        WriteIndented = true
+    };
+
+    private string RuntimeHref => $"/agents/{Uri.EscapeDataString(AgentId)}/runtime";
+    private string StrategyHref => $"/agents/{Uri.EscapeDataString(AgentId)}/strategy";
+    private bool IsSituationStale =>
+        _workerStatus.Situation is { } situation &&
+        DateTimeOffset.UtcNow - situation.CapturedAt > TimeSpan.FromSeconds(30);
+    private string SituationSynchronization =>
+        _workerStatus.Situation is not { } situation
+            ? "Awaiting session data"
+            : IsSituationStale
+                ? "Stale"
+                : situation.Synchronization.ToString();
+    private LlmInteractionRecord? SelectedInteraction =>
+        CurrentInteractions.FirstOrDefault(interaction =>
+            interaction.InteractionId == SelectedInteractionId);
+    private IReadOnlyList<LlmInteractionRecord> CurrentInteractions =>
+        _interactionHistory
+            .Where(interaction => string.Equals(
+                interaction.Role,
+                _activeHistoryRole,
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+    private string HistoryPageTitle => _activeHistoryRole switch
+    {
+        "Pilot" => "Pilot prompt and response review",
+        "Strategic Review" => "Strategic review prompts and outcomes",
+        "Reflex" => "Reactive reflex prompt and response review",
+        _ => "LLM interaction review"
+    };
+    private string HistoryPageDescription => _activeHistoryRole switch
+    {
+        "Pilot" => "Inspect Pilot action-selection prompts, model replies, retries, and validation results. ",
+        "Strategic Review" => "Inspect objective-review prompts, model assessments, and whether each recommendation was applied. ",
+        "Reflex" => "Inspect reactive-classification prompts, assessments, and errors. ",
+        _ => "Inspect captured prompts and model responses. "
+    };
+    private string PilotInvocationStatus
+    {
+        get
+        {
+            if (_workerStatus.ModelRequestStartedAt is { } startedAt)
+            {
+                return $"Pilot is currently waiting on a model request started {startedAt.ToLocalTime():T}.";
+            }
+
+            int requestCount = _workerStatus.ModelRequestsCompleted + _workerStatus.ModelRequestFailures;
+            if (requestCount > 0)
+            {
+                return $"Pilot request telemetry shows {requestCount} request(s), but no prompt trace is present in this role history. The in-memory trace store may have been cleared or not attached to the active provider.";
+            }
+
+            return !AgentRunning
+                ? "No Pilot LLM calls are recorded, and the autonomous worker is not running. Start the agent from Runtime & controls to enable Pilot decisions."
+                : $"No Pilot LLM call has been recorded yet. Pilot is invoked only for a fresh eligible game/script prompt; current worker activity: {_workerStatus.Activity}.";
+        }
+    }
+    private string ReflexInvocationStatus
+    {
+        get
+        {
+            if (_runtimeStatus.ReactiveQueueDepth > 0)
+            {
+                return $"Reflex has no completed trace yet; {_runtimeStatus.ReactiveQueueDepth} reactive event(s) are waiting in the runtime queue.";
+            }
+
+            if (!_runtimeStatus.IsRunning)
+            {
+                return "No Reflex calls are recorded because the background runtime worker is stopped.";
+            }
+
+            return _runtimeStatus.LastReactiveCycleAt is { } lastCycle
+                ? $"The reactive runtime last processed an event at {lastCycle.ToLocalTime():T}, but no Reflex trace is visible. That cycle may have used deterministic fast-path rules. Reflex runs only for deliberative events, not every game prompt."
+                : "No reactive events have reached the runtime, so Reflex has not been triggered. It runs only for deliberative events, not continuously or on every game prompt.";
+        }
+    }
+    private string ActiveHistoryTabId => _activeHistoryRole switch
+    {
+        "Strategic Review" => "monitor-strategy-history-tab",
+        "Reflex" => "monitor-reflex-history-tab",
+        _ => "monitor-pilot-history-tab"
+    };
+    private bool HasMtcSessionControl => AgentSessionController.SupportsAgent(AgentId);
+    private bool GameConnected => HasMtcSessionControl
+        ? _sessionControlStatus.IsConnected
+        : _workerStatus.IsConnected;
+    private bool AgentRunning => HasMtcSessionControl
+        ? _sessionControlStatus.IsAgentRunning
+        : _workerStatus.IsConnected;
+    private string ConnectionDescription => HasMtcSessionControl
+        ? "MTC terminal session"
+        : "Autonomous worker session";
+    private string ModelProvider => string.IsNullOrWhiteSpace(_workerStatus.ModelProvider)
+        ? _agent?.PreferredProvider is { Length: > 0 } provider ? provider : "Not reported"
+        : _workerStatus.ModelProvider;
+    private string ModelName => string.IsNullOrWhiteSpace(_workerStatus.ModelName)
+        ? _agent?.PreferredModel is { Length: > 0 } model ? model : "Not reported"
+        : _workerStatus.ModelName;
+    private string ModelThinkingMode => string.IsNullOrWhiteSpace(_workerStatus.ModelThinkingMode)
+        ? "Not reported"
+        : _workerStatus.ModelThinkingMode;
+    private string RequestState => _workerStatus.ModelRequestStartedAt is null
+        ? "Idle"
+        : $"In progress · {FormatElapsed(DateTimeOffset.UtcNow - _workerStatus.ModelRequestStartedAt.Value)}";
+    private string HeartbeatAge => _workerStatus.LastHeartbeatAt is { } heartbeatAt
+        ? FormatElapsed(DateTimeOffset.UtcNow - heartbeatAt) + " ago"
+        : "Not received";
+    private string StatusAge => _workerStatus.UpdatedAt == DateTimeOffset.MinValue
+        ? "No data"
+        : FormatElapsed(DateTimeOffset.UtcNow - _workerStatus.UpdatedAt) + " ago";
+    private string WatchdogReviewStatus => _workerStatus.WatchdogNextReviewAt is not { } reviewAt
+        ? "No cooldown active"
+        : reviewAt <= DateTimeOffset.UtcNow
+            ? "Eligible now"
+            : $"In {FormatElapsed(reviewAt - DateTimeOffset.UtcNow)}";
+
+    private static IReadOnlyList<TranscriptPart> FormatPrompt(string prompt)
+    {
+        var matches = TranscriptMessageHeader.Matches(prompt);
+        if (matches.Count == 0)
+        {
+            return [FormatTranscriptPart("Prompt", prompt)];
+        }
+
+        var parts = new List<TranscriptPart>(matches.Count);
+        for (int index = 0; index < matches.Count; index++)
+        {
+            var match = matches[index];
+            int contentStart = match.Index + match.Length;
+            int contentEnd = index + 1 < matches.Count ? matches[index + 1].Index : prompt.Length;
+            string content = prompt[contentStart..contentEnd].Trim('\r', '\n');
+            parts.Add(FormatTranscriptPart(match.Groups["role"].Value, content));
+        }
+
+        return parts;
+    }
+
+    private static TranscriptPart FormatModelResponse(string rawResponse)
+    {
+        string content = rawResponse;
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(rawResponse);
+            if (document.RootElement.TryGetProperty("message", out var message) &&
+                message.TryGetProperty("content", out var assistantContent) &&
+                assistantContent.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                content = assistantContent.GetString() ?? string.Empty;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+        }
+
+        return FormatTranscriptPart("Response", content);
+    }
+
+    private static TranscriptPart FormatTranscriptPart(string role, string content)
+    {
+        string normalizedContent = TerminalEscapeSequence.Replace(content, string.Empty);
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(normalizedContent);
+            if (document.RootElement.ValueKind is System.Text.Json.JsonValueKind.Object or
+                System.Text.Json.JsonValueKind.Array)
+            {
+                return new TranscriptPart(
+                    role,
+                    System.Text.Json.JsonSerializer.Serialize(document.RootElement, TranscriptJsonOptions),
+                    string.Empty,
+                    IsJson: true);
+            }
+
+            if (document.RootElement.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                normalizedContent = document.RootElement.GetString() ?? string.Empty;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+        }
+
+        return new TranscriptPart(
+            role,
+            normalizedContent,
+            RenderMarkdown(normalizedContent),
+            IsJson: false);
+    }
+
+    private static string RenderMarkdown(string content)
+    {
+        using var writer = new System.IO.StringWriter();
+        var renderer = new Markdig.Renderers.HtmlRenderer(writer)
+        {
+            LinkRewriter = RewriteSafeMarkdownLink
+        };
+        TranscriptMarkdownPipeline.Setup(renderer);
+        renderer.Render(Markdown.Parse(content, TranscriptMarkdownPipeline));
+        return writer.ToString();
+    }
+
+    private static string RewriteSafeMarkdownLink(string link) =>
+        Uri.TryCreate(link, UriKind.Absolute, out var uri) &&
+        uri.Scheme is "http" or "https" or "mailto"
+            ? link
+            : string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshStatusAsync();
+        _refreshCancellation = new CancellationTokenSource();
+        _ = RefreshStatusLoopAsync(_refreshCancellation.Token);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _agent = await AgentStore.GetAgentAsync(AgentId);
+        await RefreshStatusAsync();
+    }
+
+    private async Task RefreshStatusAsync()
+    {
+        _workerStatus = AutonomousStatusStore.GetStatus(AgentId);
+        _runtimeStatus = RuntimeService.GetStatus();
+        _interactionHistory = new[] { "Pilot", "Strategic Review", "Reflex" }
+            .SelectMany(role => InteractionHistoryStore.GetRecentByRole(
+                AgentId,
+                role,
+                LlmInteractionHistoryStore.MaximumInteractionsPerAgent))
+            .OrderByDescending(interaction => interaction.StartedAt)
+            .ToArray();
+        if (SelectedInteraction is null)
+        {
+            SelectedInteractionId = _interactionHistory.FirstOrDefault()?.InteractionId;
+        }
+        if (AgentSessionController.SupportsAgent(AgentId))
+        {
+            _sessionControlStatus = await AgentSessionController.GetStatusAsync(AgentId);
+        }
+        else
+        {
+            _sessionControlStatus = new AgentSessionControlStatus(_workerStatus.IsConnected, false, false);
+        }
+    }
+
+    private async Task RefreshStatusLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshStatusAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void ShowOverview() => _activeTab = "overview";
+    private void ShowModel() => _activeTab = "model";
+    private void ShowBackground() => _activeTab = "background";
+    private void ShowHistory() => _activeTab = "history";
+    private void ShowTimers() => _activeTab = "timers";
+    private void ShowPilotHistory() => ShowHistoryRole("Pilot");
+    private void ShowStrategicHistory() => ShowHistoryRole("Strategic Review");
+    private void ShowReflexHistory() => ShowHistoryRole("Reflex");
+    private void ShowHistoryRole(string role)
+    {
+        _activeHistoryRole = role;
+        SelectedInteractionId = CurrentInteractions.FirstOrDefault()?.InteractionId;
+    }
+
+    private int HistoryCount(string role) =>
+        _interactionHistory.Count(interaction =>
+            string.Equals(interaction.Role, role, StringComparison.OrdinalIgnoreCase));
+
+    private string? HistoryTabClass(string role) =>
+        string.Equals(_activeHistoryRole, role, StringComparison.OrdinalIgnoreCase) ? "active" : null;
+
+    private string HistoryTabSelected(string role) =>
+        string.Equals(_activeHistoryRole, role, StringComparison.OrdinalIgnoreCase) ? "true" : "false";
+
+    private void SelectInteraction(string interactionId) => SelectedInteractionId = interactionId;
+
+    private string? TabClass(string tab) => _activeTab == tab ? "active" : null;
+    private string TabSelected(string tab) => _activeTab == tab ? "true" : "false";
+    private static string InteractionStatus(LlmInteractionRecord interaction) =>
+        interaction.IsInProgress
+            ? $"In progress · {FormatElapsed(DateTimeOffset.UtcNow - interaction.StartedAt)}"
+            : interaction.Succeeded
+                ? "Completed"
+                : "Failed";
+    private static string InteractionDuration(LlmInteractionRecord interaction) =>
+        interaction.IsInProgress ? InteractionStatus(interaction) : FormatDuration(interaction.Duration);
+
+    private static string FormatTimestamp(DateTimeOffset? timestamp) =>
+        timestamp?.ToLocalTime().ToString("g") ?? "No cycles yet";
+
+    private static string FormatDuration(TimeSpan? duration) =>
+        duration is { } value ? FormatElapsed(value) : "Not recorded";
+
+    private static string FormatElapsed(TimeSpan elapsed)
+    {
+        if (elapsed < TimeSpan.Zero)
+        {
+            elapsed = TimeSpan.Zero;
+        }
+
+        return elapsed.TotalMinutes >= 1
+            ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s"
+            : $"{elapsed.TotalSeconds:F0}s";
+    }
+
+    private sealed record TranscriptPart(string Role, string Text, string Html, bool IsJson);
+
+    public void Dispose()
+    {
+        _refreshCancellation?.Cancel();
+        _refreshCancellation?.Dispose();
+    }
+}

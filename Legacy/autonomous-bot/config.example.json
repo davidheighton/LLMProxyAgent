@@ -1,0 +1,236 @@
+{
+  "connection": {
+    "host": "your.bbs.host",
+    "port": 23
+  },
+  "credentials": {
+    "character": "1",
+    "username": "YOUR_USERNAME",
+    "password": "YOUR_PASSWORD"
+  },
+  "prompts": {
+    "characterPrompt": "Select your character|Enter your character",
+    "usernamePrompt": "(Login|Name|Handle)[:?]",
+    "passwordPrompt": "Password[:?]",
+    "commandPrompt": "Command\\s*\\[",
+    "sectorPrompt": "Sector\\s*Command|Sector\\s*:"
+  },
+  "autoResponses": [
+    {
+      "match": "Do you wish to play another game|Play another game",
+      "reply": "n",
+      "once": true
+    },
+    {
+      "match": "Press\\s+ENTER|Hit any key",
+      "reply": "",
+      "once": false
+    },
+    {
+      "match": "Are you sure\\?",
+      "reply": "y",
+      "once": false
+    }
+  ],
+  "strategy": {
+    "minActionDelayMs": 4500,
+    "maxIdleBeforeKeepAliveMs": 20000,
+    "infoRefresh": {
+      "enabled": true,
+      "command": "I",
+      "intervalMs": 90000,
+      "minGapAfterActionMs": 0,
+      "skipInStarDockSubmenu": true
+    },
+    "trade": {
+      "enabled": true,
+      "forcePromptHaggle": true,
+      "desiredCargo": "equipment",
+      "autoDesiredCargoByNeed": true,
+      "enableHoldStepModel": true,
+      "localPortBurstMin": 3,
+      "moveOnRejectStreak": 1,
+      "noTradeSectorCooldownMs": 45000,
+      "profitQuestionEnabled": true,
+      "profitQuestionMs": 90000,
+      "profitQuestionMinNetCredits": 250,
+      "stuckSectorWarpEnabled": true,
+      "stuckSectorWarpMs": 15000,
+      "buyOfferPct": 0.985,
+      "sellOfferPct": 1.015,
+      "maxHaggleRounds": 2,
+      "driftTolerance": 20,
+      "uncertainThreshold": 28,
+      "overbidWhenUncertain": false,
+      "correctionPct": 0.15,
+      "adaptiveHaggleEnabled": true,
+      "adaptiveHaggleWindow": 16,
+      "adaptiveHaggleMinSamples": 8,
+      "adaptiveRejectRateThreshold": 0.4,
+      "adaptiveBuyPctMax": 0.997,
+      "adaptiveSellPctMin": 1.005,
+      "adaptiveUncertainThresholdBoost": 10,
+      "adaptiveCorrectionScale": 0.6,
+      "iterationTuningEnabled": true,
+      "iterationTargetIterations": 100,
+      "iterationProfitQuestionStepMs": 1000,
+      "iterationMinProfitQuestionMs": 30000,
+      "iterationStuckWarpStepMs": 250,
+      "iterationMinStuckSectorWarpMs": 8000,
+      "iterationRouteBonusStep": 1,
+      "iterationMaxProfitablePairBonus": 60,
+      "initialNoHaggleDeals": 6
+    },
+    "supervisor": {
+      "enabled": true,
+      "freezeMs": 100000,
+      "recoveryCooldownMs": 12000,
+      "escalationKeepAliveAfter": 2
+    },
+    "events": {
+      "enabled": true,
+      "maxRecent": 80,
+      "maxCounters": 300,
+      "maxPayloadChars": 280
+    },
+    "startupSurvey": {
+      "enabled": true,
+      "commands": ["i", "v", "crq", "ciq", "/"],
+      "minGapMs": 1200,
+      "cimMinAgeMs": 604800000
+    },
+    "alignmentShift": {
+      "enabled": false,
+      "targetAlignmentMax": -10,
+      "sourceSector": 1,
+      "infoCommand": "I",
+      "moveToSourceCommand": "m{sourceSector}*",
+      "loadColonistsCommand": "l1*t*",
+      "leaveFedSpaceCommand": "m{nextWarp}*",
+      "jettisonCommand": "jy",
+      "preferDirectMoveToSource": true,
+      "requireKnownAlignment": true,
+      "minColonistsToJettison": 1,
+      "suspendInRecovery": true,
+      "suspendInEscapePod": true,
+      "prioritizeInRecoveryUntilTarget": true,
+      "enableSelfDestructReset": false,
+      "selfDestructCommand": "cby",
+      "selfDestructOnlyInRecovery": true,
+      "selfDestructOnlyWhenNotEscapePod": true,
+      "selfDestructWhenColonistPathInsufficient": true,
+      "maxLoadAttemptsBeforeSelfDestruct": 3,
+      "maxJettisonAttemptsBeforeSelfDestruct": 3,
+      "maxSourceSeekAttemptsBeforeSelfDestruct": 8,
+      "selfDestructCooldownMs": 7200000,
+      "verifyAfterJettison": true,
+      "verifyAfterSelfDestruct": true,
+      "verificationMinGapMs": 6000,
+      "fedSpaceSectors": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    },
+    "keepAliveCommand": "/",
+    "randomSectorMin": 1,
+    "randomSectorMax": 5000,
+    "stealHoldsExpDivisor": 20,
+    "stealCreditsMultiplier": 10,
+    "stealRequiresAlignment": true,
+    "stealAlignmentMax": -100,
+    "minStealHolds": 1,
+    "maxStealHolds": 75,
+    "safeProgressionMinExp": 120,
+    "preferCommodityPairsMinCredits": 10000,
+    "organicPairBonus": 75,
+    "equipmentPairBonus": 90,
+    "fuelPairOpportunisticFactor": 0.35,
+    "upgrades": {
+      "enabled": true,
+      "triggerCredits": 90000,
+      "holoScannerPriority": true,
+      "holoScannerMinCredits": 20000,
+      "minCashReserve": 30000,
+      "maxSpendPerVisit": 60000,
+      "minSpendToUpgrade": 5000,
+      "autoPurchase": true,
+      "shieldUnitCost": 100,
+      "fighterUnitCost": 1,
+      "shieldSpendRatio": 0.35,
+      "fighterSpendRatio": 0.65,
+      "maxShieldBuy": 300,
+      "maxFighterBuy": 1500
+    },
+    "movementSafety": {
+      "enabled": true,
+      "layFightersOnTradeWarpHop": true,
+      "fightersPerDrop": 1,
+      "layOnlyOnGoodPairs": true,
+      "layOnAdjacentGoodPairs": true,
+      "maxNavHazToLay": 2,
+      "figDropCommandPrefix": "f",
+      "figDropCommandSuffix": "*ct"
+    },
+    "cim": {
+      "enabled": true,
+      "intervalMs": 240000,
+      "includeWarpData": true,
+      "bootstrapIfMissing": true,
+      "prioritizeStale": true,
+      "fallbackOnlyWhenPairsExhausted": true,
+      "knownPairThreshold": 0,
+      "skipInEscapePod": true,
+      "requireSafeSector": true,
+      "maxNavHazForCim": 2,
+      "deferAfterThreatMs": 60000,
+      "portFreshMs": 1800000,
+      "warpFreshMs": 3600000,
+      "portCommand": "crq",
+      "warpCommand": "ciq",
+      "completionPattern": "ENDINTERROG",
+      "timeoutMs": 90000,
+      "minTurns": 0,
+      "minCredits": 0,
+      "persistEveryMs": 15000
+    },
+    "evil": {
+      "enforceBustBlacklist": true,
+      "bustForgetMs": 900000,
+      "bustForgetMsSteal": 900000,
+      "bustForgetMsRob": 1800000,
+      "bustPenalty": 3000
+    },
+    "actions": [
+      {
+        "name": "status-check",
+        "command": "/",
+        "enabled": true,
+        "minTurns": 1
+      },
+      {
+        "name": "random-move",
+        "command": "m {randomSector}*",
+        "enabled": true,
+        "minTurns": 10
+      },
+      {
+        "name": "port-trade-attempt",
+        "command": "pt",
+        "enabled": false,
+        "minTurns": 15
+      },
+      {
+        "name": "evil-recovery-steal-local",
+        "command": "pr*st3{stealAmount}*",
+        "enabled": false,
+        "onlyWhenRecoveryMode": true,
+        "onlyWhenNotEscapePod": true,
+        "maxAlignment": -100,
+        "onlyWhenHasPort": true,
+        "minExp": 30
+      }
+    ]
+  },
+  "logging": {
+    "file": "./logs/latest.log",
+    "statusFile": "./logs/status.json",
+    "intelFile": "./logs/sector-intel.json"
+  }
+}

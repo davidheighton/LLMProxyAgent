@@ -1,0 +1,42 @@
+@inherits LayoutComponentBase
+@inject IConfiguration Configuration
+
+@{
+    var embeddedHost = string.Equals(
+        Configuration["LLMControlCenter:EmbeddedHost"],
+        "true",
+        StringComparison.OrdinalIgnoreCase);
+}
+
+<div class="cc-layout @(embeddedHost ? "embedded" : string.Empty)">
+    @if (!embeddedHost)
+    {
+        <aside class="cc-sidebar">
+            <NavMenu />
+        </aside>
+    }
+
+    <main class="cc-main">
+        @if (!embeddedHost)
+        {
+            <header class="cc-topbar">
+                <div class="topbar-context">
+                    <span class="topbar-kicker">LLM CONTROL CENTER</span>
+                    <span class="topbar-separator">/</span>
+                    <span>Local workspace</span>
+                </div>
+                <div class="host-indicator"><span aria-hidden="true"></span> CONTROL PLANE ONLINE</div>
+            </header>
+        }
+
+        <article class="cc-content">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">×</span>
+</div>

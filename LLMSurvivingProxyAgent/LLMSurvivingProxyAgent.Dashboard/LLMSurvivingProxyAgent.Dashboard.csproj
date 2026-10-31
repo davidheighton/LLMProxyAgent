@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Core\LLMSurvivingProxyAgent.Core.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.TradeWars\LLMSurvivingProxyAgent.TradeWars.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Models\LLMSurvivingProxyAgent.Models.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Reactive\LLMSurvivingProxyAgent.Reactive.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Runtime\LLMSurvivingProxyAgent.Runtime.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Agent\LLMSurvivingProxyAgent.Agent.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Goals\LLMSurvivingProxyAgent.Goals.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Knowledge\LLMSurvivingProxyAgent.Knowledge.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Packaging\LLMSurvivingProxyAgent.Packaging.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Macros\LLMSurvivingProxyAgent.Macros.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="KnowledgeSources\**\*.cs" />
+    <Content Include="KnowledgeSources\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Markdig" Version="1.5.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+</Project>

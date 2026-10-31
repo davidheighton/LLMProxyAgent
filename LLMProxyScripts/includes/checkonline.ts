@@ -1,0 +1,107 @@
+:CheckOnline
+sys_check
+  
+send "#"
+setTextLineTrigger pause5 :pause5 "     Who's Playing     "
+pause
+:pause5
+killTrigger checkFailed
+setVar $Count 1
+setTextLineTrigger GetPlayer :GetPlayer
+pause
+  
+:GetPlayer
+  
+if (CURRENTLINE = "")
+if ($Count = 1)
+setTextLineTrigger GetPlayer :GetPlayer
+pause
+else
+goto :GotPlayers
+end
+end
+  
+setVar $StripRank~Player CURRENTLINE
+gosub :StripRank~StripRank
+  
+setVar $StripCorp~Player $StripRank~Player
+gosub :StripCorp~StripCorp
+  
+setVar $Player $StripCorp~Player
+  
+setVar $I 1
+setVar $Found 0
+:NextPlayer
+if ($LastPlayers[$I] <> 0)
+if ($LastPlayers[$I] = $Player)
+setVar $Found 1
+end
+add $I 1
+goto :NextPlayer
+end
+  
+if ($Found = 0) and ($Init = 1)
+getDate $date
+getTime $time
+    
+if ($Broadcast = "1")
+send "'ONLINEUPDATE: " $Player " has entered the game*"
+end
+if ($LogFile <> "0")
+write $LogFile $date & " " & $time & " - " & "#: " & $Player & " has entered the game"
+end
+end
+  
+setVar $Players[$Count] $Player
+add $Count 1
+setTextLineTrigger GetPlayer :GetPlayer
+pause
+  
+:GotPlayers
+setVar $Players[$Count] 0
+setVar $Count 1
+  
+:CheckNextPlayer
+if ($LastPlayers[$Count] <> 0)
+setVar $I 1
+setVar $Found 0
+    
+:CheckNextPlayer2
+if ($Players[$I] <> 0)
+if ($Players[$I] = $LastPlayers[$Count])
+setVar $Found 1
+end
+add $I 1
+goto :CheckNextPlayer2
+end
+    
+if ($Found = 0)
+getDate $date
+getTime $time
+      
+if ($Broadcast = "1")
+send "'ONLINEUPDATE: " $LastPlayers[$Count] " has left the game*"
+end
+if ($LogFile <> "0")
+write $LogFile $date & " " & $time & " - " & "#: " & $LastPlayers[$Count] & " has left the game"
+end
+end
+    
+add $Count 1
+goto :CheckNextPlayer
+end
+  
+setVar $Count 1
+  
+:GetNextPlayer
+if ($Players[$Count] <> 0)
+setVar $LastPlayers[$Count] $Players[$Count]
+add $Count 1
+goto :GetNextPlayer
+end
+  
+setVar $LastPlayers[$Count] 0
+setVar $Init 1
+return
+include "..\includes\aliases\pink-scripts-scripts2-include\stripCorp.ts"
+include "..\includes\aliases\pink-scripts-scripts2-include\stripRank.ts"

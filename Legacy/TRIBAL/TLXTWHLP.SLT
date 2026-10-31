@@ -1,0 +1,26 @@
+// tlxtwhlp.slt = Alt-F1
+// Runs the editor defined in Telix's Setup (Alt-O,F).
+///////////////////////////////////////////////////////////////////////////////
+main()
+{
+    str file[64];
+    int osk;
+
+    osk=_scr_chk_key;
+    _scr_chk_key=0;
+    strcat (file, _script_dir);
+    if(subchr(_script_dir,strlen(_script_dir)-1)!='\') strcat(file, "\");
+    strcat (file, "tlxtwhlp.txt");
+    if (filefind(file, 0) < 1) {
+      strupper(file);
+      printsc("^M^JUnable to find help file ");
+      prints( file );
+      _scr_chk_key=osk;
+      return 0;
+    }
+    inschrs(" ", file, 0, 1 );
+    cursor_onoff(1);
+    run(_editor, file);
+    _scr_chk_key=osk;
+    return 1;
+}

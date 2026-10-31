@@ -1,0 +1,138 @@
+@page "/agents"
+@using System.ComponentModel.DataAnnotations
+@using LLMSurvivingProxyAgent.Core
+@inject IAgentStore AgentStore
+
+<PageTitle>Agent Registry</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">CONTROL PLANE / AGENTS</p>
+        <h1>Agent registry</h1>
+        <p class="page-summary">Create and manage persistent player identities. Runtime and game-session controls live in each agent workspace.</p>
+    </div>
+    <a class="btn btn-secondary" href="/">Back to fleet</a>
+</div>
+
+<section class="card mb-4">
+    <div class="card-body">
+        <h2 class="h5 card-title">Create an agent</h2>
+        <EditForm Model="_form" OnValidSubmit="CreateAgentAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="display-name">Display name</label>
+                    <InputText id="display-name" class="form-control" @bind-Value="_form.DisplayName" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="description">Description</label>
+                    <InputText id="description" class="form-control" @bind-Value="_form.Description" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="provider">Preferred provider</label>
+                    <InputText id="provider" class="form-control" @bind-Value="_form.Provider" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="model">Preferred model</label>
+                    <InputText id="model" class="form-control" @bind-Value="_form.Model" />
+                </div>
+            </div>
+            <button class="btn btn-primary mt-3" type="submit">Create agent</button>
+        </EditForm>
+    </div>
+</section>
+
+<h2 class="h5">Registered agents</h2>
+<p class="small text-secondary">
+    Legacy free-form goal strings are retained for compatibility. Approved objectives are managed on the Goal Proposals page.
+</p>
+@if (_agents.Count == 0)
+{
+    <p>No agents have been created.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Provider / model</th>
+                    <th>Legacy goal strings</th>
+                    <th>Created</th>
+                    <th>Workspace</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var agent in _agents)
+                {
+                    <tr>
+                        <td>
+                            <strong>@agent.DisplayName</strong>
+                            <div class="small text-secondary">@agent.Description</div>
+                            <code>@agent.AgentId</code>
+                        </td>
+                        <td>@agent.Status</td>
+                        <td>@agent.PreferredProvider / @agent.PreferredModel</td>
+                        <td>@string.Join(", ", agent.Goals)</td>
+                        <td>@agent.CreatedDate.ToLocalTime().ToString("g")</td>
+                        <td class="table-actions">
+                            <a href="@($"/agents/{Uri.EscapeDataString(agent.AgentId)}")">Open</a>
+                            <a href="@($"/agents/{Uri.EscapeDataString(agent.AgentId)}/settings")">Settings</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<AgentContainer> _agents = [];
+    private AgentForm _form = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _agents = await AgentStore.GetAgentsAsync();
+    }
+
+    private async Task CreateAgentAsync()
+    {
+        var agent = new AgentContainer
+        {
+            AgentId = Guid.NewGuid().ToString("N"),
+            DisplayName = _form.DisplayName.Trim(),
+            Description = _form.Description.Trim(),
+            PreferredProvider = _form.Provider.Trim(),
+            PreferredModel = _form.Model.Trim()
+        };
+        agent.Journal.Add(new AgentJournalEntry(
+            DateTimeOffset.UtcNow,
+            "System",
+            "Agent identity created."));
+
+        await AgentStore.SaveAgentAsync(agent);
+        _agents = await AgentStore.GetAgentsAsync();
+        _form = new AgentForm();
+    }
+
+    private sealed class AgentForm
+    {
+        [Required]
+        [StringLength(80, MinimumLength = 1)]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [StringLength(500)]
+        public string Description { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(80, MinimumLength = 1)]
+        public string Provider { get; set; } = "Ollama";
+
+        [Required]
+        [StringLength(120, MinimumLength = 1)]
+        public string Model { get; set; } = "qwen3:4b";
+    }
+}

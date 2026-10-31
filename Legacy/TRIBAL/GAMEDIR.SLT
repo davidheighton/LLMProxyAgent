@@ -1,0 +1,63 @@
+// Changes to the game's directory and runs the following command
+//
+str command[] = "lt";                                                        //
+///////////////////////////////////////////////////////////////////////////////
+main()
+{
+    str bbsname[8], f1[64];
+    int i, osk;
+
+    osk=_scr_chk_key;_scr_chk_key=0;
+    update_term();
+    if(!getenv("f1",f1)) {
+        status_wind("F1 environment variable not found",25);
+        _scr_chk_key=osk;
+        return 0;
+    }
+    append_backslash(f1);
+    if(!strlen(_entry_name))
+        if(call("bbsname") == -1) {
+        _scr_chk_key=osk;
+        return 0;
+    }
+    bbsname=_entry_name;
+    fill_spaces(bbsname);
+    strcat(f1, bbsname); strcat(f1, "\");
+    newdir(f1);
+    _scr_chk_key=osk;
+    cursor_onoff(1);
+    dos(command,0);
+    newdir(_telix_dir);
+    _scr_chk_key=osk;
+    return 1;
+}
+//////////////////////////////////////////////////////////////////////////////
+//               Filters out characters illegal in DOS filenames.
+fill_spaces( str bbsbuf )
+{
+    int i;
+    str chr[1];
+    int count = 0;
+    while (count < 6) {
+        if      (count == 0) chr = ".";
+        else if (count == 1) chr = "+";
+        else if (count == 2) chr = " ";
+        else if (count == 3) chr = "?";
+        else if (count == 4) chr = "*";
+        else if (count == 5) chr = "/";
+        i=0;
+        while (1) {
+            i = strpos(bbsbuf, chr, i);
+            if (i == -1) break;
+             setchr(bbsbuf, i ,'_');
+            i = i + 1;
+        } ++count;
+    } return bbsbuf;
+}
+///////////////////////////////////////////////////////////////////////////////
+append_backslash( str string )
+{
+    if(subchr(string,strlen(string)-1)!='\')strcat(string,"\");
+    return string;
+}
+/////////////////////////////////////////////////////////////////////////////

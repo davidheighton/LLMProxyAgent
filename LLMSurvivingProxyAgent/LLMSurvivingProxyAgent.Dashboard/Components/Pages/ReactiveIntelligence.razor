@@ -1,0 +1,274 @@
+@page "/reactive-intelligence"
+@page "/agents/{AgentId}/events"
+@using LLMSurvivingProxyAgent.Agent
+@using LLMSurvivingProxyAgent.Core
+@using LLMSurvivingProxyAgent.Reactive
+@using LLMSurvivingProxyAgent.Runtime
+@using Microsoft.Data.Sqlite
+@inject IAgentStore AgentStore
+@inject IReactiveEventStore EventStore
+@inject IAgentRuntime AgentRuntime
+
+<PageTitle>Reactive Intelligence</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(AgentId))
+{
+    <AgentWorkspaceNavigation AgentId="@AgentId" ActivePage="events" />
+}
+
+<h1>Reactive Intelligence</h1>
+<p class="text-secondary">
+    Deterministic event classification routes urgent signals to fast response intents and other signals to deliberative review.
+    In the embedded MTC client, the initial synchronized ship state and distinct verified ship-state changes are submitted
+    automatically; Reflex assesses these deliberative events without issuing game commands.
+</p>
+<div class="alert alert-warning" role="note">
+    Live terminal chat is not auto-submitted: the current event stream does not provide a reliable sender/channel boundary.
+    Use the form to submit an attributed communication for Reflex classification. No reactive intent can disconnect, move,
+    fight, abort a running macro, change verified world state, or send a command to TradeWars.
+</div>
+<div class="alert alert-info" role="note">
+    Fast rules cover confirmed hostile presence, Fed warp hits, busts, connection loss, planet attacks, and trader entry.
+    Non-game communications and unverified signals are preserved and escalated instead of triggering emergency actions.
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert alert-danger" role="alert">@_error</div>
+}
+@if (_lastDecision is not null)
+{
+    <div class="alert alert-primary" role="status">
+        <strong>@_lastDecision.Mode · @_lastDecision.RuleId:</strong> @_lastDecision.Summary
+        <div>@_lastDecision.ExecutionBoundary</div>
+        @if (!string.IsNullOrWhiteSpace(_lastDecision.FallbackReason))
+        {
+            <div class="text-warning">Reflex fallback: @_lastDecision.FallbackReason</div>
+        }
+    </div>
+}
+
+<section class="card mb-4">
+    <div class="card-body">
+        <h2 class="h5 card-title">Simulate or record an event</h2>
+        @if (_agents.Count == 0)
+        {
+            <p>Create an agent before recording events.</p>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="reactive-agent">Agent</label>
+                    <select id="reactive-agent" class="form-select" @bind="_agentId" @bind:after="RefreshAsync">
+                        @foreach (var agent in _agents)
+                        {
+                            <option value="@agent.AgentId">@agent.DisplayName</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="reactive-type">Event</label>
+                    <InputSelect id="reactive-type" class="form-select" @bind-Value="_type">
+                        @foreach (var type in Enum.GetValues<ReactiveEventType>())
+                        {
+                            <option value="@type">@type</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="reactive-source">Source / channel</label>
+                    <InputSelect id="reactive-source" class="form-select" @bind-Value="_source">
+                        @foreach (var source in SimulatedSources)
+                        {
+                            <option value="@source">@source</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="reactive-sector">Sector (optional)</label>
+                    <InputNumber id="reactive-sector" class="form-control" @bind-Value="_sectorId" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="reactive-actor">Actor / sender</label>
+                    <input id="reactive-actor" class="form-control" maxlength="200" @bind="_actorName" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="reactive-alignment">Actor alignment</label>
+                    <InputNumber id="reactive-alignment" class="form-control" @bind-Value="_alignment" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="reactive-trust">Sender trust at receipt (0-1)</label>
+                    <InputNumber id="reactive-trust" class="form-control" min="0" max="1" step="0.01"
+                                 @bind-Value="_trustAtReceipt" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="reactive-reference">Source reference</label>
+                    <input id="reactive-reference" class="form-control" maxlength="1000" @bind="_sourceReference" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="reactive-message">Message / event details</label>
+                    <textarea id="reactive-message" class="form-control" rows="3" maxlength="4000"
+                              @bind="_message"></textarea>
+                </div>
+            </div>
+            <button class="btn btn-primary mt-3" @onclick="ProcessEventAsync" disabled="@_processing">
+                @(_processing ? "Classifying..." : "Classify and record")
+            </button>
+        }
+    </div>
+</section>
+
+<h2 class="h5">Recent events</h2>
+@if (_records.Count == 0)
+{
+    <p>No reactive events have been recorded.</p>
+}
+else
+{
+    @foreach (var record in _records)
+    {
+        <article class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between gap-3">
+                    <h3 class="h6">@record.Event.Type · @record.Decision.Mode · @record.Decision.RuleId</h3>
+                    <span class="small text-secondary">@record.ProcessedAt.ToLocalTime().ToString("g")</span>
+                </div>
+                <p class="mb-1">@record.Decision.Summary</p>
+                <p class="small text-secondary mb-1">
+                    @record.Decision.Origin · Source: @record.Event.Source · occurred @record.Event.OccurredAt.ToLocalTime().ToString("g")
+                    @if (record.Decision.Category is { } category)
+                    {
+                        <span> · @category</span>
+                    }
+                    @if (record.Decision.Urgency is { } urgency)
+                    {
+                        <span> · @urgency urgency</span>
+                    }
+                    @if (record.Decision.Confidence is { } confidence)
+                    {
+                        <span> · @confidence.ToString("P0") confidence</span>
+                    }
+                    @if (record.Decision.TrustAssessment is { } trustAssessment)
+                    {
+                        <span> · model trust assessment @trustAssessment</span>
+                    }
+                    @if (record.Event.SectorId is not null)
+                    {
+                        <span> · sector @record.Event.SectorId</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(record.Decision.FallbackReason))
+                    {
+                        <p class="small text-warning">Reflex fallback: @record.Decision.FallbackReason</p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(record.Event.ActorName))
+                    {
+                        <span> · actor/sender @record.Event.ActorName</span>
+                    }
+                    @if (record.Event.SenderTrustAtReceipt is not null)
+                    {
+                        <span> · trust at receipt @record.Event.SenderTrustAtReceipt.Value.ToString("P0")</span>
+                    }
+                </p>
+                @if (!string.IsNullOrWhiteSpace(record.Event.Message))
+                {
+                    <blockquote class="small border-start ps-2">@record.Event.Message</blockquote>
+                }
+                @if (record.Decision.ActionIntents.Count > 0)
+                {
+                    <ul class="small">
+                        @foreach (var action in record.Decision.ActionIntents)
+                        {
+                            <li><strong>@action.Kind:</strong> @action.Rationale</li>
+                        }
+                    </ul>
+                }
+                <p class="small text-secondary mb-0">@record.Decision.ExecutionBoundary</p>
+            </div>
+        </article>
+    }
+}
+
+@code {
+    [Parameter]
+    public string? AgentId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "agentId")]
+    public string? RequestedAgentId { get; set; }
+
+    private static readonly ReactiveEventSource[] SimulatedSources =
+    [
+        ReactiveEventSource.OperatorSimulation,
+        ReactiveEventSource.PrivateMessage,
+        ReactiveEventSource.CorporateMessage,
+        ReactiveEventSource.SubspaceMessage
+    ];
+
+    private IReadOnlyList<AgentContainer> _agents = [];
+    private IReadOnlyList<ReactiveEventRecord> _records = [];
+    private string _agentId = string.Empty;
+    private ReactiveEventType _type = ReactiveEventType.HostileDetected;
+    private ReactiveEventSource _source = ReactiveEventSource.OperatorSimulation;
+    private string _actorName = string.Empty;
+    private string _message = string.Empty;
+    private string _sourceReference = string.Empty;
+    private int? _sectorId;
+    private int? _alignment = -1;
+    private decimal? _trustAtReceipt;
+    private ReactiveDecision? _lastDecision;
+    private bool _processing;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _agents = await AgentStore.GetAgentsAsync();
+        var requestedId = AgentId ?? RequestedAgentId;
+        _agentId = _agents.FirstOrDefault(agent => agent.AgentId == requestedId)?.AgentId
+                   ?? _agents.FirstOrDefault()?.AgentId
+                   ?? string.Empty;
+        await RefreshAsync();
+    }
+
+    private async Task ProcessEventAsync()
+    {
+        _processing = true;
+        _error = null;
+        _lastDecision = null;
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var record = await AgentRuntime.SubmitReactiveEventAsync(new ReactiveEvent(
+                Guid.NewGuid().ToString("N"),
+                _agentId,
+                _type,
+                _source,
+                now,
+                now,
+                _sectorId,
+                string.IsNullOrWhiteSpace(_actorName) ? null : _actorName.Trim(),
+                _alignment,
+                string.IsNullOrWhiteSpace(_message) ? null : _message.Trim(),
+                string.IsNullOrWhiteSpace(_sourceReference) ? null : _sourceReference.Trim(),
+                _trustAtReceipt));
+            _lastDecision = record.Decision;
+            _message = string.Empty;
+            _sourceReference = string.Empty;
+            await RefreshAsync();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
+                                           or InvalidDataException or KeyNotFoundException
+                                           or SqliteException)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _processing = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _records = await EventStore.GetRecentAsync(_agentId, limit: 50);
+    }
+}

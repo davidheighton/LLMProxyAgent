@@ -1,0 +1,541 @@
+@page "/agent-runtime"
+@page "/agents/{AgentId}/runtime"
+@using LLMSurvivingProxyAgent.Core
+@using LLMSurvivingProxyAgent.Runtime
+@implements IDisposable
+@inject IAgentRuntime RuntimeService
+@inject IAgentStore AgentStore
+@inject AutonomousTestWorkerStatusStore AutonomousStatusStore
+@inject IAutonomousMoveApprovalGate MoveApprovalGate
+@inject IAgentSessionController AgentSessionController
+@inject IConfiguration Configuration
+
+<PageTitle>@(_agent?.DisplayName is { Length: > 0 } name ? $"{name} Runtime" : "Agent Runtime")</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">AGENT SESSION / RUNTIME</p>
+        <h1>@(_agent?.DisplayName is { Length: > 0 } displayName ? $"{displayName} runtime" : "Agent runtime")</h1>
+        <p class="page-summary">
+            Live proxy connectivity, autonomous decisions, and the existing reactive and strategic work lanes for this agent.
+        </p>
+    </div>
+</div>
+@if (!string.IsNullOrWhiteSpace(AgentId))
+{
+    <AgentWorkspaceNavigation AgentId="@AgentId" ActivePage="runtime" />
+}
+<div class="@MovementPolicyAlertClass" role="note">
+    The embedded Control Center has no per-session action cap. Each movement remains one adjacent sector and one turn,
+    and the route and post-move state are revalidated before another move is considered.
+    @if (!AutonomousGameplayEnabled)
+    {
+        <span>Autonomous gameplay is disabled in this host.</span>
+    }
+    else if (MovementRequiresApproval)
+    {
+        <span>Autonomous movement is gated and requires operator approval.</span>
+    }
+    else
+    {
+        <span>Autonomous movement runs without an operator approval gate.</span>
+    }
+    This page shows prompt and snapshot telemetry plus the agent's decision summary; raw terminal rendering remains in the MTC session.
+</div>
+
+<button class="btn btn-outline-primary mb-3" @onclick="RefreshStatusAsync">Refresh runtime status</button>
+
+@if (AgentSessionController.SupportsAgent(AgentId ?? "meridian"))
+{
+    <section class="card mb-3" aria-label="MTC agent controls">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between gap-2">
+                <div>
+                    <p class="eyebrow mb-1">MTC SESSION CONTROL</p>
+                    <h2 class="h5 mb-1">Connect and run Meridian</h2>
+                </div>
+                <span class="status-label">
+                    Terminal: @(_sessionControlStatus.IsConnected ? "Connected" : _sessionControlStatus.CanConnect ? "Ready" : "Needs setup")
+                    · Agent: @(_sessionControlStatus.IsAgentRunning ? "Running" : "Stopped")
+                </span>
+            </div>
+            <p class="small text-secondary">
+                Connects MTC's selected game session. Starting Meridian attaches the worker to this terminal;
+                the embedded session can continue without a per-session action cap, while verifying each adjacent-sector move.
+            </p>
+            @if (!_sessionControlStatus.CanConnect && !_sessionControlStatus.IsConnected)
+            {
+                <p class="small text-warning">
+                    Configure or load a game connection in MTC before connecting.
+                </p>
+            }
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-outline-primary"
+                        disabled="@(_sessionActionInProgress || _sessionControlStatus.IsConnected)"
+                        @onclick="ConfigureConnectionAsync">
+                    Configure game connection
+                </button>
+                <button class="btn btn-outline-primary"
+                        disabled="@(_sessionActionInProgress || _sessionControlStatus.IsConnected)"
+                        @onclick="LoadSavedConnectionAsync">
+                    Load saved connection
+                </button>
+                <button class="btn btn-primary"
+                        disabled="@(_sessionActionInProgress || _sessionControlStatus.IsConnected || !_sessionControlStatus.CanConnect)"
+                        @onclick="ConnectAgentAsync">
+                    Connect MTC terminal
+                </button>
+                <button class="btn btn-outline-primary"
+                        disabled="@(_sessionActionInProgress || !_sessionControlStatus.IsConnected || _sessionControlStatus.IsAgentRunning)"
+                        @onclick="RefreshCimAsync">
+                    Refresh port and warp CIM
+                </button>
+                <button class="btn btn-success"
+                        disabled="@(_sessionActionInProgress || !_sessionControlStatus.IsConnected || _sessionControlStatus.IsAgentRunning)"
+                        @onclick="StartAgentAsync">
+                    Start Meridian
+                </button>
+                <button class="btn btn-outline-secondary"
+                        disabled="@(_sessionActionInProgress || !_sessionControlStatus.IsAgentRunning)"
+                        @onclick="StopAgentAsync">
+                    Stop Meridian
+                </button>
+                <button class="btn btn-outline-danger"
+                        disabled="@(_sessionActionInProgress || !_sessionControlStatus.IsConnected)"
+                        @onclick="DisconnectAgentAsync">
+                    Disconnect terminal
+                </button>
+            </div>
+            @if (_sessionActionInProgress)
+            {
+                <p class="small mt-2 mb-0" role="status">Updating the MTC agent session...</p>
+            }
+            @if (!string.IsNullOrWhiteSpace(_sessionActionMessage))
+            {
+                <p class="small mt-2 mb-0" role="status">@_sessionActionMessage</p>
+            }
+            @if (!string.IsNullOrWhiteSpace(_sessionActionError))
+            {
+                <p class="small mt-2 mb-0 text-danger" role="alert">@_sessionActionError</p>
+            }
+        </div>
+    </section>
+}
+
+<section class="card mb-3" aria-label="MTC game session">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between gap-2">
+            <div>
+                <p class="eyebrow mb-1">MTC GAME SESSION</p>
+                <h2 class="h5 mb-1">Terminal connection</h2>
+            </div>
+            <span class="status-label">
+                <span class="status-dot @(GameSessionConnected ? "status-live" : "status-idle")" aria-hidden="true"></span>
+                @(GameSessionConnected ? "Connected" : "Disconnected")
+            </span>
+        </div>
+        <p><strong>Last agent activity:</strong> @GameSessionActivity</p>
+        <p><strong>Last updated:</strong> @(_autonomousStatus.UpdatedAt == DateTimeOffset.MinValue ? "Never" : _autonomousStatus.UpdatedAt.ToLocalTime().ToString("g"))</p>
+        @if (_autonomousStatus.Situation is { } situation)
+        {
+            <p>
+                <strong>Session:</strong> @situation.Authentication / @situation.CurrentPrompt /
+                synchronization @situation.Synchronization
+            </p>
+            @if (situation.Snapshot is { } snapshot)
+            {
+                <p><strong>Verified state:</strong> sector @snapshot.CurrentSector, @snapshot.Turns turns</p>
+            }
+        }
+        @if (!string.IsNullOrWhiteSpace(_autonomousStatus.LastAction))
+        {
+            <p><strong>Last decision:</strong> @_autonomousStatus.LastAction</p>
+            <p class="mb-1"><strong>Decision summary:</strong> @_autonomousStatus.LastRationale</p>
+        }
+        @if (_pendingMove is { } pendingMove)
+        {
+            <div class="alert alert-warning mt-3 mb-2" role="alert">
+                <strong>Movement approval required:</strong>
+                sector @pendingMove.CurrentSector to @pendingMove.TargetSector; costs @pendingMove.TurnCost turn.
+                <div>@pendingMove.Objective</div>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" @onclick="() => ResolveMovementAsync(approved: true)">Approve one-turn move</button>
+                <button class="btn btn-outline-secondary" @onclick="() => ResolveMovementAsync(approved: false)">Decline</button>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_approvalMessage))
+        {
+            <p class="small mt-2 mb-0" role="status">@_approvalMessage</p>
+        }
+    </div>
+</section>
+
+@if (_autonomousStatus.Situation?.IntegratedGameClient is { } integratedClient)
+{
+    <section class="card mb-3" aria-label="Integrated MTC and TWX services">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between gap-2">
+                <div>
+                    <p class="eyebrow mb-1">INTEGRATED GAME SERVICES</p>
+                    <h2 class="h5 mb-1">MTC client · TWX database · script service</h2>
+                </div>
+                <span class="status-label">
+                    Terminal @(integratedClient.TerminalConnected ? "connected" : "disconnected")
+                    · Database @(integratedClient.TwxDatabaseAvailable ? "available" : "unavailable")
+                    · Scripts @(integratedClient.ScriptServiceAvailable ? "available" : "unavailable")
+                </span>
+            </div>
+            <p>
+                <strong>Live database:</strong>
+                @(integratedClient.SectorCount?.ToString("N0") ?? "Unknown") sectors;
+                StarDock @(integratedClient.StarDockSector?.ToString() ?? "unknown");
+                current sector @(integratedClient.CurrentSector?.ToString() ?? "unknown").
+            </p>
+            <p>
+                <strong>Port CIM:</strong>
+                @(integratedClient.LastPortCimAt?.ToLocalTime().ToString("g") ?? "Not recorded")
+                <span class="text-secondary">· Context captured @integratedClient.CapturedAt.ToLocalTime().ToString("T")</span>
+            </p>
+            @if (integratedClient.RelevantSectors.Count > 0)
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">Sector</th>
+                                <th scope="col">Known port</th>
+                                <th scope="col">Warps</th>
+                                <th scope="col">Beacon / constellation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var sector in integratedClient.RelevantSectors)
+                            {
+                                <tr>
+                                    <th scope="row">@sector.Number</th>
+                                    <td>@(string.IsNullOrWhiteSpace(sector.Port) ? "Unknown" : sector.Port)</td>
+                                    <td>@(sector.WarpsOut.Count == 0 ? "Unknown" : string.Join(", ", sector.WarpsOut))</td>
+                                    <td>@DescribeSectorLocation(sector)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <h3 class="h6">Running TWX scripts</h3>
+                    @if (integratedClient.RunningScripts.Count == 0)
+                    {
+                        <p class="small text-secondary mb-0">No active interpreter scripts were observed.</p>
+                    }
+                    else
+                    {
+                        <ul class="small mb-0">
+                            @foreach (var script in integratedClient.RunningScripts)
+                            {
+                                <li>
+                                    @script.Name
+                                    @(script.Paused ? " (paused)" : string.Empty)
+                                    @if (!string.IsNullOrWhiteSpace(script.Reference))
+                                    {
+                                        <span class="text-secondary">· @script.Reference</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <div class="col-md-6">
+                    <h3 class="h6">Agent-approved script capabilities</h3>
+                    <ul class="small mb-0">
+                        @foreach (var capability in integratedClient.ScriptCapabilities)
+                        {
+                            <li>
+                                <strong>@capability.Id</strong>: @capability.Purpose
+                                <span class="text-secondary">· @capability.Reference</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+                <div class="col-12">
+                    <h3 class="h6">TWX script catalog · discovery metadata only</h3>
+                    <p class="small text-secondary">
+                        @integratedClient.ScriptCatalogStatus
+                        @if (integratedClient.ScriptCatalogTotalEntries > integratedClient.ScriptCatalogEntries.Count)
+                        {
+                            <span>
+                                Showing @integratedClient.ScriptCatalogEntries.Count of
+                                @integratedClient.ScriptCatalogTotalEntries entries.
+                            </span>
+                        }
+                    </p>
+                    @if (integratedClient.ScriptCatalogEntries.Count > 0)
+                    {
+                        <ul class="small mb-0">
+                            @foreach (var entry in integratedClient.ScriptCatalogEntries)
+                            {
+                                <li>
+                                    @entry.File
+                                    @if (!string.IsNullOrWhiteSpace(entry.Category))
+                                    {
+                                        <span class="text-secondary">· @entry.Category</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+}
+
+<section class="row g-3">
+    <div class="col-md-6">
+        <article class="card h-100">
+            <div class="card-body">
+                <h2 class="h5">Reactive brain</h2>
+                <p>Processes attributed events and records deterministic reactions. Game commands stay behind the MTC action pipeline.</p>
+                <p><strong>Queue depth:</strong> @_status.ReactiveQueueDepth</p>
+                <p class="mb-0">
+                    <strong>Last cycle:</strong>
+                    @(_status.LastReactiveCycleAt?.ToLocalTime().ToString("g") ?? "No cycles yet")
+                </p>
+                <a class="btn btn-sm btn-outline-secondary mt-3" href="@ReactiveEventsHref">Submit an event</a>
+            </div>
+        </article>
+    </div>
+    <div class="col-md-6">
+        <article class="card h-100">
+            <div class="card-body">
+                <h2 class="h5">Strategic brain</h2>
+                <p>Strategic Review maintains objectives for the autonomous Pilot and also supports manual reviews of verified snapshots.</p>
+                <p><strong>Queue depth:</strong> @_status.StrategicQueueDepth</p>
+                <p class="mb-0">
+                    <strong>Last cycle:</strong>
+                    @(_status.LastStrategicCycleAt?.ToLocalTime().ToString("g") ?? "No cycles yet")
+                </p>
+                <a class="btn btn-sm btn-outline-secondary mt-3" href="@StrategicReviewHref">Submit a snapshot for review</a>
+            </div>
+        </article>
+    </div>
+</section>
+
+<p class="small text-secondary mt-3">
+    Processing pipeline: @(_status.IsRunning ? "running" : "stopped"). Strategic objectives feed the Pilot;
+    reactive event records remain observational and are not dispatched as game commands.
+</p>
+
+@code {
+    [Parameter]
+    public string? AgentId { get; set; }
+
+    private AgentContainer? _agent;
+    private AgentRuntimeStatus _status = new(false, 0, 0, null, null);
+    private AutonomousTestWorkerStatus _autonomousStatus =
+        new("meridian", false, "Offline", DateTimeOffset.MinValue, null, null, null);
+    private AutonomousMoveApprovalRequest? _pendingMove;
+    private string? _approvalMessage;
+    private AgentSessionControlStatus _sessionControlStatus = new(false, false, false);
+    private string? _sessionActionMessage;
+    private string? _sessionActionError;
+    private bool _sessionActionInProgress;
+    private CancellationTokenSource? _refreshCancellation;
+    private bool AutonomousGameplayEnabled =>
+        bool.TryParse(Configuration["AutonomousGameplay:Enabled"], out bool enabled) && enabled;
+    private bool MovementRequiresApproval =>
+        bool.TryParse(Configuration["AutonomousGameplay:RequireMovementApproval"], out bool required) && required;
+    private string MovementPolicyAlertClass =>
+        !AutonomousGameplayEnabled
+            ? "alert alert-secondary"
+            : MovementRequiresApproval
+                ? "alert alert-warning"
+                : "alert alert-info";
+
+    private static string DescribeSectorLocation(IntegratedGameSectorSnapshot sector)
+    {
+        string[] labels = new[] { sector.Beacon, sector.Constellation }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+        return labels.Length == 0 ? "Unknown" : string.Join(" · ", labels);
+    }
+
+    private string ReactiveEventsHref => string.IsNullOrWhiteSpace(AgentId)
+        ? "/reactive-intelligence"
+        : $"/agents/{Uri.EscapeDataString(AgentId)}/events";
+    private string StrategicReviewHref => string.IsNullOrWhiteSpace(AgentId)
+        ? "/strategic-review"
+        : $"/agents/{Uri.EscapeDataString(AgentId)}/strategy";
+    private bool HasMtcSessionControl =>
+        AgentSessionController.SupportsAgent(AgentId ?? "meridian");
+    private bool GameSessionConnected =>
+        HasMtcSessionControl ? _sessionControlStatus.IsConnected : _autonomousStatus.IsConnected;
+    private string GameSessionActivity =>
+        !HasMtcSessionControl
+            ? _autonomousStatus.Activity
+            : !_sessionControlStatus.IsConnected
+                ? "MTC terminal disconnected"
+                : !_sessionControlStatus.IsAgentRunning
+                    ? "Agent stopped; terminal remains connected"
+                    : _autonomousStatus.UpdatedAt == DateTimeOffset.MinValue ||
+                      string.Equals(_autonomousStatus.Activity, "Offline", StringComparison.OrdinalIgnoreCase)
+                        ? "Waiting for authenticated Command prompt"
+                        : _autonomousStatus.Activity;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _agent = string.IsNullOrWhiteSpace(AgentId) ? null : await AgentStore.GetAgentAsync(AgentId);
+        await RefreshStatusAsync();
+    }
+
+    protected override void OnInitialized()
+    {
+        _refreshCancellation = new CancellationTokenSource();
+        _ = RefreshStatusLoopAsync(_refreshCancellation.Token);
+    }
+
+    private void RefreshStatus()
+    {
+        _status = RuntimeService.GetStatus();
+        _autonomousStatus = AutonomousStatusStore.GetStatus(AgentId ?? "meridian");
+        var pendingMove = MoveApprovalGate.PendingRequest;
+        _pendingMove = pendingMove is not null &&
+            string.Equals(pendingMove.AgentId, AgentId ?? "meridian", StringComparison.OrdinalIgnoreCase)
+                ? pendingMove
+                : null;
+    }
+
+    private async Task RefreshStatusAsync()
+    {
+        RefreshStatus();
+        if (AgentSessionController.SupportsAgent(AgentId ?? "meridian"))
+        {
+            _sessionControlStatus = await AgentSessionController.GetStatusAsync(AgentId ?? "meridian");
+        }
+    }
+
+    private Task ConnectAgentAsync() =>
+        PerformSessionActionAsync(AgentSessionController.ConnectAsync, "MTC terminal connected.");
+
+    private Task ConfigureConnectionAsync() =>
+        PerformSessionActionAsync(AgentSessionController.ConfigureConnectionAsync, "MTC connection updated.");
+
+    private Task LoadSavedConnectionAsync() =>
+        PerformSessionActionAsync(
+            AgentSessionController.LoadSavedConnectionAsync,
+            "Saved MTC connection loaded.",
+            "No saved connection was selected.");
+
+    private Task StartAgentAsync() =>
+        PerformSessionActionAsync(AgentSessionController.StartAgentAsync, "Meridian started.");
+
+    private Task StopAgentAsync() =>
+        PerformSessionActionAsync(AgentSessionController.StopAgentAsync, "Meridian stopped.");
+
+    private Task DisconnectAgentAsync() =>
+        PerformSessionActionAsync(AgentSessionController.DisconnectAsync, "MTC terminal disconnected.");
+
+    private Task RefreshCimAsync() =>
+        PerformSessionActionAsync(
+            AgentSessionController.RefreshCimAsync,
+            "Port and warp CIM refresh completed.");
+
+    private async Task PerformSessionActionAsync(
+        Func<string, CancellationToken, Task> action,
+        string successMessage)
+    {
+        if (_sessionActionInProgress)
+        {
+            return;
+        }
+
+        _sessionActionInProgress = true;
+        _sessionActionMessage = null;
+        _sessionActionError = null;
+        try
+        {
+            await action(AgentId ?? "meridian", CancellationToken.None);
+            _sessionActionMessage = successMessage;
+        }
+        catch (Exception exception)
+        {
+            _sessionActionError = exception.Message;
+        }
+        finally
+        {
+            _sessionActionInProgress = false;
+            await RefreshStatusAsync();
+        }
+    }
+
+    private async Task PerformSessionActionAsync(
+        Func<string, CancellationToken, Task<bool>> action,
+        string successMessage,
+        string noActionMessage)
+    {
+        if (_sessionActionInProgress)
+        {
+            return;
+        }
+
+        _sessionActionInProgress = true;
+        _sessionActionMessage = null;
+        _sessionActionError = null;
+        try
+        {
+            _sessionActionMessage = await action(AgentId ?? "meridian", CancellationToken.None)
+                ? successMessage
+                : noActionMessage;
+        }
+        catch (Exception exception)
+        {
+            _sessionActionError = exception.Message;
+        }
+        finally
+        {
+            _sessionActionInProgress = false;
+            await RefreshStatusAsync();
+        }
+    }
+
+    private async Task ResolveMovementAsync(bool approved)
+    {
+        if (_pendingMove is not { } pendingMove)
+        {
+            return;
+        }
+
+        _approvalMessage = MoveApprovalGate.Resolve(pendingMove.ApprovalId, approved)
+            ? approved ? "Movement approved; the worker will revalidate the route before sending." : "Movement declined."
+            : "This movement request is no longer pending.";
+        RefreshStatus();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshStatusLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshStatusAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshCancellation?.Cancel();
+        _refreshCancellation?.Dispose();
+    }
+}

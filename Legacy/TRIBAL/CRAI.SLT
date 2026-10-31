@@ -1,0 +1,146 @@
+I // see lines 55 - 63 approximately
+//////////////////////////////////////////////////////////////////////////////
+// Crai.slt = Ctrl-C
+///////////////////////////////////////////////////////////////////////////////
+str  f1[64],
+     bbsname[8], buf[40], shortname[12],
+     capfname[64],
+     tmpdir[64], msg[64], exe[64],
+     drs[3];
+int  i,x,y,cs,dr,statline,statline_color;
+///////////////////////////////////////////////////////////////////////////////
+main()
+{
+    _scr_chk_key=0;
+    update_term();
+    cursor_onoff(1);
+    if(!getenv("f1",f1)) {
+        soft_wind("F1 environment variable not found", 25);
+        _scr_chk_key=1;
+        return 0;
+    }
+    i=subchr(f1,strlen(f1)-1);if(i!='\')strcat(f1,"\");
+    if(carrier())
+        if (!chk_prompt("Command [TL")) {
+            soft_wind("Must be at the ^0034Command [TL=^0034 prompt.", 25);
+            _scr_chk_key=1;
+            return 0;
+        }
+    if(!strlen(_entry_name))
+        if (call("bbsname") == -1) {
+            _scr_chk_key = 1;
+            return 0;
+        }
+    _scr_chk_key = 0;
+    bbsname=_entry_name;
+    fill_spaces();
+    strcat(f1, bbsname);
+    subchrs(bbsname, 0, 3, shortname);
+    strcat(f1, "\");
+    exe=_script_dir;
+    if(subchr(exe,strlen(exe)-1)!='\')strcat(exe, "\");
+        strcat( exe, "Crai.exe" );
+    if ( !filefind( exe,0 ) ) {
+        soft_wind("Crai.exe not found in script directory." ,40);
+        _scr_chk_key = 1;
+        return 0;
+    }
+    if(filefind(_capture_fname) != 0 )  // look for default cap first
+        capfname = _capture_fname;
+    else                                // assume its in the game's dir
+        fnstrip( _capture_fname, 3, capfname );
+
+    // capfname="C:\Telix\Telix.cap";
+    // uncomment above to hard code in the cap file.
+
+    newdir(f1); // change to the game's directory
+    if(!filefind( capfname )) {
+        soft_wind( "Unable to find capture file", 30);
+        soft_wind( capfname, 50 );
+        // above line will show which file it can't find, if it happens again,
+        // make a note of the filename and let me know.
+        //
+        return 0;
+    }
+    cs=capture_stat();
+    capture("*close*");
+    strcat(exe," ");
+    strcat(exe, capfname);
+    strcat(exe," ");
+    strcat(exe, shortname);
+    strcat(exe," /p8 /m /v"); // command line switches for crai.exe
+    //soft_wind(exe,100);
+    i=dos(exe,0);
+    if      ( cs == 1 )   capture(_capture_fname);
+    else if ( cs == 2 ) {capture(_capture_fname); capture("*pause*");}
+    newdir( _telix_dir );
+    return 1;
+}
+///////////////////////////////////////////////////////////////////////////////
+//                            Check Prompt
+chk_prompt(str prompt)
+{
+  int          l, h, key, old_chk_key, ts;
+  str          promptbuf[20];
+
+  _scr_chk_key = old_chk_key; _scr_chk_key = 0;
+  cursor_onoff(0);
+  l = strlen( prompt );
+  x=getx(); y=gety();
+  vgetchrs(0, y, promptbuf, 0, l);
+  gotoxy(2,y); gotoxy(x,y);
+  cursor_onoff(1);
+  _scr_chk_key = old_chk_key;
+  if (strcmpi(prompt, promptbuf) != 0)
+      return 0;
+  return 1;
+}
+///////////////////////////////////////////////////////////////////////////////
+//                         Soft Wind
+soft_wind(str message, int duration)
+{
+  int old_chk_key;
+  old_chk_key = _scr_chk_key;
+  _scr_chk_key = 0;
+  int l, h, x, y, key = 0, ts;
+  cursor_onoff(0);
+  x=getx(); y=gety();
+  l = strlen(message)/2;
+  h = vsavearea(37-l, 10, 43+l, 14);
+  box(37-l, 10, 43+l, 14, 3, 0, 5 );
+  pstraxy(message, 40-l  , 12, 11 );
+  ts = timer_start(duration);
+  while( !key && !time_up(ts)) key=inkey();
+  vrstrarea(h);
+  cursor_onoff(1);
+  gotoxy(x,y);
+  timer_free(ts);
+  _scr_chk_key = old_chk_key;
+  return key;
+}
+//////////////////////////////////////////////////////////////////////////////
+//              Filters out characters illegal in DOS filenames.
+fill_spaces()
+{
+ str	chr[1];
+ int	count = 0;
+
+ while (count < 6) {
+        if (count == 0) chr = ".";
+	else if (count == 1) chr = "+";
+	else if (count == 2) chr = " ";
+	else if (count == 3) chr = "?";
+	else if (count == 4) chr = "*";
+	else if (count == 5) chr = "/";
+	i=0;
+        while (1) {
+            i = strpos(bbsname, chr, i);
+            if (i == -1) break;
+            setchr(bbsname, i ,'_');
+            i = i + 1;
+        }
+        ++count;
+    }
+    return 1;
+}
+///////////////////////////////////////////////////////////////////////////////

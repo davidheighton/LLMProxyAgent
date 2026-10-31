@@ -1,0 +1,47 @@
+Final accessible LLM interaction-card summaries only. Prompt bodies and model reasoning are intentionally excluded.
+Captured UTC: 2026-10-30T16:08:45.6633058+00:00
+
+        - tab "Pilot (41)" [selected] [ref=e157] [cursor=pointer]
+        - tab "Strategic Review (2)" [ref=e158] [cursor=pointer]
+        - tab "Reflex (39)" [ref=e159] [cursor=pointer]
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:05 AM · 23s" [ref=e164] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:05 AM · 21s" [ref=e170] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:04 AM · 23s" [ref=e176] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 2 10/30/2026 10:04 AM · 20s" [ref=e182] [cursor=pointer]:
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:04 AM · 18s there is no active verified Refurb quote" [ref=e188] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:03 AM · 24s" [ref=e195] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:03 AM · 37s" [ref=e201] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:02 AM · 22s" [ref=e207] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:02 AM · 29s" [ref=e213] [cursor=pointer]:
+            - 'button "Pilot Failed Ollama / qwen3:1.7b · attempt 2 10/30/2026 10:02 AM · 15s Ollama returned an invalid test-action decision after 2 attempts: the current sector is not the verified StarDock sector; neither Density nor Holo scanning capability is verified on the ship." [ref=e219] [cursor=pointer]':
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:01 AM · 22s there is no active verified Refurb quote" [ref=e226] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 2 10/30/2026 10:01 AM · 20s" [ref=e233] [cursor=pointer]:
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:01 AM · 20s there is no active verified Refurb quote" [ref=e239] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 2 10/30/2026 10:00 AM · 8s" [ref=e246] [cursor=pointer]:
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 10:00 AM · 28s there is no active verified Refurb quote" [ref=e252] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:59 AM · 27s" [ref=e259] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 2 10/30/2026 9:59 AM · 23s" [ref=e265] [cursor=pointer]:
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:58 AM · 35s there is no active verified Refurb quote" [ref=e271] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:58 AM · 30s" [ref=e278] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:58 AM · 22s" [ref=e284] [cursor=pointer]:
+            - 'button "Pilot Failed Ollama / qwen3:1.7b · attempt 2 10/30/2026 9:57 AM · 9s Ollama returned an invalid test-action decision after 2 attempts: there is no active verified Refurb quote." [ref=e290] [cursor=pointer]':
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:57 AM · 33s there is no active verified Refurb quote" [ref=e297] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:56 AM · 34s" [ref=e304] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:56 AM · 22s" [ref=e310] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:56 AM · 19s" [ref=e316] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:55 AM · 26s" [ref=e322] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:55 AM · 23s" [ref=e328] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:54 AM · 21s" [ref=e334] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 2 10/30/2026 9:54 AM · 8s" [ref=e340] [cursor=pointer]:
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:54 AM · 19s there is no active verified Refurb quote" [ref=e346] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 2 10/30/2026 9:54 AM · 3s" [ref=e353] [cursor=pointer]:
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:53 AM · 41s Ollama returned an empty test-action decision (role=assistant; contentLength=0; thinkingLength=7003; doneReason=length; evalCount=2048)." [ref=e359] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 2 10/30/2026 9:53 AM · 16s" [ref=e366] [cursor=pointer]:
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:52 AM · 30s there is no active verified Refurb quote" [ref=e372] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:52 AM · 21s" [ref=e379] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:52 AM · 15s" [ref=e385] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 2 10/30/2026 9:52 AM · 12s" [ref=e391] [cursor=pointer]:
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:51 AM · 22s there is no verified compatible port-trade opportunity" [ref=e397] [cursor=pointer]:
+            - button "Pilot Completed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:51 AM · 23s" [ref=e404] [cursor=pointer]:
+            - 'button "Pilot Failed Ollama / qwen3:1.7b · attempt 2 10/30/2026 9:51 AM · 14s Ollama returned an invalid test-action decision after 2 attempts: there is no verified compatible port-trade opportunity." [ref=e410] [cursor=pointer]':
+            - button "Pilot Failed Ollama / qwen3:1.7b · attempt 1 10/30/2026 9:50 AM · 15s there is no verified compatible port-trade opportunity" [ref=e417] [cursor=pointer]:

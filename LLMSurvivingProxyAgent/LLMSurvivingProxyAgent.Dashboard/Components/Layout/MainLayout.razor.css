@@ -1,0 +1,142 @@
+.cc-layout {
+    display: flex;
+    min-height: 100vh;
+    background: var(--cc-window);
+}
+
+.cc-sidebar {
+    position: sticky;
+    top: 0;
+    flex: 0 0 254px;
+    width: 254px;
+    height: 100vh;
+    border-right: 1px solid var(--cc-border);
+    background: var(--cc-menu);
+}
+
+.cc-main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.cc-topbar {
+    display: flex;
+    min-height: 54px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0 2rem;
+    border-bottom: 1px solid var(--cc-border);
+    background: var(--cc-shell);
+    color: var(--cc-muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+}
+
+.topbar-context,
+.host-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.topbar-kicker {
+    color: var(--cc-text);
+    font-weight: 700;
+}
+
+.topbar-separator {
+    color: var(--cc-border-strong);
+}
+
+.host-indicator {
+    color: var(--cc-green);
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+.host-indicator span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--cc-green);
+    box-shadow: 0 0 10px rgb(118 255 141 / 45%);
+}
+
+.cc-content {
+    width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 2rem clamp(1.25rem, 3vw, 3rem) 3rem;
+}
+
+.embedded .cc-content {
+    max-width: 1700px;
+    padding: 1.5rem clamp(1rem, 2vw, 2rem) 2.5rem;
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    right: 1rem;
+    bottom: 1rem;
+    left: 1rem;
+    padding: 0.8rem 1rem;
+    border: 1px solid #a54444;
+    border-radius: 8px;
+    background: #3a171a;
+    color: #ffe4e4;
+}
+
+#blazor-error-ui .reload {
+    margin-left: 0.5rem;
+    color: #fff;
+}
+
+#blazor-error-ui .dismiss {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.7rem;
+    cursor: pointer;
+}
+
+@media (max-width: 820px) {
+    .cc-sidebar {
+        flex-basis: 220px;
+        width: 220px;
+    }
+
+    .cc-topbar {
+        padding: 0 1rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .cc-layout {
+        display: block;
+    }
+
+    .cc-sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--cc-border);
+    }
+
+    .cc-content,
+    .embedded .cc-content {
+        padding: 1.25rem 1rem 2rem;
+    }
+
+    .cc-topbar {
+        min-height: 45px;
+    }
+
+    .host-indicator {
+        display: none;
+    }
+}

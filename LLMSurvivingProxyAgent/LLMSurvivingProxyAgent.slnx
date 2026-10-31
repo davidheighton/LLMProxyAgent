@@ -1,0 +1,15 @@
+<Solution>
+  <Project Path="LLMSurvivingProxyAgent.Agent/LLMSurvivingProxyAgent.Agent.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Core/LLMSurvivingProxyAgent.Core.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.CorpusBuilder/LLMSurvivingProxyAgent.CorpusBuilder.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Dashboard/LLMSurvivingProxyAgent.Dashboard.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Goals/LLMSurvivingProxyAgent.Goals.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Knowledge/LLMSurvivingProxyAgent.Knowledge.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Macros/LLMSurvivingProxyAgent.Macros.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Models/LLMSurvivingProxyAgent.Models.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Packaging/LLMSurvivingProxyAgent.Packaging.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Reactive/LLMSurvivingProxyAgent.Reactive.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Runtime/LLMSurvivingProxyAgent.Runtime.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.TradeWars.Tests/LLMSurvivingProxyAgent.TradeWars.Tests.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.TradeWars/LLMSurvivingProxyAgent.TradeWars.csproj" />
+</Solution>

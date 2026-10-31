@@ -1,0 +1,226 @@
+// Quicmenu.slt Ctrl-F3 Shows Tradewars internal quick help screens
+//////////////////////////////////////////////////////////////////////////////
+main()
+{
+    str prompt[20];
+    int osk,r;
+    osk=_scr_chk_key;
+    _scr_chk_key=0;
+    cursor_onoff(0);
+    get_prompt(prompt);
+    r=get_help(prompt);
+    cputc(r);
+    cursor_onoff(1);
+    _scr_chk_key=osk;
+}
+//////////////////////////////////////////////////////////////////////////////
+get_prompt(str prompt)
+{
+    int x,y;
+    x=getx();y=gety();
+    vgetchrs(0,y,prompt,0,7);
+  //pstraxy(prompt,0,y,31);
+    gotoxy(x,y);
+    return prompt;
+}
+/////////////////////////////////////////////////////////////////////////////
+get_help( str prompt)
+{
+    int bcolor=23,i,vh;
+    int a=3,b=5,k;
+    if((i=strposi("CommandComputeCorpora<StarDo<Galact<Hardwa<FedPol<Shipya<TavernPlanet Citadel",prompt,0))<0) {
+        soft_wind("Goto any Tradewars prompt.",30);
+        return 0;
+    }
+    vh=vsavearea(0,0,79,24);
+    if(strpos(prompt,"Command",0)>-1) {
+        pstraxy("ษออออออออออออออออออออออออออออออ 2 0 0 2 อออออออออออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ        Navigation            Computer              Tactical            บ",a, b+1,bcolor);
+        pstraxy("บ        =-=-==-=-=            =-=--=-=              =-=--=-=            บ",a, b+2,bcolor);
+        pstraxy("บ <D> Re-Display Sector <C> Onboard Computer <A> Attack Enemy SpaceCraft บ",a, b+3,bcolor);
+        pstraxy("บ <P> Port and Trade    <X> Transporter Pad  <E> Use SubSpace EtherProbe บ",a, b+4,bcolor);
+        pstraxy("บ <M> Move to a Sector  <I> Ship Information <F> Take or Leave Fighters  บ",a, b+5,bcolor);
+        pstraxy("บ <L> Land on a Planet  <T> Corporate Menu   <G> Show Deployed Fighters  บ",a, b+6,bcolor);
+        pstraxy("บ <S> Long Range Scan   <U> Use Genesis Torp <H> Handle Space Mines      บ",a, b+7,bcolor);
+        pstraxy("บ <R> Release Beacon    <J> Jettison Cargo   <K> Show Deployed Mines     บ",a, b+8,bcolor);
+        pstraxy("บ <W> Tow SpaceCraft    <B> Interdict Ctrl   <O> Starport Construction   บ",a, b+9,bcolor);
+        pstraxy("บ                       <!> Main Menu Help                               บ",a,b+10,bcolor);
+        pstraxy("บ <Q> Quit and Exit     <Z> TradeWars DOCS   <V> View Game Status        บ",a,b+11,bcolor);
+        pstraxy("ศออออออออออออออออออออออออออออออออ v2 ออออออออออออออออออออออออออออออออออออผ",a,b+12,bcolor);
+    } else
+    if(strpos(prompt,"Compute",0)>-1) {
+        pstraxy("ษอออออออออออออออออออออออออออออออ 2 0 0 2 ออออออออออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ -=-   Navigation   -=-  -=-      Misc      -=-   -=-   Displays   -=-  บ",a, b+1,bcolor);
+        pstraxy("บ <F> Course Plotter      <A> Make Announcement    <C> View Ship Catalog บ",a, b+2,bcolor);
+        pstraxy("บ <I> Inter Sector Warps  <B> Begin Self Destruct  <D> Scan Daily Log    บ",a, b+3,bcolor);
+        pstraxy("บ <K> Your Known Universe <N> Toggle ANSI On/Off   <E> Evil Trader Class บ",a, b+4,bcolor);
+        pstraxy("บ <R> Port Report         <O> Change Ship Settings <G> Good Trader Class บ",a, b+5,bcolor);
+        pstraxy("บ <U> T-warp preference   <P> Fire Photon Missile  <H> Alien Trader Rank บ",a, b+6,bcolor);
+        pstraxy("บ <V> Avoid Sectors       <M> Re-Read Your Mail    <J> Planetary Specs   บ",a, b+7,bcolor);
+        pstraxy("บ <X> List Current Avoids <S> Send Mail            <L> List Trader Rank  บ",a, b+8,bcolor);
+        pstraxy("บ <!> Computer Help       <T> Current Ship Time    <Y> Personal Planets  บ",a, b+9,bcolor);
+        pstraxy("บ <Q> Exit Computer       <W> Use Mine Disruptor   <Z> Active Ship Scan  บ",a,b+10,bcolor);
+        pstraxy("ศอออออออออออออออออออออออออออออออออ v2 อออออออออออออออออออออออออออออออออออผ",a,b+11,bcolor);
+    } else
+    if(strpos(prompt,"Corpora",0)>-1) {
+        pstraxy("ษออออออออออออออออออออออ 2 0 0 2 อออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ <D> Display Corporations    <X> Leave Your Corporation บ",a, b+1,bcolor);
+        pstraxy("บ <J> Join a Corporation      <L> List Corporate Planets บ",a, b+2,bcolor);
+        pstraxy("บ <M> Make a New Corporation  <!> Corporation Help       บ",a, b+3,bcolor);
+        pstraxy("บ <Q> QUIT Corp Menu          <A> Show Corporate Assets  บ",a, b+4,bcolor);
+        pstraxy("บ -- (Corporations Only) --       & Member Locations     บ",a, b+5,bcolor);
+        pstraxy("บ <C> Credit Transfer         <T> Send Corporate Memo    บ",a, b+6,bcolor);
+        pstraxy("บ <F> Fighter Transfer          - C.E.O.s  Only -        บ",a, b+7,bcolor);
+        pstraxy("บ <H> Mine Transfer           <P> Corporate Security     บ",a, b+8,bcolor);
+        pstraxy("บ <S> Shields Transfer        <R> Drop Corporate Member  บ",a, b+9,bcolor);
+        pstraxy("ศออออออออออออออออออออออออ v2 ออออออออออออออออออออออออออออผ",a,b+10,bcolor);
+    } else
+    if(strpos(prompt,"<StarDo",0)>-1) {
+        pstraxy("ษอออออออออออออออออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ     Obvious places to go are:         บ",a, b+1,bcolor);
+        pstraxy("บ                                       บ",a, b+2,bcolor);
+        pstraxy("บ <C> The CinePlex Videon Theatres      บ",a, b+3,bcolor);
+        pstraxy("บ <G> The 2nd National Galactic Bank    บ",a, b+4,bcolor);
+        pstraxy("บ <H> The Stellar Hardware Emporium     บ",a, b+5,bcolor);
+        pstraxy("บ <P> The Federal Space Police HQ       บ",a, b+6,bcolor);
+        pstraxy("บ <S> The Federation Shipyards          บ",a, b+7,bcolor);
+        pstraxy("บ <T> The Lost Trader's Tavern          บ",a, b+8,bcolor);
+        pstraxy("บ                                       บ",a, b+9,bcolor);
+        pstraxy("บ <!> Stardock Help                     บ",a,b+10,bcolor);
+        pstraxy("บ <Q> Return to your ship and leave     บ",a,b+11,bcolor);
+        pstraxy("ศอออออออออออออออออออออออออออออออออออออออผ",a,b+12,bcolor);
+    } else
+    if(strpos(prompt,"<Galact",0)>-1) {
+        pstraxy("ษออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ  The Galactic Bank:  บ",a, b+1,bcolor);
+        pstraxy("บ                      บ",a, b+2,bcolor);
+        pstraxy("บ <D> Make a Deposit   บ",a, b+3,bcolor);
+        pstraxy("บ <E> Examine Balance  บ",a, b+4,bcolor);
+        pstraxy("บ <T> Transfer Funds   บ",a, b+5,bcolor);
+        pstraxy("บ <W> Withdraw Funds   บ",a, b+6,bcolor);
+        pstraxy("บ                      บ",a, b+7,bcolor);
+        pstraxy("บ <Q> Leave the Bank   บ",a, b+8,bcolor);
+        pstraxy("ศออออออออออออออออออออออผ",a, b+9,bcolor);
+    } else
+    if(strpos(prompt,"<Hardwa",0)>-1) { b=1;
+        pstraxy("ษอออออออออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ The Emporium Daily Specials:  บ",a, b+1,bcolor);
+        pstraxy("บ                               บ",a, b+2,bcolor);
+        pstraxy("บ <A> Atomic Detonators         บ",a, b+3,bcolor);
+        pstraxy("บ <B> Marker Beacons            บ",a, b+4,bcolor);
+        pstraxy("บ <C> Corbomite Devices         บ",a, b+5,bcolor);
+        pstraxy("บ <D> Cloaking Devices          บ",a, b+6,bcolor);
+        pstraxy("บ <E> SubSpace Ether Probes     บ",a, b+7,bcolor);
+        pstraxy("บ <F> Planet Scanners           บ",a, b+8,bcolor);
+        pstraxy("บ <L> Limpet Tracking Mines     บ",a, b+9,bcolor);
+        pstraxy("บ <M> Space Mines               บ",a,b+10,bcolor);
+        pstraxy("บ <P> Photon Missiles           บ",a,b+11,bcolor);
+        pstraxy("บ <R> Long Range Scanners       บ",a,b+12,bcolor);
+        pstraxy("บ <S> Mine Disruptors           บ",a,b+13,bcolor);
+        pstraxy("บ <T> Genesis Torpedoes         บ",a,b+14,bcolor);
+        pstraxy("บ <W> TransWarp Drives          บ",a,b+15,bcolor);
+        pstraxy("บ <Y> Psychic Probes            บ",a,b+16,bcolor);
+        pstraxy("บ                               บ",a,b+17,bcolor);
+        pstraxy("บ <!> Hardware Emporium Help    บ",a,b+18,bcolor);
+        pstraxy("บ <Q> Leave the Emporium        บ",a,b+19,bcolor);
+        pstraxy("ศอออออออออออออออออออออออออออออออผ",a,b+20,bcolor);
+    } else
+    if(strpos(prompt,"<FedPol",0)>-1) {
+        pstraxy("ษอออออออออออออออออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ <A> Apply for a Federal Commission    บ",a, b+1,bcolor);
+        pstraxy("บ <C> Claim a Federation Reward         บ",a, b+2,bcolor);
+        pstraxy("บ <E> Examine the Ten Most Wanted List  บ",a, b+3,bcolor);
+        pstraxy("บ <P> Post a Reward on someone          บ",a, b+4,bcolor);
+        pstraxy("บ                                       บ",a, b+5,bcolor);
+        pstraxy("บ <!> FedPolice Help                    บ",a, b+6,bcolor);
+        pstraxy("บ <Q> Leave the Police Station          บ",a, b+7,bcolor);
+        pstraxy("ศอออออออออออออออออออออออออออออออออออออออผ",a, b+8,bcolor);
+    } else
+    if(strpos(prompt,"<Shipya",0)>-1) {
+        pstraxy("ษออออออออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ  The Federation Shipyards:   บ",a, b+1,bcolor);
+        pstraxy("บ                              บ",a, b+2,bcolor);
+        pstraxy("บ <B> Buy a New Ship           บ",a, b+3,bcolor);
+        pstraxy("บ <S> Sell extra Ships         บ",a, b+4,bcolor);
+        pstraxy("บ <E> Examine Ship Specs       บ",a, b+5,bcolor);
+        pstraxy("บ <P> Buy Class 0 Items        บ",a, b+6,bcolor);
+        pstraxy("บ <R> Change Ship Registration บ",a, b+7,bcolor);
+        pstraxy("บ                              บ",a, b+8,bcolor);
+        pstraxy("บ <!> Shipyards Help           บ",a, b+9,bcolor);
+        pstraxy("บ <Q> Leave the Shipyards      บ",a,b+10,bcolor);
+        pstraxy("ศออออออออออออออออออออออออออออออผ",a,b+11,bcolor);
+    } else
+    if(strpos(prompt,"<Tavern",0)>-1) {
+        pstraxy("ษอออออออออออออออออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ     Obvious things to do are:         บ",a, b+1,bcolor);
+        pstraxy("บ                                       บ",a, b+2,bcolor);
+        pstraxy("บ <A> Make an Announcement              บ",a, b+3,bcolor);
+        pstraxy("บ <B> Buy something from the bar        บ",a, b+4,bcolor);
+        pstraxy("บ <C> Eavesdrop on conversations        บ",a, b+5,bcolor);
+        pstraxy("บ <E> Order some food                   บ",a, b+6,bcolor);
+        pstraxy("บ <G> Try your hand at Tri-Cron         บ",a, b+7,bcolor);
+        pstraxy("บ <T> Talk to the grimy Trader in back  บ",a, b+8,bcolor);
+        pstraxy("บ <U> Use the facilities                บ",a, b+9,bcolor);
+        pstraxy("บ                                       บ",a,b+10,bcolor);
+        pstraxy("บ <!> Tavern Help                       บ",a,b+11,bcolor);
+        pstraxy("บ <Q> Leave the Tavern                  บ",a,b+12,bcolor);
+        pstraxy("ศอออออออออออออออออออออออออออออออออออออออผ",a,b+13,bcolor);
+    } else
+    if(strpos(prompt,"Planet ",0)>-1) {
+        pstraxy("ษอออออออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ <A> Take All Products       บ",a, b+1,bcolor);
+        pstraxy("บ <C> Enter Citadel           บ",a, b+2,bcolor);
+        pstraxy("บ <D> Display Planet          บ",a, b+3,bcolor);
+        pstraxy("บ <M> Change Military Levels  บ",a, b+4,bcolor);
+        pstraxy("บ <O> Claim Ownership of      บ",a, b+5,bcolor);
+        pstraxy("บ       this planet           บ",a, b+6,bcolor);
+        pstraxy("บ <P> Change Population Lvls  บ",a, b+7,bcolor);
+        pstraxy("บ <S> Load/Unload Colonists   บ",a, b+8,bcolor);
+        pstraxy("บ <T> Take or Leave Product   บ",a, b+9,bcolor);
+        pstraxy("บ <Z> Try to Destroy Planet   บ",a,b+10,bcolor);
+        pstraxy("บ                             บ",a,b+11,bcolor);
+        pstraxy("บ <!> Planetary Help          บ",a,b+12,bcolor);
+        pstraxy("บ <Q> Leave this Planet       บ",a,b+13,bcolor);
+        pstraxy("ศอออออออออออออออออออออออออออออผ",a,b+14,bcolor);
+    } else
+    if(strpos(prompt,"Citadel",0)>-1) {
+        pstraxy("ษออออออออออออออออออออออออออออออออออออออออออออออออออออออออออป",a, b  ,bcolor);
+        pstraxy("บ <B> Transporter Control      <N> Interdictor Control     บ",a, b+1,bcolor);
+        pstraxy("บ <C> Engage Ship's Computer   <P> Planetary TransWarp     บ",a, b+2,bcolor);
+        pstraxy("บ <D> Display Traders Here     <R> Remain here overnight   บ",a, b+3,bcolor);
+        pstraxy("บ <E> Exchange Trader Ships    <S> Scan this sector        บ",a, b+4,bcolor);
+        pstraxy("บ <G> Shield Generator Control <T> Treasury Fund Transfers บ",a, b+5,bcolor);
+        pstraxy("บ <I> Personal Info            <U> Upgrade Citadel         บ",a, b+6,bcolor);
+        pstraxy("บ <L> Quasar Cannon R-Level    <V> Evict the other Traders บ",a, b+7,bcolor);
+        pstraxy("บ <M> Military Reaction Level  <X> Corporation Menu        บ",a, b+8,bcolor);
+        pstraxy("บ <!> Citadel Help             <Q> Leave the Citadel       บ",a, b+9,bcolor);
+        pstraxy("ศออออออออออออออออออออออออออออออออออออออออออออออออออออออออออผ",a,b+10,bcolor);
+    }
+    k=inkeyw();
+    vrstrarea(vh);
+    return k;
+}
+///////////////////////////////////////////////////////////////////////////////
+//                         Soft Wind
+soft_wind(str message, int duration)
+{
+    int old_chk_key;
+    old_chk_key = _scr_chk_key;
+    _scr_chk_key = 0;
+    int l, h, x, y, key = 0, ts;
+    cursor_onoff(0);
+    x=getx(); y=gety();
+    l = strlen(message)/2;
+    h = vsavearea(37-l, 10, 43+l, 14);
+    box(37-l, 10, 43+l, 14, 3, 0, 5 );
+    pstraxy(message, 40-l  , 12, 11 );
+    ts = timer_start(duration);
+    while( !key && !time_up(ts)) key=inkey();
+    vrstrarea(h);
+    cursor_onoff(1);
+    gotoxy(x,y);
+    timer_free(ts);
+    _scr_chk_key = old_chk_key;
+    return key;
+}
+//////////////////////////////////////////////////////////////////////////////

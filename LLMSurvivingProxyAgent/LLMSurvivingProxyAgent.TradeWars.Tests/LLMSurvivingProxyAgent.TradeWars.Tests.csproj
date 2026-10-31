@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\artifacts\trade-wars-v1.13.3.seedpkg"
+          Link="testdata\trade-wars-v1.13.3.seedpkg"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.CorpusBuilder\LLMSurvivingProxyAgent.CorpusBuilder.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.TradeWars\LLMSurvivingProxyAgent.TradeWars.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Agent\LLMSurvivingProxyAgent.Agent.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Goals\LLMSurvivingProxyAgent.Goals.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Macros\LLMSurvivingProxyAgent.Macros.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Knowledge\LLMSurvivingProxyAgent.Knowledge.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Packaging\LLMSurvivingProxyAgent.Packaging.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Models\LLMSurvivingProxyAgent.Models.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Reactive\LLMSurvivingProxyAgent.Reactive.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Runtime\LLMSurvivingProxyAgent.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>

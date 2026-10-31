@@ -1,0 +1,512 @@
+// capture file name
+
+str game_capture_fname[] = "e:\tmp\cap";
+
+// --------------------------------------------------------------------
+//      Twlogoff.slt  Alt-F5
+//
+//      Lines beginning with "//" are comments and ignored by the
+//      script compiler
+//
+//      Congratulations!  You have been recruited into the wonderful
+//      world of Telix SALT programming.  This file requires editing
+//      to work properly.
+//
+//      This script requires editing for each particular BBS that
+//      you play on. You only need to edit three small sections:
+//      1.  do_bbs() function
+//      2.  Offline_maintenance() function
+//      3.  comment out line 363 (approximatelly)
+//
+//      Each section is commented describing what it does.
+//
+//      What this script does:
+//
+//      This script will be called from DNINTG (Ctrl-D, Download
+//      Interrogation Reports) or CIM_WARP (Ctrl-L, Level Diagram
+//      Generator) if you choose to do so.
+//
+//      It exits Tradewars from the "Command [TL=" prompt, (cloaks
+//      or remains on a planet) then logs off the BBS and runs CRAI
+//      and anything else you want to do. (Can be run offline if you
+//      just want to do the offline stuff) You can run Ctrl-D and
+//      gather all the reports and after its finished it will call
+//      this script that will log you off the BBS and do any
+//      maintenance you want to do, all automatically.
+//
+//      After editing this file it must be re-compiled using Telix's script
+//      compiler (CS.EXE).
+//      Type "CS Twlogoff" at the dos prompt.
+//
+// --------------------------------------------------------------------
+
+str f1[64],buf[255],drs[3],tmpbuf[30],
+    bbsname[8],shortname[3],
+    planet_remain[64],planet_no[5],
+    gamedir[64];
+int a, b, c, dr, f, fd, fs, h, i, l, s, x, y,
+    stat, t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15,t16,
+    tm, chrcolor, statline, statline_color,
+    old_chk_key, key = 0;
+
+// --------------------------------------------------------------------
+
+do_bbs()              // Edit below
+{
+
+  if ( !carrier() ) return 0;
+  substr( _entry_name, 0, 4, bbsname);
+  strupper( bbsname );
+
+// --------------------------------------------------------------------
+//  Enter the first four characters from the BBS in all CAPITOL LETTERS below.
+//  followed by the prompts that will get you off the BBS.
+//
+//      This is what must be done after you see the "Returning to BBS"
+//      message to get you off the BBS.
+//
+//       first 4 chars of BBS name from the dialing directory. (all CAPS)
+//             ³
+//             ÀÄÄÄÂÄÄ¿         whatever gets you off (the BBS).
+//                 ³  ³    ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+//                 ³  ³    ³                                          ³
+// --------------------------------------------------------------------
+ if     (bbsname=="TEST")  return -2;
+
+ else if(bbsname=="XXXX") {  // first 4 characters of the bbs name
+                             //
+    waitfor("XXXX"  ,30);    // prompt from the bbs, after you see the
+                             // "Returning to BBS" message"
+                             // usually it will be something from
+                             // the door's menu that the bbs displays.
+                             //
+    delay_scr(1);            // delay 1/10 second.
+                             //
+    cputs("XXXX");           // what you type go logoff the bbs.
+                             //
+    cputc( 13 );             // send a carriage return
+ }
+
+ else if(bbsname=="CAST") {
+    waitfor("Y Z Q"  ,30);delay_scr(2);cputs("Q");
+    waitfor("O A K"  ,30);delay_scr(2);cputs("G");
+    waitfor("[Y/n]"  ,30);delay_scr(2);cputs("^M");
+ }
+
+ else if(bbsname=="CHES"){
+    waitfor("Global" ,10);delay_scr(10);cputs("--!!");
+ }
+
+ else if(bbsname=="TERM"){
+    waitfor("Menu"  ,30);delay_scr(10);cputs("Q-");
+ }
+
+ else if(bbsname=="ROBI") {
+    waitfor("@ *]?" ,60);delay_scr(1);cputs("Q");
+    waitfor("Menu"  ,60);delay_scr(1);cputs("GY");
+ }
+
+ else {
+    soft_wind("BBSname not defined in TWLogoff.slt", 40 );
+    return -3;
+ }
+ delay_scr(10);
+ drf();
+ return 0;
+}
+// end of do_bbs()
+//-----------------------------------------------------------------------//
+//                  Offline_maintenance() // Edit below                  //
+//  This section does all the offline maintenance.                       //
+//  You can delete anything you want or add more here.                   //
+//-----------------------------------------------------------------------//
+Offline_maintenance() // Edit below
+{
+   if ( carrier() ) hangup();
+   capture("*close*");
+
+   printsc("^M^JÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ *  *  *  TLXTW Offline Maintenance  *  *  *  ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ");
+
+    printsc("^M^JFcopy - " );               // copy cap file to game's dir
+    printsc( _capture_fname );
+    printsc( " " );
+    printsc( gamedir );
+    printsc( "cap" );
+    buf = game_capture_fname;
+    if(filefind(buf,0,tmpbuf)) {
+          newdir( gamedir );
+          fcopy(buf, "cap" );
+          fdelete(buf);
+    }
+
+    printsc("^M^Jcrai " );                  // run crai
+    call("crai");
+
+    newdir( gamedir );
+    fdelete("twassist.cim");                // delete unnecessary files
+    fdelete("twacimup.ptr");
+    //delete("*.bak");
+
+    if(filefind("Twassist.dat",0,buf)) {    // modify twassist(c) database
+        buf="Twassist Twassist /a ME,cap, save_db";
+        prints("");
+        printsc(buf);
+        if(write_batch_file(buf))
+            exittelix(100,0);
+    }
+    call("hangup");
+    newdir( _telix_dir );
+    return 1;
+}//end of Offline_maintenance()
+// --------------------------------------------------------------------
+write_batch_file(str line1)
+{
+    str fname[64];
+    if(!getenv("temp",fname)) {
+        soft_wind("TEMP environment variable not found.",30);
+        return 0;
+    }
+    append_backslash(fname);
+    strcat(fname,"twaauto.bat");
+
+    if((f=fopen(fname,"w"))==0) {
+        fclearerr(f);
+        buf="Open Error ";
+        strcat(buf,fname);
+        soft_wind(buf,50);
+        return 0;
+    }
+    fputs("@echo off^m^j",f);
+    fputs(line1 ,f);
+    fclose(f);
+    return 1;
+}
+  //-----------------------------------------------------------------------//
+ //                     append_backslash( str string )                    //
+//-----------------------------------------------------------------------//
+append_backslash( str string )
+{
+   if(subchr(string,strlen(string)-1)!='\')strcat(string,"\");
+   return string;
+}
+  //-----------------------------------------------------------------------//
+ //                                 drf()                                 //
+//-----------------------------------------------------------------------//
+drf()
+{
+    int osk;
+    osk=_scr_chk_key;_scr_chk_key=0;
+    while( (c=cgetct(dr)) > -1 ) {
+      if(inkey()==27) {
+        _scr_chk_key=osk;
+        return 0;
+      } printsc_trm(c);
+    } _scr_chk_key=osk;
+    return 1;
+}
+  //-----------------------------------------------------------------------//
+ //                  soft_wind(str message, int duration)                 //
+//-----------------------------------------------------------------------//
+soft_wind(str message, int duration)
+{
+    int old_chk_key;
+    old_chk_key = _scr_chk_key;
+    _scr_chk_key = 0;
+    int l, h, x, y, key = 0, ts;
+    cursor_onoff(0);
+    x=getx(); y=gety();
+    l = strlen(message)/2;
+    h = vsavearea(37-l, 10, 43+l, 14);
+    box(37-l, 10, 43+l, 14, 3, 0, 5 );
+    pstraxy(message, 40-l  , 12, 11 );
+    ts = timer_start(duration);
+    while( !key && !time_up(ts)) key=inkey();
+    vrstrarea(h);
+    cursor_onoff(1);
+    gotoxy(x,y);
+    timer_free(ts);
+    _scr_chk_key = old_chk_key;
+    return key;
+}
+  //-----------------------------------------------------------------------//
+ //                       fill_spaces( str bbsbuf )                       //
+//-----------------------------------------------------------------------//
+fill_spaces( str bbsbuf )
+{
+    int i;
+    str chr[1];
+    int count = 0;
+    while (count < 8) {
+        if      (count == 0) chr = ".";
+        else if (count == 1) chr = "+";
+        else if (count == 2) chr = " ";
+        else if (count == 3) chr = "?";
+        else if (count == 4) chr = "*";
+        else if (count == 5) chr = "/";
+        else if (count == 6) chr = "\";
+        i=0;
+        while (1) {
+            i = strpos(bbsbuf, chr, i);
+            if (i == -1) break;
+            setchr(bbsbuf, i ,'_');
+            i = i + 1;
+        } ++count;
+    } return bbsbuf;
+}
+  //-----------------------------------------------------------------------//
+ //                        chk_stat ( int statchk )                       //
+//-----------------------------------------------------------------------//
+chk_stat ( int statchk )
+{
+    gotoxy(67, statchk);
+    if((vgetchr() & 255)== 79){Statline=statchk;statline_color=vgetchr()/256;}
+    else return(-1);
+}
+  //-----------------------------------------------------------------------//
+ //                         chk_prompt(str prompt)                        //
+//-----------------------------------------------------------------------//
+chk_prompt(str prompt)
+{
+    str promptbuf[20];
+    int l,h,key,osk,retval;
+
+    osk=_scr_chk_key;
+    _scr_chk_key=0;
+    cursor_onoff(0);
+    l=strlen(prompt);
+    x=getx();y=gety();
+    vgetchrs(0,y,promptbuf,0,l);
+    gotoxy(x,y);
+    if(strcmpi(prompt,promptbuf)==0)
+      retval=1;
+    else retval=0;
+    cursor_onoff(1);
+    _scr_chk_key=osk;
+    return retval;
+}
+  //-----------------------------------------------------------------------//
+ //                         delete( str filename )                        //
+// delete ( "e:\*.bak" ); delete all .txt files on drive e:              //
+//-----------------------------------------------------------------------//
+delete( str filename )
+{
+    str     buf[64];
+    int     y;
+
+    fnstrip( filename, 12, buf );
+    if(strlen(buf))
+        newdir( buf );
+    printsc("^m^jDelete Filemask:  " ); printsc( filename );
+    if ( !filefind( filename, 0, buf )) {
+        prints("");
+        printsc( "No matching files.");
+        newdir( _telix_dir );
+        return 0;
+    }
+    while( filefind( filename, 0, buf ) ) {
+        prints("");
+        y = gety();
+        if ( fdelete( buf ) == -1 ) {
+            printsc( buf );
+            gotoxy( 18, y );
+            printsc( "Error deleting." );
+        }
+        else {
+            printsc( buf );
+            gotoxy( 18, y );
+            printsc("Deleted.");
+        }
+        filename = "";
+    }
+    newdir( _telix_dir );
+    return 0;
+}
+str	Buffer[16384];
+  //-----------------------------------------------------------------------//
+ //                   fcopy(str Infname, str Outfname )                   //
+//-----------------------------------------------------------------------//
+fcopy(str Infname, str Outfname )
+{
+ str fsbuf[10], fps[12];
+ int a, b, fs, fp, h, i, g, gpos, l,
+     text_color = 15,
+     box_color  =  1,
+     hi_color   = 30,
+     lo_color   =  7,
+     Infile, Outfile, BytesRead;
+ cursor_onoff(0);
+ a = 20; b =  8; gpos = a+2;
+ h = vsavearea( a-18, b-1,a+58,b+7 ); box(  a-18 ,b-1,a+58,b+7, 2, 0,box_color);
+ pstraxy( "µ", a+44, b-1,box_color);pstra(" Fcopy ",text_color);pstra("Æ",box_color);
+ pstraxy("From :  ", a+2,b+1,text_color); pstra( Infname , lo_color);
+ pstraxy("To   :  ", a+2,b+2,text_color); pstra( Outfname, lo_color);
+ pstraxy("Bytes:  ", a+2,b+3,text_color);
+ pstraxy("°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°", a+2,b+6,31);
+ fs = filesize( Infname );  itos( fs, fsbuf );
+ if ( (Infile=fopen(Infname, "r")) != -1 ) {
+   if ( (Outfile=fopen(Outfname, "w")) != -1 ) {
+      while ( !feof(Infile) ) {
+	  Bytesread = fread(Buffer, 16384, Infile);
+	  /////////////////////// Bytes, Percentage, Bar Graph /////////////////////
+	  fp =	ftell(Infname);
+	  if (fp == 0) fp = 1;
+	  itos(fp, fps); pstraxy(fps, a+10, b+3,lo_color);	       //  bytes of
+	  pstra(" of ",lo_color); pstra(fsbuf,lo_color); pstra(" bytes",lo_color);  //  bytes
+	  g = fp * 35 / fs;					 //  graph
+	  // fp = fp * 100 / fs; itos(fp, fps); 		    //	%
+	  for(i = gpos; i <= gpos + g; ++i) pstraxy("²", i, b+6, 14);// graph
+	  // pstraxy(fps, a+18, b+4, 30); pstra(" %", 30);          //  %
+	  /////////////////////////////////////////////////////////////////////////////
+	  fwrite(Buffer, BytesRead, Outfile);
+     } fclose(Outfile);
+   } fclose(Infile);
+ } cursor_onoff(1);vrstrarea(h);
+}
+  //-----------------------------------------------------------------------//
+ //                           Remain_on_Planet()                          //
+//-----------------------------------------------------------------------//
+Remain_on_Planet()
+{
+    int tlimit;
+    track_free(0);
+    t1 = track("abort", 0);
+    t2 = track("Planet command", 0);
+    t3 = track("turning to", 0);
+    t4 = track("not in this", 0);
+    tlimit=timer_start(600);
+    cputs("L");
+    while( carrier() && inkey()!=27 ) {
+        terminal();stat=track_hit(0);
+        if(time_up(tlimit)) {track_free(0);return -1;}
+        else if(!stat) continue;
+        else if (stat == t1) {
+            track_free(t1); delay_scr(dr); cputs(planet_no);
+            if ( stoi( planet_no) < 200 ) cputc(13);
+        }
+        else if (stat == t2) {
+            track_free(t2); cputs("C");
+            if ( chrcolor == 5 ) cputs(" ");
+            cputs("RYY");
+            if ( chrcolor == 5 ) cputs(" ");
+        }
+        else if (stat == t3)   break;
+        else if (stat == t4) {track_free(0); return -1;}
+    }
+    timer_free(tlimit);
+    track_free(0);
+    return 1;
+}
+  //-----------------------------------------------------------------------//
+ //                                 main()                                //
+//-----------------------------------------------------------------------//
+main()
+{
+    ///////////////////////////////////////////////////////////////////////////
+    // Delete this line after you have edited do_bbs() and Offline_maintenance()
+    // above.  This is the only line you have to edit in this section.
+    // --------------------------------
+    //  registration
+    //  soft_wind("You must edit TWLOGOFF.SLT first", 50 ); return -1;
+    //  registration
+    // --------------------------------
+    ///////////////////////////////////////////////////////////////////////////
+    old_chk_key=_scr_chk_key;_scr_chk_key=0;
+    update_term();
+    if(!getenv("f1",f1)) {
+        soft_wind("F1 environment variable not found",25);
+        _scr_chk_key=1;
+        return(-1);
+    }
+    append_backslash(f1);
+    if(!getenv("Temp",planet_remain)) {
+        soft_wind("TEMP environment variable not found",25);
+        _scr_chk_key=1;
+        return(-1);
+    }
+    append_backslash(planet_remain);
+    strcat( planet_remain, "planet.tmp" );
+    if(!getenv("dr",drs)) {
+        soft_wind("DR environment variable not found", 25);
+        _scr_chk_key=1;
+        return(-1);
+    }
+    dr=stoi(drs);
+    if(!strlen(_entry_name))
+        if(call("bbsname")==-1) {_scr_chk_key=1;return(-1);}
+    bbsname=_entry_name;
+    strcat(f1,fill_spaces(bbsname));
+    if(!filefind(f1,16,buf))
+        if(call("bbsname")==-1) {_scr_chk_key=1;return(-1);}
+    append_backslash(f1);
+    gamedir=f1;
+    x=getx();y=gety();if(chk_stat(0)==-1)chk_stat(24);gotoxy(x,y);
+    x=getx();y=gety();
+    pstraxy("Calling Twlogoff                                      ³",0,statline,statline_color);
+    pstraxy(_entry_name,17,statline,statline_color);
+    gotoxy(x,y);
+    substr(bbsname,0,3,shortname);
+    delay_scr(dr);
+    if(carrier()) {
+        if(!chk_prompt("Command [TL")) {
+            delay_scr(20);
+            drf();
+        }
+        if(!chk_prompt("Command [TL") < 0 ){
+            soft_wind("Must be at the ^0034Command [TL=^0034 prompt.",25);
+            return(-1);
+        }
+    }
+    if(filefind(planet_remain,0,buf)) {
+        if((f=fopen(planet_remain,"r"))!=0) {
+            a=0;
+            while(!feof(f)) {
+                fgets(buf,64,f);
+                ++a;
+                if(a==1) {
+                //    strupper( buf );
+                //    substr(_entry_name,0,strlen(_entry_name),tmpbuf);
+                //    strupper(tmpbuf);
+                //    if((strcmpi(buf,tmpbuf))!=0) {
+                //        prints("");
+                //        pstra("Entryname doesn't match Planet.tmp file",7);
+                //        prints("");
+                //        pstra("_Entry_name= ",7);pstra(tmpbuf,7);
+                //        prints("");
+                //        pstra("Planet.tmp = ", 7);pstra(buf,7);
+                //        prints("");
+                //        fclose(f);
+                //        return -1;
+                //    }
+                } planet_no = buf;
+            }
+        } fclose(f);fdelete(planet_remain);
+    }
+    if(planet_no) {
+        f=Remain_on_Planet();
+        if(f<0) {_scr_chk_key=old_chk_key;return -1;}
+    }
+    else {
+        t1 = track("med? (Y/N)?", 0);
+        t2 = track("king Device?", 0);
+        t3 = track("turning to", 0);
+        _scr_chk_key=1;
+        cputs("Q");
+        while(carrier() && inkey() != 27 ) {
+            terminal();stat=track_hit(0);if(!stat)continue;
+            else if(stat==t1){track_free(t1);delay_scr(dr);cputs("Y");}
+            else if(stat==t2){track_free(t2);delay_scr(dr);cputs("Y");}
+            else if(stat==t3){
+                track_free(0);
+                capture("*close*");
+                _scr_chk_key=old_chk_key;
+                break;
+            }
+        }
+    }
+    i=do_bbs();
+    if(i==-2||i==-3) return i;
+    drf();
+    Offline_maintenance();
+    _scr_chk_key=old_chk_key;
+    return 0;
+}

@@ -1,0 +1,39 @@
+             TLXTW Telix Tradewars 2002 v2 wb 5 what's new file
+-----------------------------------------------------------------------------
+v2.00   Feb 9 1994
+    -   First release for Tradewars 2002 v2.0 Beta
+
+v2.01   Mar 10 1994
+    -   Fixed bug in Trade (F2) script where it would sometimes
+    -   offer/accept 0 credits when trading.
+    -   Added Transtel (F4) Trasnport/Steal/Sell Cycle
+    -   Several other bug fixes/improvements.
+
+v2.02   May 5 1994
+    -   Crai.exe (Crtl-C) parses more information.  Saves any info in
+        Ether.img file and [out].img file.
+    -   Twassist(c) Hooks (Alt-T) write the files created by Twassist
+        Automode Commands to the directory pointed to by the TEMP
+        environment variable, optimally a RAM drive.
+    -   fixed Triple trading (F5) where it would sell for 0 credits.
+    -   Planet populating scripts dump all colonists in Ore.
+    -   Transwarping planet populator works when T-warping to Terra via a
+        sector any distance outside of Terra
+    -   added Ctrl-F3, TW internal help screens
+    -   Tlxtwast (Alt-T) exits Telix, runs Twassist, then reloads Telix with
+        the "O"nline switch, to allow Twassist to have enough memory for
+        large universes.
+    -   Alt-9 (err90.slc) new, works same as (Alt-T) but edits tl.bat,
+        provides an easy way to change the dr variable on the fly.
+    -   Fixed TRADE (F2) so it will find credits >= 10000 properly
+    -   Several other bug fixes/improvements.
+
+v.2.03  Aug 2 1994
+    -   Fixed DNINTG (Ctrl-D) to get both types of mine reports (Armid and
+        Limpet)
+    -   Fixed DNINTG hanging problem
+
+v2.04   Jan 20 1995
+    -   Poptrans.slc (F1, Planet.key) Transwarp Planet Populating script now
+        can use a Planetary Transporter, also is a bit easier to get started
+

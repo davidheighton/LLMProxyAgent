@@ -1,0 +1,196 @@
+@page "/agents/{AgentId}/settings"
+@using System.ComponentModel.DataAnnotations
+@using LLMSurvivingProxyAgent.Core
+@inject IAgentStore AgentStore
+
+<PageTitle>Agent Settings</PageTitle>
+
+@if (_agent is null)
+{
+    <div class="page-heading">
+        <div>
+            <p class="eyebrow">AGENT SESSION / SETTINGS</p>
+            <h1>Agent not found</h1>
+            <p class="page-summary">No saved agent profile matches this settings page.</p>
+        </div>
+        <a class="btn btn-secondary" href="/agents">Agent registry</a>
+    </div>
+}
+else
+{
+    <div class="page-heading">
+        <div>
+            <p class="eyebrow">AGENT SESSION / SETTINGS</p>
+            <h1>@_agent.DisplayName settings</h1>
+            <p class="page-summary">Model preferences and profile details are stored with this agent, not controller-wide.</p>
+        </div>
+        <a class="btn btn-secondary" href="@($"/agents/{Uri.EscapeDataString(_agent.AgentId)}")">Back to workspace</a>
+    </div>
+
+    <AgentWorkspaceNavigation AgentId="@_agent.AgentId" ActivePage="settings" />
+
+    @if (!string.IsNullOrWhiteSpace(_savedMessage))
+    {
+        <div class="status-banner" role="status">@_savedMessage</div>
+    }
+
+    <EditForm Model="_form" OnValidSubmit="SaveAsync" class="settings-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <section class="surface-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">IDENTITY</p>
+                    <h2>Agent profile</h2>
+                </div>
+            </div>
+            <div class="form-grid">
+                <div class="form-field">
+                    <label for="agent-name">Display name</label>
+                    <InputText id="agent-name" class="form-control" @bind-Value="_form.DisplayName" />
+                    <ValidationMessage For="@(() => _form.DisplayName)" />
+                </div>
+                <div class="form-field">
+                    <span class="form-label">Runtime status</span>
+                    <span class="readonly-value"><span class="status-dot @StatusClass(_agent.Status)" aria-hidden="true"></span>@_agent.Status</span>
+                    <small>Managed by the runtime; it is not an editable profile setting.</small>
+                </div>
+                <div class="form-field form-field-wide">
+                    <label for="agent-description">Description</label>
+                    <InputTextArea id="agent-description" class="form-control" rows="3" @bind-Value="_form.Description" />
+                    <ValidationMessage For="@(() => _form.Description)" />
+                </div>
+            </div>
+        </section>
+
+        <section class="surface-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">BRAIN MODELS</p>
+                    <h2>Independent model roles</h2>
+                </div>
+            </div>
+            <div class="form-grid">
+                <div class="form-field">
+                    <label for="pilot-model">Pilot model</label>
+                    <InputText id="pilot-model" class="form-control" @bind-Value="_form.PilotModel" />
+                    <ValidationMessage For="@(() => _form.PilotModel)" />
+                </div>
+                <div class="form-field">
+                    <label for="reactive-model">Reactive model</label>
+                    <InputText id="reactive-model" class="form-control" @bind-Value="_form.ReactiveModel" />
+                    <ValidationMessage For="@(() => _form.ReactiveModel)" />
+                    <small>Use a smaller, faster model for reflex classification.</small>
+                </div>
+                <div class="form-field">
+                    <label for="strategic-model">Strategic model</label>
+                    <InputText id="strategic-model" class="form-control" @bind-Value="_form.StrategicModel" />
+                    <ValidationMessage For="@(() => _form.StrategicModel)" />
+                    <small>Use a larger reasoning model for objectives and reviews.</small>
+                </div>
+                <div class="form-field">
+                    <label for="agent-provider">Default provider</label>
+                    <InputText id="agent-provider" class="form-control" @bind-Value="_form.PreferredProvider" />
+                    <ValidationMessage For="@(() => _form.PreferredProvider)" />
+                    <small>Used by legacy review paths that do not specify a brain model.</small>
+                </div>
+                <div class="form-field">
+                    <label for="agent-model">Legacy default model</label>
+                    <InputText id="agent-model" class="form-control" @bind-Value="_form.PreferredModel" />
+                    <ValidationMessage For="@(() => _form.PreferredModel)" />
+                </div>
+            </div>
+            <p class="inline-note">Credentials and secrets are intentionally not shown or edited here. The Pilot, Reactive, and Strategic roles can use different models.</p>
+        </section>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save agent settings</button>
+            <a class="btn btn-secondary" href="@($"/agents/{Uri.EscapeDataString(_agent.AgentId)}")">Cancel</a>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter]
+    public string AgentId { get; set; } = string.Empty;
+
+    private AgentContainer? _agent;
+    private AgentSettingsForm _form = new();
+    private string? _savedMessage;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _agent = await AgentStore.GetAgentAsync(AgentId);
+        _savedMessage = null;
+        if (_agent is null)
+        {
+            return;
+        }
+
+        _form = new AgentSettingsForm
+        {
+            DisplayName = _agent.DisplayName,
+            Description = _agent.Description,
+            PreferredProvider = _agent.PreferredProvider,
+            PreferredModel = _agent.PreferredModel,
+            PilotModel = _agent.Configuration.GetValueOrDefault(
+                "Brains:Pilot:Model",
+                _agent.PreferredModel),
+            ReactiveModel = _agent.Configuration.GetValueOrDefault(
+                "Brains:Reactive:Model",
+                "qwen3:1.7b"),
+            StrategicModel = _agent.Configuration.GetValueOrDefault(
+                "Brains:Strategic:Model",
+                "qwen3:8b")
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_agent is null)
+        {
+            return;
+        }
+
+        _agent.DisplayName = _form.DisplayName.Trim();
+        _agent.Description = _form.Description.Trim();
+        _agent.PreferredProvider = _form.PreferredProvider.Trim();
+        _agent.PreferredModel = _form.PreferredModel.Trim();
+        _agent.Configuration["Brains:Pilot:Model"] = _form.PilotModel.Trim();
+        _agent.Configuration["Brains:Reactive:Model"] = _form.ReactiveModel.Trim();
+        _agent.Configuration["Brains:Strategic:Model"] = _form.StrategicModel.Trim();
+        await AgentStore.SaveAgentAsync(_agent);
+        _savedMessage = "Agent settings saved.";
+    }
+
+    private sealed class AgentSettingsForm
+    {
+        [Required, StringLength(120)]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [StringLength(1000)]
+        public string Description { get; set; } = string.Empty;
+
+        [Required, StringLength(80)]
+        public string PreferredProvider { get; set; } = string.Empty;
+
+        [Required, StringLength(160)]
+        public string PreferredModel { get; set; } = string.Empty;
+
+        [Required, StringLength(160)]
+        public string PilotModel { get; set; } = string.Empty;
+
+        [Required, StringLength(160)]
+        public string ReactiveModel { get; set; } = string.Empty;
+
+        [Required, StringLength(160)]
+        public string StrategicModel { get; set; } = string.Empty;
+    }
+
+    private static string StatusClass(AgentStatus status) => status switch
+    {
+        AgentStatus.Running or AgentStatus.Thinking => "status-live",
+        AgentStatus.Paused => "status-paused",
+        _ => "status-idle"
+    };
+}

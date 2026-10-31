@@ -1,0 +1,66 @@
+TWX Script Pack 1 - "The Basics" (Verson 1.07)
+
+IMPORTANT:  Ensure you have a valid database selected and recording
+is ON.  Most of these scripts make use of the sector database to attain
+information regarding sectors etc.  Also make sure your personal settings
+do not cause a display abort on 'all keys'.
+
+Contents:
+
+1_Port.ts - A basic port pair trading script with haggling.  To use without
+haggling, simply set the markup/markdown percentage to 0%.  This script
+will automatically trade the most profitable products between the two
+ports.
+
+1_PortFast.ts - A VERY simple port pair trading script.  Does not haggle and
+does not always trade the most profitable product.  This script would only
+be useful if you had to trade up alot of cash in a hurry (i.e. race for
+SD at start of game with cash onhand).
+
+1_Scout.ts - A simple navigation script which navigates the game with the
+use of a density scanner.  Useful for scouting in high turn/time games.
+
+1_Trade.ts - A modified version of 1_Scout.ts which docks at ports while
+it goes.  You could argue this is a basic version of a world trade script.
+Does not haggle products and frequently docks at ports where there is
+no profit for it.  Designed for unlimited turn games.
+
+1_SSM.ts - A basic Sell-Steal-Move script.  Does not haggle and makes
+first steal from the OPPOSITE sector from the sector the player is in.
+
+1_SST.ts - A basic Sell-Steal-Transport script.  Again, does not haggle
+and steals first from the OPPOSITE sector.
+
+1_TCol.ts - Basic trans-colonisation script.  This script takes fuel
+from a planet or port within the same sector as the planet your colonising,
+then twarps to sector 1 and back dropping off colonists.  Fast and effective.
+Does not use planetary transporter (yet).
+
+1_ECol.ts - Basic express-colonisation script.  An unsafe way of colonising,
+just express warps between the two sectors dropping off colonists.  Could
+be good for unlimited turn games while no one else is online.  Will get
+interrupted if anything blocks the express warp.  Runs VERY fast.
+
+1_Move.ts - A move product script.  Works over multiple hops.  Nice and fast
+and safe if not obstructed.
+
+1_MoveCol.ts - A move colonist script.  Works over multiple hops.  Nice and
+fast and safe if not obstructed.
+
+1_MoveFig.ts - A move figs script.  Works over multiple hops.  Nice and
+fast and safe if not obstructed.
+
+1_Login.ts - A TWGS login script.  Requires you set several program
+variables before you run it.
+
+1_KeepAlive.ts - A basic idle script which sends a "#" every 60 seconds.
+Used to keep your connection alive.
+
+1_ZTM.ts - A moderately complex Zero-turn-mapping script which uses an extremely
+slow but 100% accurate method of mapping out the game.  Useful for tournaments
+with fast servers and low sector counts.  Not recommended for use over a slow
+connection.
+
+* For more information on each script, check the descriptions written
+up the top of the script.  All scripts can be easily viewed and modified
+in any text editor.

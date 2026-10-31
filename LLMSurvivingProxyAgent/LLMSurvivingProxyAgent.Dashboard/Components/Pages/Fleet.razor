@@ -1,0 +1,218 @@
+@page "/"
+@using LLMSurvivingProxyAgent.Core
+@using LLMSurvivingProxyAgent.Runtime
+@implements IDisposable
+@inject IAgentStore AgentStore
+@inject AutonomousTestWorkerStatusStore AutonomousStatusStore
+@inject IConfiguration Configuration
+
+<PageTitle>Fleet Overview</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">LLM CONTROL CENTER / CONTROL PLANE</p>
+        <h1>Fleet overview</h1>
+        <p class="page-summary">A controller-level view of registered agents and their current live session state.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" @onclick="RefreshFleetAsync">Refresh status</button>
+        <a class="btn btn-primary" href="/agents">Manage agents</a>
+    </div>
+</div>
+
+<section class="metric-grid" aria-label="Fleet summary">
+    <article class="metric-card">
+        <span class="eyebrow">REGISTERED AGENTS</span>
+        <strong class="metric-value">@_agents.Count</strong>
+        <span class="metric-caption">Persistent agent profiles</span>
+    </article>
+    <article class="metric-card">
+        <span class="eyebrow">ACTIVE STATES</span>
+        <strong class="metric-value">@ActiveCount</strong>
+        <span class="metric-caption">Live sessions and active profile states</span>
+    </article>
+    <article class="metric-card">
+        <span class="eyebrow">RECORDED DECISIONS</span>
+        <strong class="metric-value">@_agents.Sum(agent => agent.Statistics.DecisionsMade)</strong>
+        <span class="metric-caption">Across registered profiles</span>
+    </article>
+    <article class="metric-card">
+        <span class="eyebrow">GAME CONTROL</span>
+        <strong class="metric-value @GameControlStatusClass">@GameControlStatus</strong>
+        <span class="metric-caption">@GameControlDescription</span>
+    </article>
+</section>
+
+<div class="section-heading">
+    <div>
+        <p class="eyebrow">AGENT SESSIONS</p>
+        <h2>Registered agents</h2>
+    </div>
+    <a href="/agents">Open registry</a>
+</div>
+
+@if (_agents.Count == 0)
+{
+    <section class="empty-state">
+        <h3>No agents registered</h3>
+        <p>Create an agent profile to start organizing model settings, knowledge, and session activity.</p>
+        <a class="btn btn-primary" href="/agents">Create an agent</a>
+    </section>
+}
+else
+{
+    <section class="agent-grid" aria-label="Registered agents">
+        @foreach (var agent in _agents)
+        {
+            <article class="agent-card">
+                <div class="agent-card-heading">
+                    <div class="agent-avatar" aria-hidden="true">@Initials(agent.DisplayName)</div>
+                    <div class="agent-card-title">
+                        <h3>@agent.DisplayName</h3>
+                        <span class="status-label">
+                            <span class="status-dot @StatusClass(agent)" aria-hidden="true"></span>
+                            @DisplayStatus(agent)
+                        </span>
+                    </div>
+                    <a class="quiet-link" href="@($"/agents/{Uri.EscapeDataString(agent.AgentId)}/settings")">Settings</a>
+                </div>
+                <p class="agent-model">@agent.PreferredProvider <span>/</span> @agent.PreferredModel</p>
+                <p class="agent-description">
+                    @(string.IsNullOrWhiteSpace(agent.Description) ? "No description provided." : agent.Description)
+                </p>
+                @if (LiveStatus(agent) is { IsConnected: true } liveStatus)
+                {
+                    <p class="agent-description"><strong>Session activity:</strong> @liveStatus.Activity</p>
+                }
+                <div class="agent-card-footer">
+                    <span>@agent.Statistics.DecisionsMade decisions</span>
+                    <a class="btn btn-secondary" href="@($"/agents/{Uri.EscapeDataString(agent.AgentId)}")">Open workspace</a>
+                </div>
+            </article>
+        }
+    </section>
+}
+
+<section class="notice-card">
+    <span class="notice-mark" aria-hidden="true">i</span>
+    <div>
+        <h2>Session isolation status</h2>
+        <p>
+            Agent profiles and model preferences are stored per agent. Live connectivity and decision telemetry are
+            reported for the configured agent session; raw terminal rendering remains in the native MTC session.
+        </p>
+    </div>
+</section>
+
+@code {
+    private IReadOnlyList<AgentContainer> _agents = [];
+    private CancellationTokenSource? _refreshCancellation;
+
+    private bool AutonomousGameplayEnabled =>
+        bool.TryParse(Configuration["AutonomousGameplay:Enabled"], out bool enabled) && enabled;
+
+    private bool MovementRequiresApproval =>
+        bool.TryParse(Configuration["AutonomousGameplay:RequireMovementApproval"], out bool required) && required;
+
+    private string GameControlStatus =>
+        !AutonomousGameplayEnabled
+            ? "Disabled"
+            : MovementRequiresApproval
+                ? "Gated"
+                : "Automatic";
+
+    private string GameControlDescription =>
+        !AutonomousGameplayEnabled
+            ? "Autonomous gameplay is disabled"
+            : MovementRequiresApproval
+                ? "Autonomous moves require operator approval"
+                : "Moves run after one-sector verification";
+
+    private string GameControlStatusClass =>
+        !AutonomousGameplayEnabled
+            ? "text-secondary"
+            : MovementRequiresApproval
+                ? "text-warning"
+                : "metric-value-safe";
+
+    private int ActiveCount => _agents.Count(agent =>
+        agent.Status is AgentStatus.Running or AgentStatus.Thinking ||
+        LiveStatus(agent).IsConnected);
+
+    protected override void OnInitialized()
+    {
+        _refreshCancellation = new CancellationTokenSource();
+        _ = RefreshStatusLoopAsync(_refreshCancellation.Token);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshFleetAsync();
+    }
+
+    private async Task RefreshFleetAsync()
+    {
+        _agents = await AgentStore.GetAgentsAsync();
+    }
+
+    private async Task RefreshStatusLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshCancellation?.Cancel();
+        _refreshCancellation?.Dispose();
+    }
+
+    private AutonomousTestWorkerStatus LiveStatus(AgentContainer agent) =>
+        AutonomousStatusStore.GetStatus(agent.AgentId);
+
+    private string DisplayStatus(AgentContainer agent)
+    {
+        var liveStatus = LiveStatus(agent);
+        if (liveStatus.IsConnected)
+        {
+            return liveStatus.Activity == "Thinking" ? "Thinking" : "Online";
+        }
+
+        return agent.Status.ToString();
+    }
+
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => "AI",
+            1 => parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant(),
+            _ => string.Concat(parts[0][0], parts[^1][0]).ToUpperInvariant()
+        };
+    }
+
+    private string StatusClass(AgentContainer agent)
+    {
+        if (LiveStatus(agent).IsConnected)
+        {
+            return "status-live";
+        }
+
+        return agent.Status switch
+        {
+            AgentStatus.Running or AgentStatus.Thinking => "status-live",
+            AgentStatus.Paused => "status-paused",
+            _ => "status-idle"
+        };
+    }
+}

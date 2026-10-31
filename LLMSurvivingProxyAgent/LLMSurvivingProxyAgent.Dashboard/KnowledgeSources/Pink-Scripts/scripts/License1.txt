@@ -1,0 +1,35 @@
+TWX Proxy Script Pack 1
+
+The scripts in question are 'scripts' which have been distributed
+with this license.  This license covers for scripts with
+text headers containing information detailing to TWX Proxy Script
+Pack 1.
+
+You should carefully read the following terms and conditions
+before using these scripts. Use of these scripts indicates
+your acceptance of this license agreement and warranty.
+
+Warranty
+THESE SCRIPTS AND THEIR DOCUMENTATION ARE PROVIDED "AS IS" WITHOUT 
+WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING 
+BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY 
+AND/OR FITNESS FOR A PARTICULAR PURPOSE.
+
+THE AUTHOR DOES NOT REPRESENT OR WARRANT THAT THE 
+SCRIPTS OR SCRIPT COMPONENTS ARE FREE OF INFRINGEMENT OR 
+ANY THIRD-PARTY PATENTS, COPYRIGHTS OR TRADE SECRETS.
+
+THE AUTHOR CLAIMS NO LIABILITY FOR DAMAGES TO ANY EQUIPMENT
+OR INFORMATION LOSS CAUSED BY THE USE OF THIS PRODUCT IN ANY
+WAY.
+
+
+Distribution
+
+These scripts are freeware, meaning they may be freely distributed
+amoung friends etc.  However, you are specifically prohibited from charging, 
+or requesting donations, for any such copies, however made; or charging for
+any of your own scripts which contain code copied or used in any way from 
+any of these scripts.  
+
+Remco Willem Mulder (Author) aka Xide

@@ -1,0 +1,7 @@
+// exittelx.slt
+// exits telix FAST!
+main() {
+    if (capture_stat() > 0)
+        capture("*close*");
+    exittelix(0,0);
+}

@@ -1,0 +1,357 @@
+@page "/goal-proposals"
+@page "/agents/{AgentId}/objectives"
+@using LLMSurvivingProxyAgent.Core
+@using LLMSurvivingProxyAgent.Goals
+@using LLMSurvivingProxyAgent.Knowledge
+@inject IAgentStore AgentStore
+@inject IKnowledgeStore KnowledgeStore
+@inject IGoalProposalStore ProposalStore
+@inject GoalProposalService ProposalService
+
+<PageTitle>Goal Proposals</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(AgentId))
+{
+    <AgentWorkspaceNavigation AgentId="@AgentId" ActivePage="objectives" />
+}
+
+<h1>Goal Proposals</h1>
+<p class="text-secondary">
+    Proposals are candidate objectives, not macro commands. The strategic reviewer can select or replace an objective
+    based on a model assessment; submission by itself does not select it.
+</p>
+
+<div class="alert alert-warning" role="note">
+    State values are entered manually and are not a live game observation. Enter credits only when verified.
+    Objective selection never executes a plan or contacts TradeWars.
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert alert-danger" role="alert">@_error</div>
+}
+@if (!string.IsNullOrWhiteSpace(_status))
+{
+    <div class="alert alert-info" role="status">@_status</div>
+}
+
+<section class="card mb-4">
+    <div class="card-body">
+        <h2 class="h5 card-title">Add a candidate objective</h2>
+        @if (_agents.Count == 0)
+        {
+            <p>Create an agent before proposing a goal.</p>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="proposal-agent">Agent</label>
+                    <select id="proposal-agent" class="form-select" @bind="_agentId" @bind:after="RefreshAsync">
+                        @foreach (var agent in _agents)
+                        {
+                            <option value="@agent.AgentId">@agent.DisplayName</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label" for="proposal-goal">Proposed goal</label>
+                    <input id="proposal-goal" class="form-control" maxlength="200" @bind="_goal" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="proposal-confidence">Confidence (%)</label>
+                    <InputNumber id="proposal-confidence" class="form-control" min="0" max="100"
+                                 @bind-Value="_confidencePercent" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="proposal-rationale">Rationale</label>
+                    <textarea id="proposal-rationale" class="form-control" rows="3" maxlength="2000"
+                              @bind="_rationale"></textarea>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="proposal-assumptions">Assumptions (one per line)</label>
+                    <textarea id="proposal-assumptions" class="form-control" rows="3"
+                              @bind="_assumptions"></textarea>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="state-observed">State snapshot observed at</label>
+                    <input id="state-observed" type="datetime-local" class="form-control" @bind="_observedAt" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="state-sector">Current sector (optional)</label>
+                    <InputNumber id="state-sector" class="form-control" @bind-Value="_currentSector" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="state-credits">Verified credits (optional)</label>
+                    <InputNumber id="state-credits" class="form-control" @bind-Value="_credits" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="state-turns">Turns (optional)</label>
+                    <InputNumber id="state-turns" class="form-control" @bind-Value="_turns" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="ship-type">Ship type (optional)</label>
+                    <input id="ship-type" class="form-control" @bind="_shipType" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="ship-name">Ship name</label>
+                    <input id="ship-name" class="form-control" @bind="_shipName" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="ship-fighters">Ship fighters</label>
+                    <InputNumber id="ship-fighters" class="form-control" min="0" @bind-Value="_shipFighters" />
+                </div>
+            </div>
+
+            <hr />
+            <h3 class="h6">Supporting knowledge</h3>
+            <div class="input-group mb-2">
+                <input class="form-control" placeholder="Search mined knowledge"
+                       @bind="_knowledgeQuery" @bind:event="oninput" />
+                <button class="btn btn-outline-primary" @onclick="SearchKnowledgeAsync">Search</button>
+            </div>
+            <p class="small text-secondary">
+                Supporting knowledge is optional. Select up to 10 cited records when available; their directed graph
+                paths and evidence are captured with the proposal.
+            </p>
+            @if (_knowledgeNodes.Count == 0)
+            {
+                <p>No matching knowledge records. You can still submit an operator-directed candidate without citations.</p>
+            }
+            else
+            {
+                <div class="list-group mb-3">
+                    @foreach (var node in _knowledgeNodes)
+                    {
+                        <label class="list-group-item d-flex gap-2 align-items-start">
+                            <input class="form-check-input mt-1" type="checkbox"
+                                   disabled="@(!_selectedEvidenceIds.Contains(node.Id) && _selectedEvidenceIds.Count >= 10)"
+                                   checked="@_selectedEvidenceIds.Contains(node.Id)"
+                                   @onchange="args => ToggleEvidence(node.Id, args)" />
+                            <span>
+                                <strong>@node.Title</strong> <span class="badge text-bg-secondary">@node.Category</span>
+                                <span class="d-block small text-secondary">@node.Summary</span>
+                            </span>
+                        </label>
+                    }
+                </div>
+            }
+            <button class="btn btn-primary" @onclick="CreateProposalAsync" disabled="@_saving">
+                @(_saving ? "Saving..." : "Add candidate")
+            </button>
+        }
+    </div>
+</section>
+
+<h2 class="h5">Goal proposals</h2>
+@if (_proposals.Count == 0)
+{
+    <p>No proposals have been recorded.</p>
+}
+else
+{
+    @foreach (var proposal in _proposals)
+    {
+        <article class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between gap-3">
+                    <h3 class="h6">@proposal.Goal</h3>
+                    <span class="badge text-bg-secondary">@proposal.Status</span>
+                </div>
+                <p class="mb-1">@proposal.Rationale</p>
+                <p class="small text-secondary">
+                    Confidence: @proposal.Confidence.ToString("P0") · Proposed @proposal.ProposedAt.ToLocalTime().ToString("g")
+                </p>
+                <p class="small mb-1">
+                    Snapshot: @StateSummary(proposal.StateSnapshot)
+                    · observed @proposal.StateSnapshot.ObservedAt.ToLocalTime().ToString("g")
+                </p>
+                @if (proposal.Assumptions.Count > 0)
+                {
+                    <p class="small"><strong>Assumptions:</strong> @string.Join("; ", proposal.Assumptions)</p>
+                }
+                <h4 class="small fw-bold">Supporting evidence</h4>
+                @foreach (var item in proposal.SupportingEvidence)
+                {
+                    <div class="border-start ps-3 mb-2">
+                        <strong>@item.Node.Title</strong>
+                        <span class="small text-secondary">(@item.Node.Confidence.ToString("P0"), @item.Node.Basis)</span>
+                        @if (item.RelationshipPath.Count > 0)
+                        {
+                            <div class="small text-secondary">
+                                Path: @string.Join(" → ", item.RelationshipPath.Select(edge => edge.Type))
+                            </div>
+                        }
+                        @foreach (var evidence in item.Node.Evidence.Take(3))
+                        {
+                            <div class="small"><code>Line @evidence.LineNumber: @evidence.Text</code></div>
+                        }
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(proposal.SelectionReason))
+                {
+                    <p class="small text-secondary">Selection record: @proposal.SelectionReason</p>
+                }
+            </div>
+        </article>
+    }
+}
+
+<h2 class="h5 mt-4">Active objectives</h2>
+@if (_objectives.Count == 0)
+{
+    <p>No objectives are active. Run a strategic review to let the configured model choose among candidates.</p>
+}
+else
+{
+    <ul class="list-group mb-4">
+        @foreach (var objective in _objectives)
+        {
+            <li class="list-group-item">
+                <strong>@objective.Goal</strong>
+                <span class="badge text-bg-primary ms-2">@objective.Status</span>
+                <div class="small text-secondary">@objective.Rationale</div>
+                <div class="small text-secondary">Selected from proposal @objective.SourceProposalId</div>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter]
+    public string? AgentId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "agentId")]
+    public string? RequestedAgentId { get; set; }
+
+    private IReadOnlyList<AgentContainer> _agents = [];
+    private IReadOnlyList<KnowledgeNode> _knowledgeNodes = [];
+    private IReadOnlyList<GoalProposal> _proposals = [];
+    private IReadOnlyList<AgentObjective> _objectives = [];
+    private readonly HashSet<string> _selectedEvidenceIds = new(StringComparer.Ordinal);
+    private string _agentId = string.Empty;
+    private string _goal = string.Empty;
+    private string _rationale = string.Empty;
+    private string _assumptions = string.Empty;
+    private string _knowledgeQuery = string.Empty;
+    private string _shipType = string.Empty;
+    private string _shipName = string.Empty;
+    private decimal _confidencePercent = 50;
+    private DateTime _observedAt = DateTime.Now;
+    private int? _currentSector;
+    private long? _credits;
+    private int? _turns;
+    private int _shipFighters;
+    private bool _saving;
+    private string? _error;
+    private string? _status;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _agents = await AgentStore.GetAgentsAsync();
+        var requestedId = AgentId ?? RequestedAgentId;
+        _agentId = _agents.FirstOrDefault(agent => agent.AgentId == requestedId)?.AgentId
+                   ?? _agents.FirstOrDefault()?.AgentId
+                   ?? string.Empty;
+        await RefreshAsync();
+    }
+
+    private async Task SearchKnowledgeAsync()
+    {
+        _knowledgeNodes = await KnowledgeStore.SearchAsync(_knowledgeQuery, limit: 50);
+    }
+
+    private void ToggleEvidence(string nodeId, ChangeEventArgs args)
+    {
+        if (args.Value is true || string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_selectedEvidenceIds.Count < 10)
+            {
+                _selectedEvidenceIds.Add(nodeId);
+            }
+        }
+        else
+        {
+            _selectedEvidenceIds.Remove(nodeId);
+        }
+    }
+
+    private async Task CreateProposalAsync()
+    {
+        _saving = true;
+        _error = null;
+        _status = null;
+        try
+        {
+            var evidence = new Dictionary<string, GoalEvidence>(StringComparer.Ordinal);
+            foreach (var nodeId in _selectedEvidenceIds)
+            {
+                var graph = await KnowledgeStore.TraverseAsync(nodeId, maxDepth: 2, limit: 20);
+                foreach (var result in graph)
+                {
+                    evidence.TryAdd(result.Node.Id, new GoalEvidence(result.Node, result.Path));
+                }
+            }
+            if (evidence.Count > 50)
+            {
+                evidence = evidence.Take(50).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            }
+
+            Ship? ship = null;
+            if (!string.IsNullOrWhiteSpace(_shipType))
+            {
+                ship = new Ship(
+                    _shipName,
+                    _agents.First(agent => agent.AgentId == _agentId).DisplayName,
+                    _shipType.Trim(),
+                    _currentSector ?? throw new ArgumentException("Enter the current sector when adding ship details."),
+                    _shipFighters,
+                    new DateTimeOffset(_observedAt).ToUniversalTime());
+            }
+            var snapshot = new GameSnapshot(
+                _currentSector,
+                _credits,
+                _turns,
+                ship,
+                new DateTimeOffset(_observedAt).ToUniversalTime());
+            var proposal = await ProposalService.ProposeAsync(new GoalProposalDraft(
+                _agentId,
+                _goal,
+                _rationale,
+                _confidencePercent / 100m,
+                _assumptions.Replace("\r\n", "\n", StringComparison.Ordinal)
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                snapshot,
+                evidence.Values.ToArray()));
+            _status = $"Candidate {proposal.ProposalId} recorded. Run Strategic Review to evaluate it; no game action was taken.";
+            _goal = string.Empty;
+            _rationale = string.Empty;
+            _assumptions = string.Empty;
+            _selectedEvidenceIds.Clear();
+            await RefreshAsync();
+        }
+        catch (ArgumentException exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _proposals = await ProposalStore.GetProposalsAsync(_agentId, limit: 200);
+        _objectives = await ProposalStore.GetObjectivesAsync(
+            _agentId,
+            ObjectiveStatus.Active,
+            limit: 200);
+    }
+
+    private static string StateSummary(GameSnapshot snapshot) =>
+        $"Sector {snapshot.CurrentSector?.ToString() ?? "unknown"}, " +
+        $"{snapshot.SynchronizedCredits?.ToString("N0") ?? "credits unknown"} credits, " +
+        $"{snapshot.Turns?.ToString() ?? "turns unknown"} turns, " +
+        $"{snapshot.Ship?.ShipType ?? "ship unknown"}";
+}

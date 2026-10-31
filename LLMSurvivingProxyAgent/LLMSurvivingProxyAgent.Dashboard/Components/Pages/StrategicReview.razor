@@ -1,0 +1,365 @@
+@page "/strategic-review"
+@page "/agents/{AgentId}/strategy"
+@using LLMSurvivingProxyAgent.Agent
+@using LLMSurvivingProxyAgent.Core
+@using LLMSurvivingProxyAgent.Goals
+@using LLMSurvivingProxyAgent.Runtime
+@inject IAgentStore AgentStore
+@inject IStrategicReviewStore ReviewStore
+@inject IAgentRuntime AgentRuntime
+
+<PageTitle>Strategic Review</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(AgentId))
+{
+    <AgentWorkspaceNavigation AgentId="@AgentId" ActivePage="strategy" />
+}
+
+<h1>Strategic Review</h1>
+<p class="text-secondary">
+    The configured model reviews recent snapshots, journal history, current and candidate objectives, and cited knowledge.
+    It may continue, replace, or propose an objective. It cannot issue game commands, navigate, or execute macros.
+</p>
+<div class="alert alert-warning" role="note">
+    The snapshot below is manually entered, not a live game observation. A successful review can change the active objective,
+    but does not contact TradeWars or execute a gameplay action.
+</div>
+<div class="alert alert-info" role="note">
+    Failure detection checks for unchanged synchronized credits and an unchanged active objective across three prior review
+    cycles. Older snapshots suppress trend evaluation. New-sector counts, route profitability, and macro outcomes are not
+    available as correlated progress telemetry yet. Review-history analysis also compares exact repeated assessment and
+    recommendation text and shows local macro records; those records do not prove live game actions.
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert alert-danger" role="alert">@_error</div>
+}
+@if (!string.IsNullOrWhiteSpace(_status))
+{
+    <div class="alert alert-info" role="status">@_status</div>
+}
+
+<section class="card mb-4">
+    <div class="card-body">
+        <h2 class="h5 card-title">Review current position</h2>
+        @if (_agents.Count == 0)
+        {
+            <p>Create an agent before running a strategic review.</p>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="review-agent">Agent</label>
+                    <select id="review-agent" class="form-select" @bind="_agentId" @bind:after="RefreshAsync">
+                        @foreach (var agent in _agents)
+                        {
+                            <option value="@agent.AgentId">@agent.DisplayName (@agent.PreferredProvider / @agent.PreferredModel)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="review-observed">Snapshot observed at</label>
+                    <input id="review-observed" type="datetime-local" class="form-control" @bind="_observedAt" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="review-sector">Current sector (optional)</label>
+                    <InputNumber id="review-sector" class="form-control" @bind-Value="_currentSector" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="review-credits">Verified credits (optional)</label>
+                    <InputNumber id="review-credits" class="form-control" @bind-Value="_credits" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="review-turns">Turns (optional)</label>
+                    <InputNumber id="review-turns" class="form-control" @bind-Value="_turns" />
+                </div>
+            </div>
+            <button class="btn btn-primary mt-3" @onclick="RunReviewAsync" disabled="@_running">
+                @(_running ? "Reviewing..." : "Run strategic review")
+            </button>
+        }
+    </div>
+</section>
+
+<h2 class="h5">Recent assessments</h2>
+@if (_reviews.Count == 0)
+{
+    <p>No strategic reviews have been recorded for this agent.</p>
+}
+else
+{
+    @foreach (var review in _reviews)
+    {
+        <article class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between gap-3">
+                    <h3 class="h6 mb-1">@review.Assessment.Progress progress · @review.Assessment.ObjectiveDecision</h3>
+                    <span class="small text-secondary">@review.ReviewedAt.ToLocalTime().ToString("g")</span>
+                </div>
+                <p class="small text-secondary">
+                    @review.Model.Provider / @review.Model.Model · snapshot @review.Context.Snapshot.ObservedAt.ToLocalTime().ToString("g")
+                </p>
+                @if (review.Context.IntegratedGameClient is { } integratedClient)
+                {
+                    <details class="mb-3">
+                        <summary class="small">
+                            MTC/TWX evidence ·
+                            terminal @(integratedClient.TerminalConnected ? "connected" : "disconnected") ·
+                            database @(integratedClient.TwxDatabaseAvailable ? "available" : "unavailable") ·
+                            sector @(integratedClient.CurrentSector?.ToString() ?? "unknown")
+                        </summary>
+                        <p class="small text-secondary mt-2 mb-1">
+                            @integratedClient.ScriptCatalogStatus
+                        </p>
+                        @if (integratedClient.ScriptCatalogEntries.Count > 0)
+                        {
+                            <ul class="small mb-0">
+                                @foreach (var entry in integratedClient.ScriptCatalogEntries)
+                                {
+                                    <li>
+                                        @entry.File
+                                        @if (!string.IsNullOrWhiteSpace(entry.Category))
+                                        {
+                                            <span class="text-secondary">· @entry.Category</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </details>
+                }
+                <h4 class="h6">Failure detection</h4>
+                <p>
+                    @(review.Context.FailureDetection.IsStalled
+                        ? $"Stall indicators reached the {review.Context.FailureDetection.RequiredUnchangedCycles}-cycle threshold."
+                        : "No configured stall threshold was reached.")
+                    @if (review.Context.FailureDetection.SnapshotPredatesHistory)
+                    {
+                        <span class="badge text-bg-warning">Snapshot predates saved history; trends not evaluated</span>
+                    }
+                </p>
+                <ul class="small">
+                    @foreach (var indicator in review.Context.FailureDetection.Indicators)
+                    {
+                        <li>
+                            <strong>@indicator.Metric:</strong> @indicator.Evidence
+                            @if (indicator.UnchangedCycles > 0)
+                            {
+                                <span> · @indicator.UnchangedCycles repeated review(s), duration @indicator.Duration?.ToString("g")</span>
+                            }
+                            @if (indicator.IsStalled)
+                            {
+                                <span class="badge text-bg-warning ms-1">Stalled signal</span>
+                            }
+                        </li>
+                    }
+                </ul>
+                <p class="small text-secondary">
+                    Not observable in this review:
+                    @string.Join(" ", review.Context.FailureDetection.UnavailableSignals)
+                </p>
+                <h4 class="h6">Review-history analysis</h4>
+                <p>
+                    @review.Context.ReviewHistory.ReviewsAnalyzed prior review(s) analyzed.
+                    @if (review.Context.ReviewHistory.RepeatedSummaryCount > 1)
+                    {
+                        <span>The same normalized assessment appeared @review.Context.ReviewHistory.RepeatedSummaryCount times.</span>
+                    }
+                    @if (review.Context.ReviewHistory.RepeatedRecommendationCount > 1)
+                    {
+                        <span>The same normalized recommendation appeared @review.Context.ReviewHistory.RepeatedRecommendationCount times.</span>
+                    }
+                    @if (review.Context.ReviewHistory.ConsecutiveStalledReviews > 0)
+                    {
+                        <span>@review.Context.ReviewHistory.ConsecutiveStalledReviews consecutive prior reviews reported stall indicators.</span>
+                    }
+                </p>
+                <h4 class="h6">Reactive activity</h4>
+                <p class="small">
+                    @review.Context.ReactiveActivity.EventsAnalyzed event(s)
+                    @if (review.Context.ReactiveActivity.ActivityWindowStart is { } activityStart)
+                    {
+                        <span>since @activityStart.ToLocalTime().ToString("g")</span>
+                    }
+                    @review.Context.ReactiveActivity.Limitations
+                </p>
+                @if (review.Context.ReactiveActivity.CountsByType.Count > 0)
+                {
+                    <p class="small mb-1">
+                        By type: @string.Join(", ", review.Context.ReactiveActivity.CountsByType.Select(item => $"{item.Name}: {item.Count}"))
+                    </p>
+                }
+                @if (review.Context.ReactiveActivity.CountsByMode.Count > 0)
+                {
+                    <p class="small mb-1">
+                        By path: @string.Join(", ", review.Context.ReactiveActivity.CountsByMode.Select(item => $"{item.Name}: {item.Count}"))
+                    </p>
+                }
+                @if (review.Context.ReactiveActivity.MayBeTruncated)
+                {
+                    <span class="badge text-bg-warning">Reactive event history may be truncated</span>
+                }
+                @if (review.Context.ReactiveActivity.RecentEvents.Count > 0)
+                {
+                    <details class="mb-3">
+                        <summary>Recent attributed events</summary>
+                        <ul class="small mt-2">
+                            @foreach (var reactiveEvent in review.Context.ReactiveActivity.RecentEvents)
+                            {
+                                <li>
+                                    @reactiveEvent.Type · @reactiveEvent.Mode · @reactiveEvent.Source
+                                    @if (!string.IsNullOrWhiteSpace(reactiveEvent.ActorName))
+                                    {
+                                        <span> · @reactiveEvent.ActorName</span>
+                                    }
+                                    @if (reactiveEvent.TrustAtReceipt is { } trust)
+                                    {
+                                        <span> · trust at receipt @trust.ToString("P0")</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(reactiveEvent.Message))
+                                    {
+                                        <span> · “@reactiveEvent.Message”</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </details>
+                }
+                @if (review.Context.ReviewHistory.NoRecordedMacroActivitySinceLastReview is { } noMacroActivity)
+                {
+                    <p class="small">
+                        @(noMacroActivity
+                            ? "No local macro activity was recorded since the last review."
+                            : $"{review.Context.ReviewHistory.MacroActivitySinceLastReview.Count} local macro record(s) were captured since the last review.")
+                        @review.Context.ReviewHistory.MacroTelemetryLimitations
+                    </p>
+                }
+                @if (review.Context.ReviewHistory.RecentReviews.Count > 0)
+                {
+                    <details class="mb-3">
+                        <summary>Prior review trail</summary>
+                        <ul class="small mt-2">
+                            @foreach (var prior in review.Context.ReviewHistory.RecentReviews)
+                            {
+                                <li>
+                                    @prior.ReviewedAt.ToLocalTime().ToString("g") · @prior.Progress ·
+                                    objective @(prior.ActiveObjective?.Goal ?? "none") ·
+                                    @prior.ObjectiveDecision · @prior.Summary
+                                    <span class="text-secondary">Recommendation: @prior.Recommendation</span>
+                                </li>
+                            }
+                        </ul>
+                    </details>
+                }
+                @if (review.Context.ReviewHistory.MacroActivitySinceLastReview.Count > 0)
+                {
+                    <ul class="small">
+                        @foreach (var activity in review.Context.ReviewHistory.MacroActivitySinceLastReview)
+                        {
+                            <li>
+                                @activity.StartTime.ToLocalTime().ToString("g") · @activity.MacroName · @activity.Status · @activity.Result
+                            </li>
+                        }
+                    </ul>
+                }
+                <p>@review.Assessment.Summary</p>
+                <p><strong>Recommendation:</strong> @review.Assessment.Recommendation</p>
+                <p class="small text-secondary">@review.DecisionOutcome</p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4 class="h6">Evidence for progress</h4>
+                        <ul>@foreach (var item in review.Assessment.EvidenceForProgress) { <li>@item</li> }</ul>
+                        <h4 class="h6">Evidence against progress</h4>
+                        <ul>@foreach (var item in review.Assessment.EvidenceAgainstProgress) { <li>@item</li> }</ul>
+                        <h4 class="h6">Possible stuck signals</h4>
+                        <ul>@foreach (var item in review.Assessment.StuckSignals) { <li>@item</li> }</ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h4 class="h6">Uncertain assumptions</h4>
+                        <ul>@foreach (var item in review.Assessment.UncertainAssumptions) { <li>@item</li> }</ul>
+                        <h4 class="h6">Overlooked opportunities</h4>
+                        <ul>@foreach (var item in review.Assessment.OverlookedOpportunities) { <li>@item</li> }</ul>
+                        <h4 class="h6">Alternative objectives</h4>
+                        <ul>@foreach (var item in review.Assessment.AlternativeObjectives) { <li>@item</li> }</ul>
+                    </div>
+                </div>
+                @if (review.Assessment.CitedKnowledgeNodeIds.Count > 0)
+                {
+                    <p class="small mb-0">
+                        Knowledge citations:
+                        @foreach (var nodeId in review.Assessment.CitedKnowledgeNodeIds)
+                        {
+                            var item = review.Context.Knowledge.FirstOrDefault(node => node.NodeId == nodeId);
+                            <span class="badge text-bg-secondary me-1" title="@item?.DocumentId">@item?.Title</span>
+                        }
+                    </p>
+                }
+            </div>
+        </article>
+    }
+}
+
+@code {
+    [Parameter]
+    public string? AgentId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "agentId")]
+    public string? RequestedAgentId { get; set; }
+
+    private IReadOnlyList<AgentContainer> _agents = [];
+    private IReadOnlyList<StrategicReviewRecord> _reviews = [];
+    private string _agentId = string.Empty;
+    private DateTime _observedAt = DateTime.Now;
+    private int? _currentSector;
+    private long? _credits;
+    private int? _turns;
+    private bool _running;
+    private string? _error;
+    private string? _status;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _agents = await AgentStore.GetAgentsAsync();
+        var requestedId = AgentId ?? RequestedAgentId;
+        _agentId = _agents.FirstOrDefault(agent => agent.AgentId == requestedId)?.AgentId
+                   ?? _agents.FirstOrDefault()?.AgentId
+                   ?? string.Empty;
+        await RefreshAsync();
+    }
+
+    private async Task RunReviewAsync()
+    {
+        _running = true;
+        _error = null;
+        _status = null;
+        try
+        {
+            var snapshot = new GameSnapshot(
+                _currentSector,
+                _credits,
+                _turns,
+                null,
+                new DateTimeOffset(_observedAt).ToUniversalTime());
+            var result = await AgentRuntime.SubmitStrategicReviewAsync(_agentId, snapshot);
+            _status = result.DecisionOutcome;
+            await RefreshAsync();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
+                                           or InvalidDataException or KeyNotFoundException
+                                           or HttpRequestException)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _reviews = await ReviewStore.GetRecentAsync(_agentId, limit: 20);
+    }
+}

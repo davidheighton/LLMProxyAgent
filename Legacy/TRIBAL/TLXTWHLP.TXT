@@ -1,0 +1,68 @@
+   TRADING (TRADER.KEY)       TLXTW 2.04     PLANET OPERATIONS (PLANET.KEY)
+ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+ F2      Single trading            ³ F1     Transwarp planet populator
+ F3      Paired port               ³ F2     Standard warp planet populator
+ F4      Transport/Sell/Steal      ³ F3     Material Mover
+ F5      Triple paired port        ³ F4     Population Mover
+ F6      Steal ore                 ³ F5     Planet destroyer
+                                   ³ F6     Planport (port to planet)
+ F8      Steal equipment           ³
+ F9      Rob credits               ³ F9     Planet shielder
+ F10     Display Menu              ³
+ Alt-F10 Records bust in dat file  ³ Alt-O  Optimize Planet Population
+ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+                      MISCELLAENOUS (TRADER.KEY)
+ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+ Alt-A    Attack ship / fighters         Ctrl-A    Attack ports
+ Alt-E    Configure Tlxtw.cfg            Ctrl-E    Etherprobe (read text file)
+ Alt-F1   Help                           Ctrl-F1   Shell to game's directory
+ Alt-F2   Toggle Trader/Planet.KEY       Ctrl-F2   TWVIEW (c) Hooks
+ Alt-F3   Upload Twassist.cim            Ctrl-F3   Quick Menus
+ Alt-F4   Transmit (transmit.txt)        Ctrl-L    Level Diagram
+ Alt-F5   Twlogoff (for Offline)         Ctrl-P    Course plotter
+ Alt-F6   4% of Citadel Treasury
+ Alt-F8   Transmit Corp memo             F1        Deploy Fighters
+ Alt-F9   Port Class Chart               Shft-F1   Major Space Lane Finder
+ Alt-H    Hangup - reset defaults        Shft-F2   How bad am I
+ Alt-I    Image Screen                   keypad *  toggle ANSI on/off
+ Alt-M    Mine disruptors                keypad +  Upgraded Density scan
+ Alt-P    Photon torpedoes               keypad -  Port report current sector
+ Alt-S    Upgraded Density scan          keypad .  Move / scan
+ Alt-T    Twassist(c) Hooks
+ Alt-X    Exit Telix Fast
+ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+                       MAINTENANCE (TRADER.KEY)
+ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+Ctrl-B    Bbsname (change directory name for multiple games on same BBS)
+Ctrl-C    Convert .prt to .dat file (maintenance)
+Ctrl-D    D/L .prt / .sct reports / Gather Status Reports
+Alt-9     Edit TL.bat (change DR environment variable)
+ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+                          STARDOCK (TRADER.KEY)
+ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+Ctrl-F4   Underground Password grab/send
+Ctrl-G    Grimy trader tracing
+Ctrl-T    Tricron
+Shft-F3   Cuss Grimy
+ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+
+Tips:
+
+To Update .Dat Files:
+
+    1.	Run DNINTG (Ctrl-D) to download CIM Port/Sector reports.
+        Get the CIM Port, Sector and 'V' screen, at least.
+    2.  Run CRAI (Ctrl-C) to build/update a *.dat file from the *.prt file.
+
+    Repeat the above sequence regularly until you build up a good database
+    (*.dat files).  Step 2 can be done On or Offline.
+
+Don't forget to switch between .KEY files with Alt-F2.
+
+Status Line Legends:
+
+    TR=Turns Remaining
+    TP=Turn Protection
+    p&t=port and trade
+    Mov=move
+

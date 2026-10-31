@@ -1,0 +1,1019 @@
+
+
+
+                                 TLXTW 2.04
+
+                      Telix Trade Wars 2002 v2.x Scripts
+
+                          Crown Software (c) 1994
+
+                                 Phil Crown
+
+                              326 Kinney Drive
+
+                           Wylie, TX  75098-7725
+
+                       Fidonet :  Telix or Trade wars Echo
+
+                       Netmail :  1:124/6108.2
+
+                       Internet:  phil.crown@bluescafe.com
+                                  phil.crown@delta.com
+
+
+-----------------------------------------------------------------------------
+
+     Disclaimer:
+
+     Crown Software makes no warranty of any kind.
+
+     Crown Software SHALL NOT BE LIABLE FOR ANY DAMAGES ARISING OUT OF THE
+     USE OF OR INABILITY TO USE THIS PROGRAM.
+
+     Use of Telix(tm) for longer than 45 days without appropriate payment
+     to deltaComm Development for Telix is a violation of international
+                             Copyright Law.
+
+     These scripts are not free.  These scripts are Shareware.  If you
+     use them and find them useful you should register.  Registration will
+     encourage the author to improve and upgrade the scripts for future public
+     release.  Registration will remove the annoying please register messages.
+     This release is a fully functional version.
+
+     Trademarks
+
+     SALT and Telix are trademarks of deltaComm Development.
+     Trade Wars 2002 is a Martech Software, Inc (tm) product.
+     TWASSIST is copyright by Albin Gerisch.
+     TWVIEW is copyright by Robert Weaver.
+
+..........................................................................
+NOTICE:
+
+    Several bugs squashed since the last release.  This .doc file is not
+    finished yet.  I am releasing this version so that the Telix users that
+    want to use these scripts can do so without having to wait until I
+    finish the doc file.  Most scripts are self-explanatory, if you know
+    how to play the game, you can probably figure out how the script is
+    supposed to interact with it.
+
+..........................................................................
+
+                            C O N T E N T S
+
+1.  Installation .................................................... 1
+2.  Environment Variables ........................................... 2
+3.  Configuration File - Tlxtw.Cfg .................................. 3
+4.  .Key files ...................................................... 4
+5.  Script descriptions ............................................. 5
+6.  Operation ....................................................... 6
+7.  Registration .................................................... 7
+8.  Glossary of Scripts ............................................. 8
+
+..........................................................................
+
+
+1.  Installation .........................................................
+
+    To install TLXTW Scripts, create a directory on your disk where you
+    want to install the scripts.  Extract the archive (TLXTW2xx.ARJ) to
+    that directory. Run SETUP.EXE.  Setup will create a batch file called
+    TL.BAT and configure certain scripts and compile them.  Now type TL to
+    load Telix.
+
+2.  Environment Variables ................................................
+
+    The directory where Telix.exe resides should always be set in the
+    environment whether you're using the scripts or not.  See section 1.5
+    of Telix.doc for more information about the Telix Environment variable.
+
+    From the Dos Prompt type:  Set Telix=C:\Telix
+    (or whatever directory Telix.exe is in).
+
+    Three other environment variables must be set for these scripts.
+
+    F1, DR, and TEMP.
+
+    F1  -  The path where scripts will make and store data files.
+           This directory must already exist.
+           Ex:  SET F1=C:\Telix\Twgames
+
+    DR  -  Is the delay rate.  If your modem is 9600 bps or faster, this can
+           be 1. if you running at 2400 bps, set this to 3 or higher.
+           The lower this number the faster Telix responds.  But if it is
+           to low, Telix responds to quick.  If your experiencing trouble
+           at 2400 bps such as scripts hanging try raising this number
+           gradually until the problem disappears, but I wouldn't recommend
+           raising it higher than 10.  Unless you want to have to wait for
+           a full second in some places. Ex:  SET DR=3
+
+    TEMP  -  where temporary files are stored.
+             Ex:  SET Temp=C:\Temp
+
+    Here is an example batch file which loads Telix.
+
+    TEL.BAT
+    @echo off
+    set telix=c:\telix
+    set f1=c:\games\traders
+    set dr=4
+    set temp=c:\temp
+    c:
+    cd\telix
+    telix
+    rem Erase variables when finished
+    set f1=
+    set dr=
+
+    If any one of the above environment variables is not set, some scripts
+    will not function.
+
+    Setup.exe will automatically create TL.BAT.
+
+3.  Configuration File - Tlxtw.Cfg .......................................
+
+    TLXTW.CFG is the configuration file.  Run Config.slc (Alt-E) to edit
+    the values in this file.  If you have registered TLXTW2xx Scripts,
+    run Config and type "R", then enter your name and registration code
+    from your registration letter.
+
+4.  .Key files ...........................................................
+
+    Key files allow you to redefine the keyboard to do things like send
+    your name, password, or run scripts, etc, with just the touch of a key.
+
+    The default .key file is Telix.key.
+
+    After Trader.key or Planet.key has been loaded type Alt-F2 to switch
+    between the two.  Trader.key is automatically loaded if you start Telix
+    via the TL.BAT the Setup.exe creates.
+
+    Please read the Telix documentation for further information about Telix.
+
+5.  Script descriptions ..................................................
+
+Script        Hot-key         Description
+
+CRAI.EXE      n/a             Extracts information from the log file.
+PLANET.KEY    n/a             Keyboard definition file.
+TRADER.KEY    n/a             Keyboard definition file.
+ATTKPORT.SLC  Ctrl-A          Port attacker.
+ATTKSHIP.SLC  Alt-A           Other ship/Deployed fighter attacker.
+BBSNAME.SLC   Ctrl-B          Changes/Creates game directories.
+BUSTED.SLC    Alt-F10         Records busts.
+BUSTREAD.SLC  F10             Displays busts/information menu.
+CIM_WARP.SLC  Ctrl-L          Gathers CIM warp information.
+CLASS.SLC     Alt-F9          Chart of port classes.
+CONFIG.SLC    Alt-E           Configuration file editor.
+CORPMEMO.SLC  Alt-F8          Transmits memo to all corp members.
+CRAI.SLC      Ctrl-C          Maintenance (runs crai.exe)
+CRCS.SLT      keypad -        Computer, report, current sector
+CRDTCALC.SLC  Alt-F6          Treasury Interest Calculator.
+CRSEPLOT.SLC  Ctrl-P          Course plotter/Twarp calculator.
+CUSGRIMY.SLC  Shft-F3         Cuss Grimy Trader to lower alignment.
+DENSCAN.SLC   Alt-S keypad +  Upgraded density scanner.
+DEPLOY_F.SLC  F1              Deploys fighters.
+DNINTG.SLC    Ctrl-D          Download Reports.
+DOS.SLC       Alt-J           Shell to DOS.
+ERR90.SLC     Alt-9           Exit Telix error level 90
+ETHEREND.SLC  Ctrl-E          Fires etherprobes.
+EXITTELX.SLC  Alt-X           Exits Telix fast.
+FUEL.SLC      F6              Steals fuel.
+GAMEDIR.SLC   Ctrl-F1         Shells to the game's directory.
+GRIMY.SLC     Ctrl-G          Grimy Trader Tracing.
+HANGUP.SLC    Alt-H           Hangs up the modem, resets defaults.
+HARDPWGE.SLC  Ctrl-F4         Underground password grabber.
+HOWBADAM.SLC  Shft-F2         Quick experience calculator.
+LOADKE.SLC    Alt-F2          Toggles Planet.key/Trader.key
+MAJOR_LN.SLC  Shft-F1         Major Space Lane Finder.
+MATLMOVE.SLC  F3              Move commodities between planets.
+MINE_DIS.SLC  Alt-M           Launches mine disruptors.
+MOVE.SLC      keypad .        Single step move, Upgraded density scan.
+PHOTON.SLC    Alt-P           Launches photon torpedoes.
+PLANET_D.SLC  F5              Planet destroyer (at Stardock for experience)
+PLANPORT.SLC  F6              Planet to Port trading.
+PLANSHLD.SLC  F9              Puts shields on planet.
+PLA_PO_M.SLC  F4              Moves colonists between planets.
+POPSTNRD.SLC  F2              Standard warp planet populator.
+POPTRANS.SLC  F1              Transwarp planet populator.
+POP_OPT.SLC   Alt-O           Population optimizer.
+PRIME.SLC     F8              Steals equipment.
+QUICMENU.SLC  Ctrl-F3         Quick menus
+READCORP.SLC  n/a             Reads bust received from corp members.
+ROBCREDT.SLC  F9              Robs credits.
+SELLBUY.SLC   F3              Paired port trading.
+SENDBUST.SLC  n/a             Sends busts to corp members, called by bustread
+TLXTWAST.SLC  Alt-T           Twassist(c) Hooks
+TLXTWDIR.SLC  n/a             Start up script.
+TLXTWHLP.SLC  Alt-F1          Quick Help.
+TOGANSI.SLC   keypad *        Toggle ANSI on/ off.
+TRADE.SLC     F2              Single port trading.
+TRANSMIT.SLC  Alt-F4          Transmit text file to selected players.
+TRANSTEL.SLC  F4              Transport/Steal/Sell cycle.
+TRICRON.SLC   Ctrl-T          Plays Tricron.
+TRIPLE.SLC    F5              Triple paired port trading.
+TWACIMUP.SLC  Alt-F3          Uploads twassist.cim created by TWASSIST(c)
+TWIMAGE.SLC   Alt-I           Images the screen.
+TWLOGOFF.SLC  Alt-F5          Auto-log off/ maintenance.
+TWVIEW.SLC    Ctrl-F2         Twview(c) Hooks.
+DOS.SLT       n/a             Dos.slc source file.
+ERR90.SLT     n/a             Err90.slc source file.
+EXITTELX.SLT  n/a             Exittelix.slc source file.
+GAMEDIR.SLT   n/a             Gamedir.slc source file.
+HANGUP.SLT    n/a             Hangup.slc source file.
+TLXTWDIR.SLT  n/a             Tlxtwdir.slc source file.
+TLXTWHLP.SLT  n/a             Tlxtwhlp.slc source file.
+TWLOGOFF.SLT  n/a             Twlogoff.slc source file.
+TLXTWHLP.TXT  n/a             Tlxtwhlp text file.
+
+6.  Operation ............................................................
+
+    Scripts create a separate directory under the path you enter in the F1
+    environment variable for each different BBS and/or game that you play.
+    The directory will be used to store data files that the scripts create
+    for each game.
+
+    The directory is named by the first eight characters of the name of the
+    BBS in the dialing directory.  It doesn't matter if the name is less than
+    eight characters, though.  Characters that are illegal in DOS filenames
+    are filtered out.  They are ( ) space, * asterisk, + plus, . period, /
+    slash, and ? question mark.  Any other illegal characters are not checked
+    for and should be changed by you manually in the dialing directory.
+
+    IMPORTANT:  There is one instance that will cause a huge problem.
+    If your dialing directory entry for a bbs contains the three letters
+    CON as the first three letters, it must be changed to that CON are not
+    the first three letters.  For example; if I had a bbs in my dialing
+    directory called Conservatory, or Conservative, it must be changed so
+    that CON are not the first three letters.  " Conservatory", or anything
+    but "CONservatory."  I will fix this eventually, but it will take a lot
+    of code changes in many of the scripts, until I can do this please
+    check for this condition.  What will happen is, when the scripts try to
+    open a file called CON the system will hang.
+
+    The data files will be named by the first 3 characters in the dialing
+    directory for the BBS you call.  This way there will be a separate
+    directory and data file for each BBS you call.  For example, if you call
+    a BBS named Terminator, then the directory will be named \TERMINAT, and
+    the data file would be named TER.DAT.  Quad C BBS would be named
+    \QUAD_C_B and QUA.DAT.  This is so that if you're running other third
+    party programs that may require typing in long command lines. The
+    directories are created under the path defined by the F1 environment
+    variable.
+
+    This is also so the scripts can tell which game you're playing in
+    without any input from you.
+
+    If you're playing more than one game on the same bbs, then run
+    BBSNAME.SLC (Ctrl-B) after you finish the first game, and enter something
+    like termina2 or something to create a separate directory and data file
+    for that game. Remember to always enter the same name each time you log
+    into that particular game.
+
+    Using a status line is required.  The status line will always show
+    which script is currently running, if any, which is very, very helpful
+    to avoid loading to many scripts at one time. Most scripts will
+    terminate automatically when its finished, but sometimes you may have
+    to abort one with the Esc key.  Alt-8 toggles the status line on/off
+    in Telix.  Some scripts will also display useful information on the
+    status line.
+
+    The easiest way to run a script is to assign it to a keyboard macro.
+    (Alt-K, R, E, key to edit).  Make sure it begins with a @.  Ex.
+    "@Bustread".  Trader.key and Planet.key are included with scripts already
+    assigned with Alt-F1 for help, but you can reassign them anyway you like.
+
+    Most scripts should be loaded while you're at the "Command [TL=" prompt.
+    Some scripts should be loaded at the "Planet command" or "<Tavern>"
+    prompt.
+
+    Scripts will tell you if you are not at the correct prompt and which
+    prompt you must be at to before running.
+
+    Trading scripts stop trading if you get busted or encounter a Ferrengi.
+
+
+7.  Registration .........................................................
+
+    When you register TLXTW Scripts, you will receive a letter with a
+    registration code that will remove all registration encouragement
+    features.  To enter the registration code, run Config (Alt-E) and enter
+    the information in the letter.
+-----------------------------------------------------------------------------
+                          TLXTW 2.x Registration Form
+
+        Register Telix Tradewars Scripts version 2.x. for only $15.00
+
+Quantity           Description                Price/copy      Total:
+
+ ___      Telix Tradewars Scripts 2.x              $15.00      ______
+
+          Texas residents add State and Local Taxes: (8.25%)   ______
+
+          Grand Total                                          ______
+
+Your Real Name:________________________________________________________
+
+Address:_______________________________________________________________
+
+City, State, Zip:______________________________________________________
+
+Phone # (   ) ___-____
+
+BBS Name:_____________________     Data # (   ) ___-____
+
+Comments:______________________________________________________________
+
+_______________________________________________________________________
+
+_______________________________________________________________________
+
+_______________________________________________________________________
+
+Send registrations to:
+
+                            Phil Crown
+                            326 Kinney Drive
+                            Wylie, TX  75098-7725
+
+I can also be contacted thru:
+
+                Phil Crown
+                Fidonet :  Telix or Trade wars Echo
+                Netmail :  1:124/6108.2
+                Internet:  phil.crown@bluescafe.com
+                           phil.crown@delta.com
+
+     Registration will entitle you to legally continue to use Telix Trade
+     wars beyond a reasonable evaluation period and qualify you for the
+     upgrade package at a considerably reduced rate and remove any annoying
+     delays, messages, or limitations.
+
+     If you have any questions about these scripts, leave me a message in
+     the Fidonet Telix or Trade_wars Echo, or Netmail.
+
+8.  Glossary of Scripts ..................................................
+
+Script          Hot-key     Key file
+--------------------------------------------------------------------------
+ATTKPORT.SLC    Ctrl-A      Trader.key
+
+    Attacks ports.  Will not attack if you have less than the amount of
+    fighters defined in TLXTW.CFG.
+
+--------------------------------------------------------------------------
+ATTKSHIP.SLC    Alt-A       Trader.key
+
+    Attacks other ships / deployed fighters.  Uses all available fighters
+    when attacking.  If you want to wear the ship down first to try to
+    capture it, you should not use this script.
+
+--------------------------------------------------------------------------
+BBSNAME.SLC     Ctrl-B      Trader.key
+
+    This fills the _entry_name variable in SALT.  _Entry_name is a SALT
+    variable that holds the name of the BBS from the dialing directory your
+    connected to.
+
+    This serves three purposes:
+
+    It will create directories to store data files for new games.
+
+    If you start Telix while already on line or for some other reason the
+    _entry_name variable wasn't passed during log on it will fill that
+    variable.
+
+    Another use for this is if you're playing in more than one game one the
+    same bbs, you'll need a separate directory to store data files.  Before
+    you enter the second game, run this and enter a name to denote the
+    change.  Always enter the same name each time you enter that particular
+    game.
+
+    This script is normally called by other scripts, but it can be run
+    manually (Ctrl-B) if needed, as in the previous paragraph.
+
+--------------------------------------------------------------------------
+BUSTED.SLC      Alt-F10     Trader.key
+
+    Normally this will be "called" by other scripts, but it can be run as a
+    stand alone if need be.  It writes a data file with the sector #, port #,
+    and date as represented by the number of seconds since Jan. 1, 1970 when
+    you get busted.
+
+--------------------------------------------------------------------------
+BUSTREAD.SLC    F10         Trader.key
+
+
+    Reads the .dat file, so all you have to do is warp into a sector and
+    run BUSTREAD to find the last time you were busted in that sector. If
+    the port busts have been cleared then the options to steal or rob the
+    port will appear in the display box.  Port bust records are cleared
+    every 14 days in the game.
+
+    If the file major.lan exists in the game's directory, then the display
+    will show if the port is in a major space lane (MSL).  If you run this
+    in a sector without a port, and the file major.lan exists (MAJOR_LN,
+    Shift-F1) it will show if that sector is in a major space lane.
+
+    If the file Corp.dat exists in the game's directory, then an extra
+    option will appear in the display box.  Corp.dat is an ASCII file that
+    you must create, it should contain your handle in the game first,
+    followed by your corp team members handles in a column format. For
+    example my corp.dat may look like this
+
+    Phil Crown
+    team member 1
+    team member 2
+    up to
+    five
+    currently
+
+    This option will make keeping track of who's been busted where and when
+    effortless.  Currently, this requires that the Corp member is using
+    TLXTW Scripts too, but I may try to support a generic format in the
+    future.  All you have to do is choose to "R"eceive or "T"ransmit. At
+    the end of your turns for the day, run Bustread (F10) and choose the
+    Cor"p" option, then "T"ransmit Bust Control records to corp members.
+    When a corp member logs on, he runs "R"eceive Bust Control records.
+    Now, when you run Bustread or Denscan scripts, then it will show if you
+    or a corp member was busted in that sector last.
+
+    Example of the display box:
+
+    ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+    ³ Sector  : 806  Class 9        Major Space Lane ³ - port, class, MSL
+    ³ Notes  : stock up here                         ³ - notes
+    ³ Busted  16 days 7 hours 42 minutes ago. (2x)   ³ - your last bust/times
+    ³ Corp    1 days 3 hours 49 minutes ago.         ³ - corp member busted
+    ³ All busts will be cleared in 12 days           ³ - when busts cleared
+    ³   Steal Ore  -   Equipment  -  Rob credits     ³ - options
+    ³   Sell/Steal Cycle          Attack Port        ³ - "    "
+    ³                                                ³
+    ³   Density Scan                                 ³ - "    "
+    ³   Look up a sector                             ³ - "    "
+    ³   Manually Enter a Sector and Port             ³ - "    "
+    ³   Corp Bust Control Receive/Transmit           ³ - Exchange Corp busts
+    ³                                                ³   records
+    ³                                                ³
+    ³                                                ³
+    ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+
+    Example of the No"t"es file. (you'll see what I mean when you run this
+    feature).  Notes.ttw must be formatted like below;
+
+    |    1 Terra (colonists)
+    |  100 my planet
+    | 1000 ferrengal
+    | ^^^^sector number
+    |^-space
+    |<-left margin
+
+--------------------------------------------------------------------------
+CIM_WARP.SLC    Ctrl-L      Trader.key
+
+    Enters CIM (Computer Interrogation Mode) and plots warp paths.
+
+--------------------------------------------------------------------------
+CLASS.SLC       Alt-F9
+
+    Prints a box with all the port classes.  Nothing fancy, but maybe
+    helpful for anyone learning the classes.
+
+                            ÚÄÄÄÄÄÄÄÄÄÄÄ¿
+                            ³Class 1 BBS³
+                            ³Class 2 BSB³
+                            ³Class 3 SBB³
+                            ³Class 4 SSB³
+                            ³Class 5 SBS³
+                            ³Class 6 BSS³
+                            ³Class 7 SSS³
+                            ³Class 8 BBB³
+                            ³Class 9 BBB³
+                            ÀÄÄÄÄÄÄÄÄÄÄÄÙ
+
+    If this is run in a sector with a port in it, it will print the
+    appropriate 3 letter identifier next to the port.
+
+--------------------------------------------------------------------------
+CONFIG.SLC      Alt-E       Trader.key
+
+    Edits the configuration file, TLXTW.CFG.
+
+--------------------------------------------------------------------------
+CORPMEMO.SLC    Alt-F8      Trader.key
+
+    Allows non CEO Corporate members to send messages to all other corp
+    members by typing the message just one time.
+
+    The file corp.dat must exist in the game's directory.  Corp.dat is
+    described with the description for BUSTREAD, (above).
+
+--------------------------------------------------------------------------
+CRAI.SLC        Ctrl-C      Trader.key
+CRAI.EXE
+
+    Builds a data (.dat) file from the CIM port (.prt) report file.  If
+    you're online run DNINTG.SLC (Ctrl-D) first to download the CIM Port
+    report and gather any other reports you want to capture in the log
+    file, then run this.  The most important reports to capture in the log
+    are the CIM Port report and the Game Configuration and Status ("V"
+    screen).
+
+    If you're off line, CRAI can still be run.  There should be a current
+    log file with the CIM Port report and the "V" screen with the game's
+    age for updating the bust control available.
+
+    Crai.exe will extract the Stardock, Class 0 ports, CIM sector/port, and
+    the game's age from the log file.
+
+--------------------------------------------------------------------------
+CRCS.SLC        keypad -    Trader/Planet.key
+    Computer report for current sector.  Determines which prompt you're at
+    and enters the correct keystrokes for getting a Port Report for the
+    Current sector.
+--------------------------------------------------------------------------
+CRDTCALC.SLC    Alt-F6      Trader.key
+
+    Citadel Treasury calculator.  Calculates interest accumulated in the
+    treasury for a 24 hour period.
+
+--------------------------------------------------------------------------
+CRSEPLOT.SLC    Ctrl-P      Trader.key
+
+    Pops up a box with the current sector, asks for a destination sector,
+    then counts turns and fuel needed to Twarp from current sector to a
+    destination and back to the current sector and prints the totals to the
+    screen and on the status line.
+
+--------------------------------------------------------------------------
+CUSGRIMY.SLC    Shft-F3     Trader.key
+
+    Call's the Grimy Trader a bad name, thus causing your alignment turn
+    negative.  Load this at the "Command [TL" prompt and it will show
+    exactly what your alignment is at all times.  If you load it in the
+    Tavern then it will only show how many points your alignment has gone
+    down.
+
+--------------------------------------------------------------------------
+DENSCAN.SLC     Alt-S or keypad +   Trader.key
+
+    Reads the .dat file, and will show what class port is in an adjacent
+    sector when doing a density scan if that sector is not unvisited, and if
+    busted then how many days ago.
+
+    If the locations of the three Class 0 and the Class 9 (Stardock) ports
+    are recorded in the .dat file, and you've run MAJOR_LN.SLC (Shft-F1),
+    then it will show if it is a major space lane or not.
+
+    If the file CORP.DAT exists in the game's directory this will show if
+    you or a corp member were busted in the adjacent sector last.  See the
+    description for BUSTREAD for more on Corp.dat.  In the above example, I
+    was busted in sector 487 10 days ago, and a corp member was busted in
+    sector 705 2 days ago.
+
+--------------------------------------------------------------------------
+DEPLOY_F.SLC    F1      Trader.key
+
+    Deploys fighters.  Doesn't deploy in Fedspace.  The number of fighters
+    and the mode are defined in Tlxtw.cfg.  As well as, whether or not to
+    deploy in the Major Space Lanes.  Run Config.slc (Alt-E) the default
+    values.
+
+--------------------------------------------------------------------------
+DNINTG.SLC      Ctrl-D  Trader.key
+
+    Download reports intended to be captured in a log file.  If the log
+    file is closed or paused, it will be opened first.
+
+    You should choose to get the CIM Port and View Game Status screen, at
+    least, as well as any other information you want to capture.
+
+    The default reports to capture are in the configuration file,
+    Tlxtw.cfg, but they can be changed on the fly after the script is
+    loaded.
+
+    Reports that can be captured are:
+
+                      R = Trader Rankings
+                      O = List Corporations
+                      N = Rank Corporations
+                      G = Deployed Fighters
+                      K = Deployed Mines
+                      I = Ship Information
+                      C = Corporate Planet Scan
+                      E = Personal Planet Scan
+                      T = Team Assets
+                      V = View Game Status
+                      X = Avoids
+                      P = Port (CIM)
+                      S = Sector (CIM)
+
+--------------------------------------------------------------------------
+DOS.SLC         Alt-J       Trader.key
+DOS.SLT         source file
+
+    Shells to dos, closes the capture file, if its open, and re-opens it
+    after returning to Telix.  This is so if you want to edit the capture
+    file or run an external utility that may try to read the file.
+
+--------------------------------------------------------------------------
+ERR90.SLC       Alt-9       Trader.key
+ERR90.SLT
+
+    Exits Telix with error level 90, Tl.bat handles the error level, to
+    edit TL.bat itself, then return to Telix already Online.
+    This is a way to change the DR environment variable on the fly,
+    to achieve optimum performance.
+    If you move TL.BAT to a different directory after running setup, edit
+    tl.bat with your text editor and change the line point to the directory
+    where tl.bat resides.  It is commented showing what needs editing.
+
+--------------------------------------------------------------------------
+ETHEREND.SLC    Ctrl-E  Trader.key
+
+    Fires ether probes.  Reads sector numbers from a text file named
+    Ether.123.
+
+    The text file can be an ascii download of the Unexplored sectors
+    or it can be a list sector numbers in a column that you can create.
+    The second method is the preferred way, since you can select optimized
+    and specific target sectors to shoot at.
+
+    If the file Ether.123 does not exist in the game's directory OR in in
+    the directory specified by the "Temp" environment variable, this script
+    will enter the ship's onboard computer and do an ASCII download of
+    unexplored sectors.
+
+    After the download is finished, the script will run the editor to edit
+    the file it just downloaded (ether.123). This first line in ether.123
+    should read: " <ÄÄ CUT UNTIL THIS ROW CONTAINS SECTORS  ÄÄÄ> ".
+
+    The first row of ether.123 must contain only sector numbers.  Trimming
+    off the bottom rows helps too.
+
+    You can choose to watch for Aliens, Traders, Mines, Planets, Ferrengi,
+    Class 0 ports, a combination, or nothing at all, however, "Probe
+    destroyed" is always watched for.  If one of the above is seen, except
+    for Class 0 ports, then it will be automatically saved in the file
+    called Ether.img in the game's directory in a file that can be easily
+    sorted for easy viewing later.
+
+    If you choose to watch for Class 0 ports, when a probe enters a
+    sector with a Class 0 port, then that port will be added to the data
+    file automatically, if it is not already recorded.
+
+    There are three options for replenishing probes.  Never, Ask, or Always.
+    If you choose Ask or Always, it will (after Asking, if applicable)
+    port at the StarDock and buy 25 more ether probes, providing you're in
+    the same sector as SD and have enough credits.  If you don't have enough
+    credits for 25 probes, it will buy what you can afford.
+
+    A temporary file called Ether.tmp is written that holds a string that
+    represents the offset of the last sector read from the text file
+    (ether.123) so that if the script is aborted, then resumed it won't
+    shoot into sectors that its already done.
+
+    If you want to use a pre-existing text file of sectors, copy the file
+    you want to use to the directory specified in the "Temp" environment
+    variable and name it ETHER.123.  Ex: d:\tmp\ether.123.  The .dat file
+    makes a good list of sectors to shoot at after you've run out of
+    unexplored sectors.  Cut out just the sector numbers and copy them to
+    a file called Ether.123 in the directory specified by the "Temp"
+    environment variable.  You should delete all the files in the
+    temporary directory when you are finished.
+
+    If you want to use a "permanent" ether probe file, copy the file
+    Ether.123 to the game's directory.  The script will search the game's
+    directory first, then the temporary directory.  If Ether.123 is not
+    found in either directory then it will do an ASCII download of the
+    unexplored sectors.
+
+    Summary:
+
+    Ether.123  (list of sectors to shoot at)
+    Ether.Img  (image of anything that the script sees)
+    Ether.tmp  (offset of last sector read from ether.123)
+
+    Etherend requires the use of the External DOS Command SORT.EXE.
+
+--------------------------------------------------------------------------
+EXITTELX.SLC    Alt-X       Trader.key
+EXITTELX.SLT
+
+    Exits Telix fast.  Doesn't ask any questions.  Don't use this unless
+    you really want to exit Telix.  Does not hang up the modem, if
+    online.
+
+--------------------------------------------------------------------------
+FUEL.SLC        F6          Trader.key
+
+    Robs a port of Ore for T-warp or whatever.  The port must have at least
+    at least the number of you holds that you want to steal on its docks.
+
+    If you get busted, Busted (Alt-F10) is called which records the bust in
+    the .bus file.  If you get busted after you abort the script, you will
+    have to run Alt-F10 to record the bust in the .bus file.
+
+--------------------------------------------------------------------------
+GAMEDIR.SLC     Ctrl-F1     Trader.key
+GAMEDIR.SLT
+
+   Shells to the game's directory and runs List, Qedit, command.com, or
+   whatever you want to run.  Edit this script as needed and compile with
+   CS.exe.
+
+--------------------------------------------------------------------------
+GRIMY.SLC       Ctrl-G      Trader.key
+
+    Asks the Grimy Trader to trace another trader.  You must enter enough
+    letters to match the trader being traced exactly right the first time
+    Grimy says "Do you mean ***?"  Saves any info the Grimy Trader gives in
+    a capture file named Grimy.Txt in the game's directory.
+
+--------------------------------------------------------------------------
+HANGUP.SLC      Alt-H       Trader.key
+HANGUP.SLT
+
+    Hangs up the modem and resets the script directory and capture
+    filename to the what they were when setup.exe ran.
+
+--------------------------------------------------------------------------
+HARDPWGE.SLC    Ctrl-F4     Trader.key
+
+    Load this at the <Tavern> prompt and it will ask the grimy trader for
+    the password to the underground.
+    Load it while at the entrance to the Underground ("Your reply :") and
+    it will send the password, if underpas.txt exists.
+    You must have enough credits to pay grimy for the password.
+    Saves the password in a file called UNDERPAS.TXT in the game's
+    directory.
+
+--------------------------------------------------------------------------
+HOWBADAM.SLC    Shft-F2     Trader.key
+
+    How many holds / credits are safe to steal.  Looks at your experience,
+    divides it by x, multiplies it by y, then prints the results on the
+    status line.  x and y are listed in the configuration file, Tlxtw.cfg.
+    Run Alt-E or to change the default values.
+
+--------------------------------------------------------------------------
+LOADKE.SLC      Alt-F2      Trader.key/Planet.key
+
+    Switches between Planet and Trader.key keyboard definition files.
+    Planet.key holds all the planet operations scripts, and Trader.key holds
+    everything else.  You can reassign the keyboard anyway you want to, and
+    even create new key files if you like.
+
+--------------------------------------------------------------------------
+MAJOR_LN.SLC    Shft-F1     Trader.key
+
+    Finds the major space lanes.  You must have the three Class 0 ports
+    (Terra, Alpha Centuari, and Rylos) and the Class 9 (Stardock) recorded
+    in the .dat file and sorted by sector number, ascending.  This script
+    will tell you if you don't have all the ports and/or if they need to be
+    sorted with CRAI.SLC.
+
+    If all three Class 0 ports or the Class 9 port are not in the dat file,
+    but you know their locations, run BUSTREAD.SLC (F10) and "M"anually
+    enter them into the data file.  Then run this again.
+ 
+--------------------------------------------------------------------------
+MATLMOVE.SLC    F3          Planet.key
+
+    Moves commodities between planets within the same sector.  Make sure
+    your HOLDS ARE EMPTY when you start.
+
+--------------------------------------------------------------------------
+MINE_DIS.SLC    Alt-M       Trader.key
+
+    Launches mine disruptors into the sector you specify.  Aborts when there
+    are no more mines in the sector, or if you accidentally start disrupting
+    your own mines ;-)
+
+--------------------------------------------------------------------------
+MOVE.SLC        keypad .    Trader.key
+
+    Move /  Scan.  You have to enter a destination first, then use this to
+    single step the rest of the way Upgraded Density Scanning each step of
+    the way.
+ 
+--------------------------------------------------------------------------
+PHOTON.SLC      Alt-P       Trader.key
+
+    Launches a photon-torpedo into the sector you specify then enters the
+    sector begins the landing sequence and will Attack ONCE, then you're
+    on you're own.  Doesn't actually do the invading.  Just gets into the
+    sector fast.  It will ask for a sector, a planet number, and how many
+    fighters to use.  If you don't know the planet's number you want to
+    invade, just hit enter to skip it, then enter the amount of fighters.
+
+    This script will launch the photon, then print the elapsed wave time,
+    and the wave maximum duration on the status line, so you'll know how
+    much time you have left before the wave expires.  Press escape or wait
+    10 seconds when the script is finished before loading another script.
+
+--------------------------------------------------------------------------
+PLANET.KEY      Alt-F2  Planet.key/Trader.key
+
+    Planet Scripts keyboard template.
+
+--------------------------------------------------------------------------
+PLANET_D.SLC    F5          Planet.key
+
+    Planet Destroyer - blows up planets for experience and fun.  You must
+    belong to a Corporation for this to work.  Its a good idea to belong to
+    a corp even if you're the only one in it.  This script works best with
+    ANSI turned off.  Its written to be run in the sector with the
+    Stardock, so when you run out of Genesis torps and/or atomic detonators
+    it will port and get some more. It asks for a planet number so that you
+    don't accidentally land on a populated planet (if there is one) and get
+    blown up yourself, or if you have a Planet Scanner.
+
+    If a text file called PLANETD.NAM exists in the game's directory, it
+    will be used to name the planets, otherwise they're randomly named.
+    This is just a text file that you create with the names of the planets
+    in a column format.  If you use this method, it is best that at least
+    one planet exists in the sector already, so you know for sure the
+    planet's number to enter when it asks, so that the script will run
+    non-stop.
+
+    Planet One
+    Planet Two
+    Planet Three
+
+    Enter 'c' or 'C' as the planet's number to "Clean up", if there are
+    a lot of unsightly planets in the sector.  Warning:  Make sure there are
+    no colonists on the planets or you may be blown up.
+
+--------------------------------------------------------------------------
+PLANPORT.SLC    F6          Planet.key
+    Buys product from a port, and transfers it to the planet.
+--------------------------------------------------------------------------
+PLANSHLD.SLC    F9          Planet.key
+    Puts shields on a planet.
+--------------------------------------------------------------------------
+PLA_PO_M.SLC    F4          Planet.key
+    Planet population mover.
+--------------------------------------------------------------------------
+POPSTNRD.SLC    F2          Planet.key
+    Standard warp planet populator.
+--------------------------------------------------------------------------
+POPTRANS.SLC    F1          Planet.key
+
+    Transwarp planet populator.  Start with ship's holds empty and in the
+    same sector as the planet to populate.  All information is asked for
+    before the script begins (much nicer now, I think :).  It will get the
+    current sector first, though.  Then enter all the requested information.
+    You only have to specify the planet number to populate if you have a
+    Planet Scanner or if there is more than one planet in the sector.  When
+    the script checks the ships holds/type it will abort if all holds are
+    not empty.  You can travel to Terra via a sector any distance outside
+    Terra, or directly to sector 1 if you are good and have an alignment of
+    1000 or higher.  Can handle Planetary Transporter now.
+
+--------------------------------------------------------------------------
+POP_OPT.SLC     Alt-O      Trader.key/Planet.key
+    Planet population optimizer.
+--------------------------------------------------------------------------
+PRIME.SLC       F9          Trader.key
+    Steal equipment.
+    If you get busted, Busted (Alt-F10) is called which records the bust in
+    the .bus file.  If you get busted after you abort the script, you will
+    have to run Alt-F10 to record the bust in the .bus file.
+--------------------------------------------------------------------------
+QUICMENU.SLC    Ctrl-F3     Trader.key
+QUICMENU.SLT
+    Shows Tradewars 2002 internal help menus.  Nothing fancy, but perhaps
+    helpful, especially for low speed modems.
+--------------------------------------------------------------------------
+READCORP.SLC    n/a
+    Called from Bustread (F10) after receiving busts from corp members.
+    You should never have to run this script manually.
+--------------------------------------------------------------------------
+ROBCREDT.SLC    F8          Trader.key
+    Robs Credits.
+    If you get busted, Busted (Alt-F10) is called which records the bust in
+    the .bus file.  If you get busted after you abort the script, you will
+    have to run Alt-F10 to record the bust in the .bus file.
+--------------------------------------------------------------------------
+SELLBUY.SLC     F3          Trader.key
+    Paired port trading.
+--------------------------------------------------------------------------
+SENDBUST.SLC 
+--------------------------------------------------------------------------
+TLXTWAST.SLC    Alt-T       Trader.key
+
+    Twassist(c) Hooks.  Takes advantage of the Automode commands in
+    Twassist 2.x.
+    This script will change to the game's directory, exit Telix to free up
+    all the memory, run Twassist, then reload Telix with the "O"nline
+    switch, and reopen the capture file.  The disadvantage is that the
+    scroll back buffer will be lost, the advantage is that Twassist has all
+    the memory it needs to run.
+
+--------------------------------------------------------------------------
+TLXTWDIR.SLC    n/a         n/a
+TLXTWDIR.SLT
+--------------------------------------------------------------------------
+TLXTWHLP.SLC    Alt-F1      Trader/Planet.key
+TLXTWHLP.SLT
+TLXTWHLP.TXT
+
+    LIsts TLXTWHLP.TXT file.  Make sure you have an editor defined in
+    Telix's setup, Alt-O, F.
+--------------------------------------------------------------------------
+TOGANSI.SLC     keypad *    Trader.key
+    Toggles ANSI on/off.
+--------------------------------------------------------------------------
+TRADE.SLC   F2              Trader.key
+    Single port trading.
+--------------------------------------------------------------------------
+TRADER.KEY  n/a keyboard template.
+--------------------------------------------------------------------------
+TRANSMIT.SLC    Alt-F4          Trader.key
+
+    Transmits messages to other traders, entire corps, or any combination
+    of the two.  Reads the file Transmit.txt from the game's directory.
+    This script is mostly so I can write messages to other traders
+    offline, then send them while online.
+
+    The format of Transmit.txt is very particular.
+
+    >Phil Crown
+    Hello!  interesting stuff...interesting stuff... interesting stuff...
+    interesting stuff... interesting stuff... interesting stuff...
+    interesting stuff... interesting stuff... interesting stuff...
+    interesting stuff... interesting stuff... interesting stuff...
+    interesting stuff... interesting stuff... interesting stuff...
+    interesting stuff... interesting stuff... interesting stuff...
+    interesting stuff... interesting stuff... interesting stuff...
+
+    >Player 2
+    same as above ... no limit on the size of the message.
+
+    >end
+
+    The last ">end" is VERY important.  DO NOT use ">" anywhere else in
+    the text except as shown above or the script will get lost.
+    NOTE:  There should be ONE blank line between each ">" symbol.
+    Just format your transmit.txt like the above, and it should be ok.
+
+--------------------------------------------------------------------------
+TRANSTEL.SLC    F4          Trader.key
+
+    Runs the Transport/Steal/Sell cycle.  Set up both ships in the sectors
+    that you want to steal/sell from with the both ships' holds full.
+    Hit F4, enter the ship number you're currently in, the product you want
+    to steal from this port, repeat for the second ship, and the rest is
+    automatic.  The script begins by transporting to the Ship 2, sells,
+    steals, transport to ship 1, sells, steals, Ship2, sell, steal, etc...
+
+    If you get busted, Busted (Alt-F10) is called which records the bust in
+    the .bus file.  If you get busted after you abort the script, you will
+    have to run Alt-F10 to record the bust in the .bus file.
+
+--------------------------------------------------------------------------
+TRICRON.SLC     Ctrl-T      Trader.key
+
+    Plays Tricron for three minutes or until the jackpot is won.
+
+--------------------------------------------------------------------------
+TRIPLE.SLC      F5      Trader.key
+
+    Trades three commodities at paired ports.  One port is selling
+    two commodities and buying one and the other port is buying the two
+    and selling the opposite of the first port.  Except for a Class 7 and
+    a Class 8/9, then one port is selling all three and the other port is
+    buying all three.
+
+    It works out as follows:
+
+                BBS  1  ³   BSB  2  ³   SBB  3  ³ SSS  7
+                SSB  4  ³   SBS  5  ³   BSS  6  ³ BBB  8 or 9
+
+    If you're lucky enough to find a pair of these; fill your holds, be
+    ready to move into the adjacent sector to sell, then just hit F5,
+    and the rest is automatic. The advantage of trading at a pair of
+    these is you have 6 chances of making experience points from haggling
+    prices, rather than the standard 4 at normal paired ports.
+--------------------------------------------------------------------------
+TWACIMUP.SLC    Alt-F3      Trader.key
+
+    Uploads the file TWASSIST.CIM created by TWASSIST(c).
+    Turns off ANSI, enters the CIM and starts uploading the file.
+    Twassist.cim must be in the game's directory.
+    Twassist.exe must be in the path.
+
+--------------------------------------------------------------------------
+TWIMAGE.SLC     Alt-I       Trader.key
+
+    Saves an image of the screen in the game's own directory.
+--------------------------------------------------------------------------
+TWLOGOFF.SLC
+TWLOGOFF.SLT
+    See twlogoff.slt
+--------------------------------------------------------------------------
+TWVIEW.SLC      Ctrl-F2     Trader.key
+
+    Hooks for TWVIEW(c) by Woody Weaver.
+--------------------------------------------------------------------------

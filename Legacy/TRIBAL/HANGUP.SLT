@@ -1,0 +1,197 @@
+//-----------------------------------------------------------------------//
+//  hangup.slt  alt-h
+//  TLXTW hangup script
+//  see lines 30 and 52
+//-----------------------------------------------------------------------//
+//  When using TLXTW 2.x Scripts, press alt-h once to reset the script
+//  directory, pressing alt-h again will hang up the modem.
+//  To get back to TLXTW's directory after pressing alt-h once, assign
+//  "@e:\telix\scripts\tlxtw\tlxtwdir.slc"  (check the path here) to a F-key
+//  and save in Telix.key.
+//  Compile with CS.EXE.  Ex:  cs hangup.slt
+//-----------------------------------------------------------------------//
+int     statline, statline_color, h, x, y;
+
+main()
+{
+    int i;
+
+    if(cinp_cnt())
+        flushbuf();
+    _scr_chk_key = 0;
+    _back_color = 0;
+    _fore_color = 7;
+    get_statline();
+    update_term();
+    newdir(_telix_dir);
+//---------------------------------------------------------------------------//
+// this is your normal script directory                                      //
+//                                                                           //
+_script_dir = "e:\TELIX\WORK\SLC\";                                          //
+//                                                                           //
+//---------------------------------------------------------------------------//
+    if( (i=keyload("telix.key")) > -1 )         // reload default .key file
+        printsc("^M^JTelix.key loaded." );
+    else
+        printsc( "^M^JError loading Telix.key" );
+
+    printsc("^M^JScript directory: ");
+    printsc( _script_dir );
+
+    if ( capture_stat() == 1 || capture_stat() == 2 ) {
+        if( capture ( "*close*" ) > -1 ) {
+            printsc( "^M^JCapture file    : " );
+            printsc( _capture_fname );
+            printsc( " closed." );
+        }
+    }
+
+//---------------------------------------------------------------------------//
+// normal capture filename                                                   //
+//                                                                           //
+_capture_fname = "e:\tmp\cap";                                               //
+//                                                                           //
+//---------------------------------------------------------------------------//
+    if( carrier() ) {
+        printsc( "^M^JCapture file    : " );
+        if( capture( _capture_fname ) > -1 ) {
+            printsc( _capture_fname );
+            printsc( " opened." );
+        }
+        else {
+            printsc( "Error opening " );
+            printsc( _capture_fname );
+        }
+    }
+
+    prints("");
+
+    //hangup_();    // comment out if you do not want to hangup the modem.
+
+    cursor_onoff(1);
+    clean_tempdir();
+
+    _scr_chk_key = 1;
+    return 1;
+}
+//-----------------------------------------------------------------------//
+hangup_()
+{
+    int i;
+
+    if ( carrier() ) {
+        i=0;
+        while( i == 0 && inkey() != 27 ) {
+            i=hangup();
+            vrstrarea(h);
+            if(i > 0)
+                break;
+            gotoxy( 0, y );
+            delay_scr(10);
+            cputs_tr(_mdm_hang_str);
+            if (waitfor("OK", 3) ) break;
+            delay_scr(5);
+        }
+    }
+    vrstrarea(h);
+    pstraxy( _entry_name, 0, statline, statline_color);
+    gotoxy(0, y);
+    while ( inkey() != 27 ) {
+        cputs_tr(_mdm_init_str);
+        if ( waitfor("OK", 2 )) break;
+        delay_scr(2);
+    }
+}
+//-----------------------------------------------------------------------//
+clean_tempdir()//delete unwanted files in the temp directory
+{
+    str tempdir[64],buf[64];
+    int f;
+
+    if(!getenv("temp",tempdir)) {
+        soft_wind("^"Temp^" Environment variable not found!",30);
+        return 0;
+    }
+    newdir(tempdir);
+    fdelete("Entrynam.txt");
+    // add any more files here
+    newdir(_telix_dir);
+    return 1;
+}
+//-----------------------------------------------------------------------//
+append_backslash( str string )
+{
+    if(subchr(string,strlen(string)-1)!='\')strcat(string,"\");
+    return string;
+}
+//-----------------------------------------------------------------------//
+chk_stat ( int statchk )
+{
+    int c, x, y;
+
+    x=getx(); y=gety();
+    gotoxy(67, statchk);
+    if ((c=vgetchr() & 255) == 79 ){
+        Statline = statchk;
+        statline_color = c/256;
+        gotoxy(x,y);
+        return 1;
+    }
+    else {
+        gotoxy(x,y);
+        return 0;
+    }
+}
+//-----------------------------------------------------------------------//
+get_statline()
+{
+    if      (chk_stat( 0) ) return  0;
+    else if (chk_stat(24) ) return 24;
+    else if (chk_stat(43) ) return 43;
+    else if (chk_stat(50) ) return 50;
+  //else prints("^m^jUnable to find the status line" );
+    return -1;
+}
+//-----------------------------------------------------------------------//
+ps( str message )
+{
+    int x,y;
+
+    x=getx(); y=gety();
+    pstraxy("                                                      ³",0,statline,statline_color);
+    pstraxy(message,0,statline,statline_color);
+    gotoxy( x,y );
+    return 0;
+}
+//-----------------------------------------------------------------------//
+psx( str message, int row )
+{
+    int x,y;
+
+    x=getx();y=gety();
+    pstraxy(message,row,statline,statline_color);
+    gotoxy( x,y );
+    return 0;
+}
+//-----------------------------------------------------------------------//
+soft_wind(str message, int duration)
+{
+    int old_chk_key;
+    old_chk_key = _scr_chk_key;
+    _scr_chk_key = 0;
+    int l, h, x, y, key = 0, ts;
+    cursor_onoff(0);
+    x=getx(); y=gety();
+    l = strlen(message)/2;
+    h = vsavearea(37-l, 10, 43+l, 14);
+    box(37-l, 10, 43+l, 14, 3, 0, 5 );
+    pstraxy(message, 40-l  , 12, 11 );
+    ts = timer_start(duration);
+    while( !key && !time_up(ts)) key=inkey();
+    vrstrarea(h);
+    cursor_onoff(1);
+    gotoxy(x,y);
+    timer_free(ts);
+    _scr_chk_key = old_chk_key;
+    return key;
+}

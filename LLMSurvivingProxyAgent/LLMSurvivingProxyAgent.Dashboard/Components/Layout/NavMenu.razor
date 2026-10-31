@@ -1,0 +1,98 @@
+@using LLMSurvivingProxyAgent.Core
+@implements IDisposable
+@inject IAgentStore AgentStore
+@inject NavigationManager Navigation
+
+<div class="cc-nav">
+    <a class="cc-brand" href="/" aria-label="LLM Control Center fleet overview">
+        <span class="brand-mark" aria-hidden="true">LC</span>
+        <span class="brand-copy">
+            <strong>LLM CONTROL</strong>
+            <small>TRADEWARS CONSOLE</small>
+        </span>
+    </a>
+
+    <nav class="nav-scrollable" aria-label="Control Center navigation">
+        <section class="nav-group">
+            <h2 class="nav-label">Control plane</h2>
+            <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">
+                <span class="nav-icon" aria-hidden="true">FL</span> Fleet overview
+            </NavLink>
+            <NavLink class="nav-link" href="/agents">
+                <span class="nav-icon" aria-hidden="true">AG</span> Agent registry
+            </NavLink>
+            <NavLink class="nav-link" href="/knowledge">
+                <span class="nav-icon" aria-hidden="true">KN</span> Knowledge
+            </NavLink>
+            <NavLink class="nav-link" href="/macro-activity">
+                <span class="nav-icon" aria-hidden="true">AC</span> Activity
+            </NavLink>
+            <NavLink class="nav-link" href="/controller-settings">
+                <span class="nav-icon" aria-hidden="true">SY</span> System settings
+            </NavLink>
+        </section>
+
+        <section class="nav-group session-group">
+            <h2 class="nav-label">Agent sessions</h2>
+            @if (_agents.Count == 0)
+            {
+                <p class="nav-empty">Create an agent to open a workspace.</p>
+            }
+            else
+            {
+                @foreach (var agent in _agents)
+                {
+                    var escapedId = Uri.EscapeDataString(agent.AgentId);
+                    <div class="session-nav">
+                        <NavLink class="nav-link session-overview" href="@($"/agents/{escapedId}")">
+                            <span class="status-dot @StatusClass(agent.Status)" aria-hidden="true"></span>
+                            @agent.DisplayName
+                        </NavLink>
+                        <NavLink class="nav-link session-subnav" href="@($"/agents/{escapedId}/runtime")">Runtime</NavLink>
+                        <NavLink class="nav-link session-subnav" href="@($"/agents/{escapedId}/strategy")">Strategy</NavLink>
+                        <NavLink class="nav-link session-subnav" href="@($"/agents/{escapedId}/objectives")">Objectives</NavLink>
+                        <NavLink class="nav-link session-subnav" href="@($"/agents/{escapedId}/events")">Events</NavLink>
+                        <NavLink class="nav-link session-subnav" href="@($"/agents/{escapedId}/activity")">Activity</NavLink>
+                        <NavLink class="nav-link session-subnav" href="@($"/agents/{escapedId}/settings")">Settings</NavLink>
+                    </div>
+                }
+            }
+        </section>
+    </nav>
+
+    <div class="nav-footer">
+        <span class="footer-status"><span aria-hidden="true"></span> LOCAL HOST</span>
+        <small>Game actions remain approval-gated</small>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<AgentContainer> _agents = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        _agents = await AgentStore.GetAgentsAsync();
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        await InvokeAsync(async () =>
+        {
+            _agents = await AgentStore.GetAgentsAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+
+    private static string StatusClass(AgentStatus status) => status switch
+    {
+        AgentStatus.Running or AgentStatus.Thinking => "status-live",
+        AgentStatus.Paused => "status-paused",
+        _ => "status-idle"
+    };
+}
