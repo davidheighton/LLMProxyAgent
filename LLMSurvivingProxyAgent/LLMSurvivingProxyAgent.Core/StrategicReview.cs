@@ -129,7 +129,25 @@ public sealed record StrategicReviewContext(
     public ReactiveActivityAnalysis ReactiveActivity { get; init; } = ReactiveActivityAnalysis.Empty;
     public string ReviewReason { get; init; } = "Operator-requested review.";
     public IntegratedGameClientSnapshot? IntegratedGameClient { get; init; }
+
+    /// <summary>Cross-life memory: how past lives progressed. Playbook entries are in <see cref="Knowledge"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StrategicVeteranMemory? VeteranMemory { get; init; }
 }
+
+public sealed record StrategicVeteranMemory(
+    IReadOnlyList<string> SituationTags,
+    int LivesLived,
+    IReadOnlyList<ProgressionBenchmark> ProgressionBenchmarks,
+    IReadOnlyList<StrategicLifeBrief> RecentLives);
+
+public sealed record StrategicLifeBrief(
+    int LifeNumber,
+    EpisodeStatus Status,
+    int? TurnsUsed,
+    long? NetWorthDelta,
+    IReadOnlyList<LifeMilestone> Milestones,
+    string Summary);
 
 public sealed record NewObjectiveProposal(
     string Goal,

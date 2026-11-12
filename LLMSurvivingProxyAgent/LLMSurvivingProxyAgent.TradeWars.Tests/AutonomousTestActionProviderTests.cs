@@ -564,6 +564,62 @@ public sealed class AutonomousTestActionProviderTests
     }
 
     [Fact]
+    public async Task OllamaProviderOffersPlaybookAndValidatesTipOverrides()
+    {
+        PlaybookEntry tip = new(
+            "tip-1", "meridian", PlaybookSource.Coach, PlaybookTier.Tip, PlaybookScope.Universal, null,
+            "Hold early", "Hold position until a scanner is bought.", string.Empty, [], DateTimeOffset.UtcNow);
+        PlaybookEntry rule = tip with
+        {
+            EntryId = "rule-1",
+            Tier = PlaybookTier.Rule,
+            ForbiddenAction = AutonomousTestAction.StartWorldTradeMode
+        };
+        AutonomousTestActionContext Context() => new(CreateEligibleSituation(), [2, 3])
+        {
+            RelevantKnowledge = [PlaybookCitation.ToKnowledgeItem(tip), PlaybookCitation.ToKnowledgeItem(rule)],
+            SituationTags = ["scanner:none"]
+        };
+        var model = new ModelConfiguration("Ollama", "qwen3:8b", new Uri("http://localhost:11434/"));
+        string Response(string decision) => JsonSerializer.Serialize(new { message = new { content = decision } });
+
+        var acceptedHandler = new RecordingHttpHandler(Response(
+            """{"action":"none","targetSector":0,"rationale":"Waiting is wasteful here.","citedKnowledgeNodeId":"","overriddenPlaybookEntryId":"playbook:tip-1","overrideReason":"Snapshot is fresh; nothing to wait for."}"""));
+        using (var client = new HttpClient(acceptedHandler))
+        {
+            AutonomousTestActionDecision decision =
+                await new OllamaAutonomousTestActionProvider(client).DecideAsync(model, Context());
+            Assert.Equal("playbook:tip-1", decision.OverriddenPlaybookEntryId);
+            Assert.Equal("Snapshot is fresh; nothing to wait for.", decision.OverrideReason);
+        }
+
+        using var request = JsonDocument.Parse(acceptedHandler.RequestBody);
+        Assert.Contains("CoachRule items are enforced", request.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+        Assert.Equal(
+            new[] { string.Empty, "playbook:tip-1" },
+            request.RootElement.GetProperty("format").GetProperty("properties")
+                .GetProperty("overriddenPlaybookEntryId").GetProperty("enum")
+                .EnumerateArray().Select(value => value.GetString()));
+        Assert.Contains("situationTags", acceptedHandler.RequestBody, StringComparison.Ordinal);
+
+        foreach (var (decisionJson, expected) in new[]
+                 {
+                     ("""{"action":"none","targetSector":0,"rationale":"r","citedKnowledgeNodeId":"","overriddenPlaybookEntryId":"playbook:rule-1","overrideReason":"x"}""",
+                      "is not a supplied CoachTip or Lesson"),
+                     ("""{"action":"none","targetSector":0,"rationale":"r","citedKnowledgeNodeId":"","overriddenPlaybookEntryId":"playbook:tip-1","overrideReason":""}""",
+                      "overrideReason is required"),
+                     ("""{"action":"none","targetSector":0,"rationale":"r","citedKnowledgeNodeId":"","overriddenPlaybookEntryId":"","overrideReason":"why"}""",
+                      "only allowed with overriddenPlaybookEntryId")
+                 })
+        {
+            using var client = new HttpClient(new RecordingHttpHandler(Response(decisionJson)));
+            var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                new OllamaAutonomousTestActionProvider(client).DecideAsync(model, Context()));
+            Assert.Contains(expected, exception.Message);
+        }
+    }
+
+    [Fact]
     public async Task OllamaProviderExplainsMovementValidationFailures()
     {
         var handler = new RecordingHttpHandler(JsonSerializer.Serialize(

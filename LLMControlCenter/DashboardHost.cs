@@ -54,6 +54,31 @@ internal sealed class DashboardHost : IAsyncDisposable
             runtimeStatus);
     }
 
+    /// <summary>Applies a <c>!coach</c> line typed in the game terminal to the agent's playbook.</summary>
+    public async Task<string> SubmitCoachCommandAsync(
+        string agentId,
+        string commandText,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        PlaybookCoachingService? coaching = _application?.Services.GetService<PlaybookCoachingService>();
+        if (coaching is null)
+            return "Coaching is unavailable until the agent dashboard has started.";
+
+        try
+        {
+            CoachingResult result = await coaching
+                .ApplyCommandAsync(agentId, commandText, cancellationToken)
+                .ConfigureAwait(false);
+            return result.Message;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Core.GlobalModules.DebugLog($"[Coach] command failed: {exception}\n");
+            return $"Coaching was not saved: {exception.Message}";
+        }
+    }
+
     public bool CanControlAgent(string agentId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
@@ -357,6 +382,10 @@ internal sealed class DashboardHost : IAsyncDisposable
                     builder.Configuration["AutonomousTesting:AgentId"] = agentId;
                     builder.Configuration["AutonomousTesting:TeamId"] =
                         Environment.GetEnvironmentVariable("LLMCONTROL_TEAM_ID") ?? string.Empty;
+                    if (Environment.GetEnvironmentVariable("LLMCONTROL_MEMORY_ID") is { Length: > 0 } memoryId)
+                    {
+                        builder.Configuration["Learning:PlaybookMemoryId"] = memoryId;
+                    }
                     string sessionName = getCurrentGameName();
                     builder.Configuration["AutonomousTesting:SessionName"] =
                         string.IsNullOrWhiteSpace(sessionName) ? agentId : sessionName;

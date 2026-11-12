@@ -151,6 +151,12 @@ public sealed record AutonomousTestActionDecision(
     public string CitedKnowledgeNodeId { get; init; } = string.Empty;
     public string ScriptInputResponse { get; init; } = string.Empty;
     public string? InteractionId { get; init; }
+
+    /// <summary>Playbook tip id (from relevantKnowledge) the Pilot chose not to follow, if any.</summary>
+    public string OverriddenPlaybookEntryId { get; init; } = string.Empty;
+
+    /// <summary>Required whenever <see cref="OverriddenPlaybookEntryId"/> is set.</summary>
+    public string OverrideReason { get; init; } = string.Empty;
 }
 
 public sealed record AutonomousTestActionContext(
@@ -187,6 +193,9 @@ public sealed record AutonomousTestActionContext(
     public IReadOnlyList<AdjacentSectorKnowledge> AdjacentSectorKnowledge { get; init; } = [];
     public IReadOnlyList<AutonomousActionKnowledgeItem> RelevantKnowledge { get; init; } = [];
     public bool ExplorationRequired { get; init; }
+
+    /// <summary>Situation tags used to select playbook entries for this decision.</summary>
+    public IReadOnlyList<string> SituationTags { get; init; } = [];
 }
 
 public sealed record AutonomousActionObjective(

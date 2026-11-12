@@ -1,0 +1,457 @@
+@page "/agents/{AgentId}/coaching"
+@using System.Globalization
+@using LLMSurvivingProxyAgent.Core
+@using LLMSurvivingProxyAgent.Runtime
+@inject IPlaybookStore PlaybookStore
+@inject ITrajectoryStore TrajectoryStore
+@inject PlaybookCoachingService CoachingService
+
+<PageTitle>Coaching</PageTitle>
+
+<AgentWorkspaceNavigation AgentId="@AgentId" ActivePage="coaching" />
+
+<h1>Coaching &amp; playbook</h1>
+<p class="text-secondary">
+    Memory lineage <strong>@_memoryId</strong> — @_lives.Count lives remembered.
+    Everything here persists across characters and games. Rules are enforced before any action reaches the game;
+    tips are strong advice the agent may override only with a logged reason; lessons are learned from past lives and
+    must earn confidence in play. In the game terminal you can also type <code>!coach &lt;tip&gt;</code>
+    (<code>!coach help</code> for options).
+</p>
+
+@if (!string.IsNullOrWhiteSpace(_status))
+{
+    <div class="alert @(_statusOk ? "alert-success" : "alert-warning")" role="status">@_status</div>
+}
+
+<section class="card mb-4">
+    <div class="card-body">
+        <h2 class="h5">Add coaching</h2>
+        <div class="row g-2">
+            <div class="col-md-2">
+                <label class="form-label" for="coach-tier">Kind</label>
+                <InputSelect id="coach-tier" class="form-select" @bind-Value="_newTier">
+                    <option value="@PlaybookTier.Tip">Tip (advice)</option>
+                    <option value="@PlaybookTier.Rule">Rule (enforced)</option>
+                </InputSelect>
+            </div>
+            @if (_newTier == PlaybookTier.Rule)
+            {
+                <div class="col-md-3">
+                    <label class="form-label" for="coach-action">Never do</label>
+                    <InputSelect id="coach-action" class="form-select" @bind-Value="_newForbiddenAction">
+                        @foreach (var action in Enum.GetValues<AutonomousTestAction>().Where(action => action != AutonomousTestAction.None))
+                        {
+                            <option value="@action">@action</option>
+                        }
+                    </InputSelect>
+                </div>
+            }
+            <div class="col-md-2">
+                <label class="form-label" for="coach-scope">Scope</label>
+                <InputSelect id="coach-scope" class="form-select" @bind-Value="_newScope">
+                    <option value="@PlaybookScope.Universal">Every game</option>
+                    <option value="@PlaybookScope.Game" disabled="@string.IsNullOrWhiteSpace(CoachingService.Settings.GameKey)">
+                        This game@(string.IsNullOrWhiteSpace(CoachingService.Settings.GameKey) ? " (none active)" : $" ({CoachingService.Settings.GameKey})")
+                    </option>
+                </InputSelect>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <div class="form-check">
+                    <InputCheckbox id="coach-all" class="form-check-input" @bind-Value="_newForAllAgents" />
+                    <label class="form-check-label" for="coach-all">Apply to all agents</label>
+                </div>
+            </div>
+        </div>
+        <div class="mt-2">
+            <span class="form-label d-block">Applies when (all selected must match; leave empty for any situation)</span>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var tag in PlaybookSituation.Vocabulary)
+                {
+                    bool selected = _newTags.Contains(tag);
+                    <button type="button"
+                            class="btn btn-sm @(selected ? "btn-primary" : "btn-outline-secondary")"
+                            aria-pressed="@selected"
+                            @onclick="() => ToggleTag(tag)">@tag</button>
+                }
+            </div>
+        </div>
+        <div class="mt-2">
+            <label class="form-label" for="coach-guidance">Guidance</label>
+            <InputTextArea id="coach-guidance" class="form-control" rows="2" @bind-Value="_newGuidance"
+                           placeholder="e.g. Pair-trade Organics/Equipment next to FedSpace until you can afford 40+ holds." />
+        </div>
+        <div class="mt-2">
+            <label class="form-label" for="coach-why">Why (optional)</label>
+            <InputText id="coach-why" class="form-control" @bind-Value="_newRationale" />
+        </div>
+        <button class="btn btn-primary mt-3" @onclick="AddAsync" disabled="@_busy">Save</button>
+    </div>
+</section>
+
+<h2 class="h4">Coach rules &amp; tips</h2>
+@if (!CoachEntries.Any())
+{
+    <p class="text-secondary">No coaching yet.</p>
+}
+@foreach (var entry in CoachEntries)
+{
+    @RenderEntry(entry)
+}
+
+<h2 class="h4 mt-4">Lessons learned from past lives</h2>
+<div class="form-check mb-2">
+    <InputCheckbox id="show-retired" class="form-check-input" @bind-Value="_showRetired" />
+    <label class="form-check-label" for="show-retired">Show retired lessons</label>
+</div>
+@if (!LessonEntries.Any())
+{
+    <p class="text-secondary">No lessons yet. The agent reflects after each life (episode) and records what worked.</p>
+}
+@foreach (var entry in LessonEntries)
+{
+    @RenderEntry(entry)
+}
+
+<h2 class="h4 mt-4">Progression across lives</h2>
+@if (_benchmarks.Count == 0)
+{
+    <p class="text-secondary">No milestones recorded yet.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm">
+            <thead><tr><th>Milestone</th><th>Lives reached</th><th>Best turns</th><th>Median turns</th></tr></thead>
+            <tbody>
+                @foreach (var benchmark in _benchmarks)
+                {
+                    <tr>
+                        <td>@benchmark.Milestone</td>
+                        <td>@benchmark.LivesReached / @benchmark.LivesTotal</td>
+                        <td>@(benchmark.BestTurns?.ToString(CultureInfo.InvariantCulture) ?? "—")</td>
+                        <td>@(benchmark.MedianTurns?.ToString(CultureInfo.InvariantCulture) ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+@foreach (var life in _lives.Take(10))
+{
+    <article class="card mb-2">
+        <div class="card-body py-2">
+            <div class="small text-secondary">
+                Life @life.LifeNumber · @life.Status · @life.EndedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)
+                @if (!string.IsNullOrWhiteSpace(life.PlayerAgentId)) { <span> · played by @life.PlayerAgentId</span> }
+                @if (!string.IsNullOrWhiteSpace(life.GameKey)) { <span> · @life.GameKey</span> }
+            </div>
+            <div>@life.Summary</div>
+        </div>
+    </article>
+}
+
+<h2 class="h4 mt-4">Review recent decisions</h2>
+<p class="text-secondary small">
+    Mark a decision good or poor and say why. Your note becomes a tip scoped to that decision's situation, and is
+    attached to any learned lesson the decision relied on.
+</p>
+@if (_episodes.Count > 0)
+{
+    <div class="mb-2" style="max-width: 32rem">
+        <label class="form-label" for="episode">Life</label>
+        <select id="episode" class="form-select" value="@_selectedEpisodeId" @onchange="SelectEpisodeAsync">
+            @foreach (var episode in _episodes)
+            {
+                <option value="@episode.EpisodeId">
+                    @episode.StartedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture) · @episode.Status · @episode.StepCount steps
+                </option>
+            }
+        </select>
+    </div>
+}
+@if (_steps.Count == 0)
+{
+    <p class="text-secondary">No recorded decisions.</p>
+}
+@foreach (var step in _steps)
+{
+    <article class="card mb-2">
+        <div class="card-body py-2">
+            <div class="small text-secondary">
+                Step @step.StepIndex · @step.Source · @PlaybookSituation.Format(step.SituationTags)
+                @if (step.Reward is { Verified: true } reward)
+                {
+                    <span> · reward @reward.Total.ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture)</span>
+                }
+            </div>
+            <div><strong>@step.Action</strong> @(step.TargetSector > 0 ? $"→ {step.TargetSector}" : string.Empty) — @step.Rationale</div>
+            @if (!string.IsNullOrWhiteSpace(step.CitedKnowledgeNodeId))
+            {
+                <div class="small">Relied on: <code>@step.CitedKnowledgeNodeId</code></div>
+            }
+            @if (!string.IsNullOrWhiteSpace(step.OverriddenPlaybookEntryId))
+            {
+                <div class="small text-warning-emphasis">Overrode <code>@step.OverriddenPlaybookEntryId</code>: @step.OverrideReason</div>
+            }
+            @if (_annotatingStepId == step.StepId)
+            {
+                <div class="mt-2">
+                    <InputTextArea class="form-control" rows="2" @bind-Value="_annotation"
+                                   placeholder="What should the agent learn from this decision?" />
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-sm btn-success" @onclick="() => AnnotateAsync(step, true)" disabled="@_busy">Good decision</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => AnnotateAsync(step, false)" disabled="@_busy">Poor decision</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => _annotatingStepId = null">Cancel</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-link px-0" @onclick="() => StartAnnotation(step)">Coach this decision</button>
+            }
+        </div>
+    </article>
+}
+
+@code {
+    private const int StepsShown = 40;
+
+    [Parameter]
+    public string AgentId { get; set; } = string.Empty;
+
+    private string _memoryId = string.Empty;
+    private IReadOnlyList<PlaybookEntry> _entries = [];
+    private IReadOnlyList<AgentLifeRecord> _lives = [];
+    private IReadOnlyList<ProgressionBenchmark> _benchmarks = [];
+    private IReadOnlyList<TrajectoryEpisode> _episodes = [];
+    private IReadOnlyList<TrajectoryStep> _steps = [];
+    private string? _selectedEpisodeId;
+    private bool _showRetired;
+    private bool _busy;
+    private string? _status;
+    private bool _statusOk;
+
+    private PlaybookTier _newTier = PlaybookTier.Tip;
+    private PlaybookScope _newScope = PlaybookScope.Universal;
+    private AutonomousTestAction _newForbiddenAction = AutonomousTestAction.MoveToAdjacentSector;
+    private bool _newForAllAgents;
+    private readonly HashSet<string> _newTags = new(StringComparer.Ordinal);
+    private string _newGuidance = string.Empty;
+    private string _newRationale = string.Empty;
+
+    private string? _editingId;
+    private string _editGuidance = string.Empty;
+    private string _editTags = string.Empty;
+    private string _editNote = string.Empty;
+
+    private string? _annotatingStepId;
+    private string _annotation = string.Empty;
+
+    private IEnumerable<PlaybookEntry> CoachEntries => _entries
+        .Where(entry => entry.Source == PlaybookSource.Coach && (_showRetired || entry.Status == PlaybookStatus.Active))
+        .OrderBy(entry => entry.Tier == PlaybookTier.Rule ? 0 : 1)
+        .ThenByDescending(entry => entry.UpdatedAt);
+
+    private IEnumerable<PlaybookEntry> LessonEntries => _entries
+        .Where(entry => entry.Source == PlaybookSource.Distilled && (_showRetired || entry.Status == PlaybookStatus.Active))
+        .OrderByDescending(entry => entry.Confidence)
+        .ThenByDescending(entry => entry.UpdatedAt);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _memoryId = CoachingService.Settings.ResolveMemoryId(AgentId);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _entries = await PlaybookStore.GetEntriesAsync(_memoryId, includeRetired: true);
+        _lives = await PlaybookStore.GetLivesAsync(_memoryId, 200);
+        _benchmarks = ProgressionBenchmark.Compute(_lives);
+        _episodes = await TrajectoryStore.GetRecentEpisodesAsync(AgentId, 10);
+        _selectedEpisodeId ??= _episodes.FirstOrDefault()?.EpisodeId;
+        await LoadStepsAsync();
+    }
+
+    private async Task LoadStepsAsync()
+    {
+        _steps = _selectedEpisodeId is null
+            ? []
+            : (await TrajectoryStore.GetStepsAsync(_selectedEpisodeId))
+                .Where(step => step.Source != TrajectoryDecisionSource.Policy ||
+                               step.Reward is { Verified: true, Total: > 0.5 or < -0.5 })
+                .OrderByDescending(step => step.StepIndex)
+                .Take(StepsShown)
+                .ToArray();
+    }
+
+    private async Task SelectEpisodeAsync(ChangeEventArgs args)
+    {
+        _selectedEpisodeId = args.Value?.ToString();
+        await LoadStepsAsync();
+    }
+
+    private void ToggleTag(string tag)
+    {
+        if (!_newTags.Remove(tag))
+        {
+            _newTags.Add(tag);
+        }
+    }
+
+    private async Task AddAsync()
+    {
+        await RunAsync(async () =>
+        {
+            CoachingResult result = await CoachingService.AddEntryAsync(
+                CoachingService.ResolveOwner(AgentId, _newForAllAgents),
+                _newTier,
+                _newScope,
+                _newTier == PlaybookTier.Rule ? _newForbiddenAction : null,
+                _newTags,
+                CoachCommandParser.ToTitle(_newGuidance ?? string.Empty),
+                _newGuidance ?? string.Empty,
+                _newRationale ?? string.Empty);
+            if (result.Succeeded)
+            {
+                _newGuidance = string.Empty;
+                _newRationale = string.Empty;
+                _newTags.Clear();
+            }
+            return result;
+        });
+    }
+
+    private void StartEdit(PlaybookEntry entry)
+    {
+        _editingId = entry.EntryId;
+        _editGuidance = entry.Guidance;
+        _editTags = string.Join(", ", entry.AppliesWhen);
+        _editNote = entry.CoachNote ?? string.Empty;
+    }
+
+    private Task SaveEditAsync(PlaybookEntry entry) => RunAsync(async () =>
+    {
+        CoachingResult result = await CoachingService.EditAsync(
+            entry.EntryId,
+            _editGuidance,
+            _editTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            _editNote);
+        if (result.Succeeded)
+        {
+            _editingId = null;
+        }
+        return result;
+    });
+
+    private Task EndorseAsync(PlaybookEntry entry, bool endorsed) =>
+        RunAsync(() => CoachingService.EndorseAsync(entry.EntryId, endorsed, null));
+
+    private Task SetStatusAsync(PlaybookEntry entry, PlaybookStatus status) =>
+        RunAsync(() => CoachingService.SetStatusAsync(entry.EntryId, status));
+
+    private void StartAnnotation(TrajectoryStep step)
+    {
+        _annotatingStepId = step.StepId;
+        _annotation = string.Empty;
+    }
+
+    private Task AnnotateAsync(TrajectoryStep step, bool good) => RunAsync(async () =>
+    {
+        CoachingResult result = await CoachingService.AnnotateStepAsync(AgentId, step, good, _annotation);
+        if (result.Succeeded)
+        {
+            _annotatingStepId = null;
+            result = result with { Message = "Saved as a tip for that situation." };
+        }
+        return result;
+    });
+
+    private async Task RunAsync(Func<Task<CoachingResult>> action)
+    {
+        _busy = true;
+        try
+        {
+            CoachingResult result = await action();
+            _status = result.Message;
+            _statusOk = result.Succeeded;
+            await LoadAsync();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            _status = exception.Message;
+            _statusOk = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string FormatAverage(double sum, int count) =>
+        count == 0 ? "—" : (sum / count).ToString("+0.###;-0.###;0", CultureInfo.InvariantCulture);
+
+    private RenderFragment RenderEntry(PlaybookEntry entry) => __builder =>
+    {
+        <article class="card mb-2 @(entry.Status == PlaybookStatus.Retired ? "opacity-50" : string.Empty)">
+            <div class="card-body py-2">
+                <div class="d-flex flex-wrap gap-2 align-items-center small">
+                    <span class="badge @(entry.Tier == PlaybookTier.Rule ? "text-bg-danger" : entry.Source == PlaybookSource.Coach ? "text-bg-primary" : "text-bg-secondary")">
+                        @(entry.Tier == PlaybookTier.Rule ? $"Rule · never {entry.ForbiddenAction}" : entry.Source == PlaybookSource.Coach ? "Tip" : "Lesson")
+                    </span>
+                    @if (entry.AgentId == PlaybookEntry.AllAgents) { <span class="badge text-bg-light">all agents</span> }
+                    @if (entry.Scope == PlaybookScope.Game) { <span class="badge text-bg-light">game: @entry.GameKey</span> }
+                    @if (entry.CoachEndorsed) { <span class="badge text-bg-success">endorsed</span> }
+                    @if (entry.Contested) { <span class="badge text-bg-warning">evidence disagrees</span> }
+                    @if (entry.Status == PlaybookStatus.Retired) { <span class="badge text-bg-dark">retired</span> }
+                    <span class="text-secondary">confidence @entry.Confidence.ToString("0.00", CultureInfo.InvariantCulture)</span>
+                    <span class="text-secondary">· when @PlaybookSituation.Format(entry.AppliesWhen)</span>
+                    @if (entry.LearnedInLife is { } life) { <span class="text-secondary">· learned in life @life</span> }
+                </div>
+                @if (_editingId == entry.EntryId)
+                {
+                    <InputTextArea class="form-control mt-2" rows="2" @bind-Value="_editGuidance" />
+                    <label class="form-label small mt-1">Applies when (comma-separated tags)</label>
+                    <InputText class="form-control form-control-sm" @bind-Value="_editTags" />
+                    <label class="form-label small mt-1">Coach note</label>
+                    <InputText class="form-control form-control-sm" @bind-Value="_editNote" />
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-sm btn-primary" @onclick="() => SaveEditAsync(entry)" disabled="@_busy">Save</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editingId = null">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="mt-1"><strong>@entry.Guidance</strong></div>
+                    @if (!string.IsNullOrWhiteSpace(entry.Rationale)) { <div class="small text-secondary">@entry.Rationale</div> }
+                    @if (!string.IsNullOrWhiteSpace(entry.CoachNote)) { <div class="small">Coach note: @entry.CoachNote</div> }
+                }
+                <div class="small text-secondary mt-1">
+                    Relied on @entry.Applications× (helped @entry.Successes, hurt @entry.Failures, avg reward @FormatAverage(entry.RewardSum, entry.Applications))
+                    · overridden @entry.Overrides× (avg reward when overridden @FormatAverage(entry.OverrideRewardSum, entry.Overrides))
+                </div>
+                @if (_editingId != entry.EntryId)
+                {
+                    <div class="d-flex flex-wrap gap-2 mt-1">
+                        <button class="btn btn-sm btn-link px-0" @onclick="() => StartEdit(entry)">Edit</button>
+                        @if (entry.Source == PlaybookSource.Distilled)
+                        {
+                            <button class="btn btn-sm btn-link px-0" @onclick="() => EndorseAsync(entry, !entry.CoachEndorsed)" disabled="@_busy">
+                                @(entry.CoachEndorsed ? "Withdraw endorsement" : "Endorse")
+                            </button>
+                        }
+                        @if (entry.Status == PlaybookStatus.Active)
+                        {
+                            <button class="btn btn-sm btn-link px-0 text-danger" @onclick="() => SetStatusAsync(entry, PlaybookStatus.Retired)" disabled="@_busy">Retire</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-link px-0" @onclick="() => SetStatusAsync(entry, PlaybookStatus.Active)" disabled="@_busy">Reactivate</button>
+                        }
+                    </div>
+                }
+            </div>
+        </article>
+    };
+}

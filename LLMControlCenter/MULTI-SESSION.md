@@ -61,3 +61,11 @@ journal ownership remain keyed by agent ID.
 All embedded MTC processes use the shared
 `%LOCALAPPDATA%\\LLMSurvivingProxyAgent` agent and knowledge databases. Keep
 agent IDs unique when sessions are intended to represent different players.
+
+## Shared memory
+
+Agents normally keep their own playbook memory, keyed by agent ID. To make several agents learn together, set
+the same `LLMCONTROL_MEMORY_ID` for each MTC process (or pass `--memory-id` with an episode run). They then read
+and write one set of lessons, coach tips, and life records. See the Playbook section of
+`LLMSurvivingProxyAgent/README.md`.
+

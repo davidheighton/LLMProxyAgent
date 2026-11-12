@@ -133,10 +133,10 @@ public partial class MainWindow
                 payload += "\r";
 
             byte[] bytes = Encoding.Latin1.GetBytes(payload);
-            if (_termCtrl.SendInput == null)
+            if (_terminalInputHandler == null)
                 return Task.FromResult(MtcRpcActionResult.Fail("Terminal input is not available."));
 
-            _termCtrl.SendInput.Invoke(bytes);
+            _terminalInputHandler.Invoke(bytes);
             return Task.FromResult(MtcRpcActionResult.Ok("Command submitted through the MTC terminal input path.", new Dictionary<string, string>
             {
                 ["bytes"] = bytes.Length.ToString(),
@@ -225,7 +225,7 @@ public partial class MainWindow
                 return Task.FromResult(MtcRpcActionResult.Fail("The approved password prompt is no longer current."));
             }
 
-            if (_termCtrl.SendInput == null)
+            if (_terminalInputHandler == null)
             {
                 return Task.FromResult(MtcRpcActionResult.Fail("Sensitive terminal input is unavailable."));
             }
@@ -257,7 +257,7 @@ public partial class MainWindow
             {
                 _sensitiveTerminalInputInProgress = true;
                 _sensitiveOutputRedactionRequired = true;
-                _termCtrl.SendInput.Invoke(payload);
+                _terminalInputHandler.Invoke(payload);
                 _lastMtcRpcSensitivePromptConsumed = promptId;
                 if (!initialPassword)
                     _mtcRpcPasswordConfirmationGuard.Clear();

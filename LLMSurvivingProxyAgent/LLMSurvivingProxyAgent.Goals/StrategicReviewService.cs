@@ -20,8 +20,12 @@ public sealed class StrategicReviewService(
     IStrategicReasoningProvider reasoningProvider,
     Uri modelEndpoint,
     ModelConfiguration? strategicModel = null,
-    ILlmInteractionHistoryStore? interactionHistory = null)
+    ILlmInteractionHistoryStore? interactionHistory = null,
+    IPlaybookStore? playbookStore = null,
+    string? gameKey = null,
+    string? playbookMemoryId = null)
 {
+    private const int RecentLivesForReview = 5;
     private const int KnowledgeItemsPerLayer = 4;
     private static readonly KnowledgeLayer[] ReviewKnowledgeLayers =
     [
@@ -182,6 +186,8 @@ public sealed class StrategicReviewService(
                 limit: KnowledgeItemsPerLayer,
                 cancellationToken));
         }
+        (IReadOnlyList<ReviewKnowledgeItem> playbookKnowledge, StrategicVeteranMemory? veteranMemory) =
+            await LoadVeteranMemoryAsync(agentId, snapshot, cancellationToken).ConfigureAwait(false);
         var activeObjective = activeObjectives.SingleOrDefault();
         var now = DateTimeOffset.UtcNow;
         var failureDetection = StallDetectionService.Evaluate(
@@ -222,8 +228,9 @@ public sealed class StrategicReviewService(
                     $"line {evidence.LineNumber}: {FormatKnowledgeEvidence(node, evidence)}").ToArray())
             {
                 Layer = KnowledgeLayers.GetLayer(node.Category).ToString()
-            }).ToArray())
+            }).Concat(playbookKnowledge).ToArray())
         {
+            VeteranMemory = veteranMemory,
             AgentId = agentId,
             ReactiveActivity = AnalyzeReactiveActivity(recentReactiveEvents, previousReviews, now),
             ReviewReason = reviewReason,
@@ -520,6 +527,58 @@ public sealed class StrategicReviewService(
             throw new StrategicAssessmentValidationException(
                 $"The reasoning provider returned an invalid {name} list.");
         }
+    }
+
+    private async Task<(IReadOnlyList<ReviewKnowledgeItem> Knowledge, StrategicVeteranMemory? Memory)> LoadVeteranMemoryAsync(
+        string agentId,
+        GameSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (playbookStore is null)
+        {
+            return ([], null);
+        }
+
+        string memoryId = PlaybookMemory.Resolve(playbookMemoryId, agentId);
+        IReadOnlySet<string> situationTags = PlaybookSituation.Describe(snapshot);
+        IReadOnlyList<PlaybookEntry> entries = await playbookStore
+            .GetEntriesAsync(memoryId, includeRetired: false, cancellationToken)
+            .ConfigureAwait(false);
+        PlaybookGuidance guidance = PlaybookGuidanceProvider.Select(entries, gameKey, situationTags);
+        IReadOnlyList<AgentLifeRecord> lives = await playbookStore
+            .GetLivesAsync(memoryId, 200, cancellationToken)
+            .ConfigureAwait(false);
+        var knowledge = guidance.All
+            .Select(PlaybookCitation.ToKnowledgeItem)
+            .Select(item => new ReviewKnowledgeItem(
+                item.NodeId,
+                "playbook",
+                item.Title,
+                item.Summary,
+                item.Layer,
+                item.Confidence,
+                item.ExtractionBasis,
+                item.Evidence)
+            {
+                Layer = item.Layer
+            })
+            .ToArray();
+        StrategicVeteranMemory? memory = lives.Count == 0 && knowledge.Length == 0
+            ? null
+            : new StrategicVeteranMemory(
+                [.. situationTags],
+                lives.Count,
+                ProgressionBenchmark.Compute(lives),
+                lives.Take(RecentLivesForReview)
+                    .Select(life => new StrategicLifeBrief(
+                        life.LifeNumber,
+                        life.Status,
+                        life.TurnsUsed,
+                        life.NetWorthDelta,
+                        life.Milestones,
+                        Truncate(life.Summary, 1_200)))
+                    .ToArray());
+        return (knowledge, memory);
     }
 
     private static string Truncate(string value, int maximum) =>

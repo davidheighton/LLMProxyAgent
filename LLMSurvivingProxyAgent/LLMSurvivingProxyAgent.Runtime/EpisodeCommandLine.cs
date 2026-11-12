@@ -19,6 +19,7 @@ public static class EpisodeCommandLine
         ("--episode-minimum-turns", "MinimumTurns", true),
         ("--episode-result-path", "ResultPath", true),
         ("--episode-pilot-model", "PilotModel", true),
+        ("--memory-id", "MemoryId", true),
         ("--exit-on-episode-end", "ExitOnEnd", false)
     ];
 
@@ -130,6 +131,11 @@ public static class EpisodeCommandLine
         {
             arguments.Add("--episode-pilot-model");
             arguments.Add(pilotModel);
+        }
+        if (options.MemoryId is { } memoryId)
+        {
+            arguments.Add("--memory-id");
+            arguments.Add(memoryId);
         }
         if (options.ExitOnEnd)
         {

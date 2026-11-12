@@ -203,6 +203,21 @@ public sealed class OllamaAutonomousTestActionProvider(
         supplied knowledge item supports the action; never omit either field or put rationale only in thinking.
         """;
 
+    /// <summary>Appended to the system prompt when the agent's playbook supplied items for this decision.</summary>
+    private const string PlaybookPrompt = """
+
+        Playbook: relevantKnowledge may contain items with layer CoachRule, CoachTip, or Lesson. These come from this
+        agent's persistent playbook, which carries over between lives. CoachRule and CoachTip were written by a veteran
+        human coach; Lesson items were learned from this agent's own past lives and carry a confidence from measured
+        results. situationTags describe the current game stage.
+        CoachRule items are enforced by the worker: an action they forbid is refused, so never choose it.
+        CoachTip items are strong advice: follow them unless current verified evidence shows they would clearly hurt.
+        Lesson items are advice weighted by confidence. When you rely on a playbook item, cite its id in
+        citedKnowledgeNodeId so its result is measured. When you knowingly act against an applicable CoachTip or
+        Lesson, set overriddenPlaybookEntryId to its id and give a short, evidence-based overrideReason; the coach
+        reviews every override. Otherwise leave both empty.
+        """;
+
     public string Id => "Ollama";
 
     public async Task<AutonomousTestActionDecision> DecideAsync(
@@ -284,11 +299,13 @@ public sealed class OllamaAutonomousTestActionProvider(
             actionContext.PreferredTradeProduct,
             actionContext.AdjacentSectorKnowledge,
             actionContext.RelevantKnowledge,
-            actionContext.ExplorationRequired
+            actionContext.ExplorationRequired,
+            SituationTags = actionContext.SituationTags.Count == 0 ? null : actionContext.SituationTags
         };
+        bool hasPlaybook = actionContext.RelevantKnowledge.Any(item => IsPlaybookLayer(item.Layer));
         var messages = new List<OllamaMessage>
         {
-            new("system", SystemPrompt),
+            new("system", hasPlaybook ? SystemPrompt + PlaybookPrompt : SystemPrompt),
             new("user", JsonSerializer.Serialize(context, JsonOptions))
         };
         bool enableQwenThinking =
@@ -414,6 +431,28 @@ public sealed class OllamaAutonomousTestActionProvider(
                                  StringComparison.Ordinal)))
                 {
                     validationErrors.Add("knowledge citation was not supplied to the model");
+                }
+
+                string overriddenEntryId = decision.OverriddenPlaybookEntryId ?? string.Empty;
+                string overrideReason = decision.OverrideReason ?? string.Empty;
+                if (overriddenEntryId.Length > 0 &&
+                    !actionContext.RelevantKnowledge.Any(item =>
+                        IsOverridablePlaybookLayer(item.Layer) &&
+                        string.Equals(item.NodeId, overriddenEntryId, StringComparison.Ordinal)))
+                {
+                    validationErrors.Add("overriddenPlaybookEntryId is not a supplied CoachTip or Lesson");
+                }
+                if (overriddenEntryId.Length > 0 && string.IsNullOrWhiteSpace(overrideReason))
+                {
+                    validationErrors.Add("overrideReason is required when overriding a playbook item");
+                }
+                if (overriddenEntryId.Length == 0 && overrideReason.Length > 0)
+                {
+                    validationErrors.Add("overrideReason is only allowed with overriddenPlaybookEntryId");
+                }
+                if (overrideReason.Length > 300)
+                {
+                    validationErrors.Add("overrideReason exceeds 300 characters");
                 }
 
                 if (decision.Action == AutonomousTestAction.MoveToAdjacentSector)
@@ -971,6 +1010,19 @@ public sealed class OllamaAutonomousTestActionProvider(
             "rationale",
             "citedKnowledgeNodeId"
         };
+        string[] overridablePlaybookIds = actionContext.RelevantKnowledge
+            .Where(item => IsOverridablePlaybookLayer(item.Layer))
+            .Select(item => item.NodeId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (overridablePlaybookIds.Length > 0)
+        {
+            commonProperties["overriddenPlaybookEntryId"] = new(
+                "string",
+                JsonSerializer.SerializeToElement(overridablePlaybookIds.Prepend(string.Empty).ToArray()),
+                MaxLength: 200);
+            commonProperties["overrideReason"] = new("string", MaxLength: 300);
+        }
 
         var schemaBranches = new List<OllamaJsonSchemaBranch>();
         if (movementActions.Length > 0)
@@ -1101,6 +1153,12 @@ public sealed class OllamaAutonomousTestActionProvider(
             _ => false
         };
     }
+
+    private static bool IsPlaybookLayer(string layer) =>
+        layer is PlaybookCitation.CoachRuleLayer or PlaybookCitation.CoachTipLayer or PlaybookCitation.LessonLayer;
+
+    private static bool IsOverridablePlaybookLayer(string layer) =>
+        layer is PlaybookCitation.CoachTipLayer or PlaybookCitation.LessonLayer;
 
     private sealed record OllamaChatRequest(
         string Model,

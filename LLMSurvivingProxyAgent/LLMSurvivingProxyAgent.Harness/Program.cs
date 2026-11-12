@@ -10,6 +10,9 @@ internal static class HarnessCli
 {
     private const string DefaultPilotModel = "qwen3:1.7b";
 
+    /// <summary>All learners share this playbook memory unless --memory-id says otherwise.</summary>
+    private const string DefaultMemoryId = "veteran";
+
     private const string Usage = """
         LLMSurvivingProxyAgent.Harness — runs repeatable TradeWars learning episodes in MTC.
 
@@ -33,6 +36,8 @@ internal static class HarnessCli
           --report-dir <dir>          Default: .\reports\harness
           --grace-minutes <n>         Extra time past the cap before MTC is killed. Default: 15.
           --cleanup true|false        Clean up each learner when its episode finishes. Default: true.
+          --memory-id <id>            Playbook memory shared by every learner, so lessons carry from life to life.
+                                      Default: veteran. Use a new id to start a fresh lineage.
         """;
 
     public static async Task<int> RunAsync(string[] args)
@@ -320,7 +325,12 @@ internal static class HarnessCli
             TimeSpan.FromMinutes(ParseDouble(options, "grace-minutes", 15)),
             reset,
             Path.Combine(dataDirectory, "harness", batch.BatchId),
-            PilotModel: batch.PilotModel ?? DefaultPilotModel);
+            PilotModel: batch.PilotModel ?? DefaultPilotModel,
+            MemoryId: Get(options, "memory-id") ?? DefaultMemoryId);
+        if (!PlaybookMemory.IsValidMemoryId(settings.MemoryId))
+        {
+            throw new ArgumentException("--memory-id must be 1-64 characters using letters, digits, '.', '_' or '-'.");
+        }
         bool cleanup = !string.Equals(Get(options, "cleanup"), "false", StringComparison.OrdinalIgnoreCase);
         LearnerCleanup learnerCleanup = CreateCleanup(dataDirectory);
         return new HarnessScheduler(

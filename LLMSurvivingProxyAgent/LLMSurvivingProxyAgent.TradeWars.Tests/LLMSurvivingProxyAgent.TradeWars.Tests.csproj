@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\LLMControlCenter\CoachInputInterceptor.cs" Link="Linked\CoachInputInterceptor.cs" />
     <None Include="..\artifacts\trade-wars-v1.13.3.seedpkg" Link="testdata\trade-wars-v1.13.3.seedpkg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

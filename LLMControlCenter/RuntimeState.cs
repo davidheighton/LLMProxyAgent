@@ -161,7 +161,7 @@ public partial class MainWindow
             return;
         }
 
-        _termCtrl.SendInput?.Invoke(System.Text.Encoding.ASCII.GetBytes("$h"));
+        _terminalInputHandler?.Invoke(System.Text.Encoding.ASCII.GetBytes("$h"));
         Dispatcher.UIThread.Post(FocusActiveTerminal, DispatcherPriority.Input);
     }
 

@@ -88,6 +88,12 @@ public sealed class OllamaReasoningProvider(
         on normalized exact text, not semantic similarity. Macro activity is local telemetry:
         its absence does not prove no live game action occurred, and a record does not prove
         that a free-text recommendation was executed.
+        This player is persistent and lives many lives. Knowledge items with layer CoachRule or CoachTip were written
+        by a veteran human coach: CoachRule items are enforced and must not be planned against; CoachTip items are
+        strong advice. Lesson items were learned from this player's own past lives; weigh them by confidence and
+        track record. VeteranMemory (when present) summarizes past lives and progressionBenchmarks give the best and
+        median turns past lives needed to reach each milestone. Use them to choose objectives that progress faster
+        than past lives did, and cite the playbook items an objective relies on.
         ReactiveActivity event counts may be truncated at the stated limit. Preserve source and
         trust-at-receipt when assessing communications; do not infer urgency from event frequency alone.
 

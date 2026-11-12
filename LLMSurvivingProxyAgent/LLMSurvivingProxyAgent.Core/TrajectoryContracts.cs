@@ -5,7 +5,8 @@ public enum TrajectoryDecisionSource
     Policy,
     Pilot,
     PilotFallbackToPolicy,
-    PilotOverriddenByPolicy
+    PilotOverriddenByPolicy,
+    CoachRuleVeto
 }
 
 /// <summary>
@@ -30,6 +31,17 @@ public sealed record TrajectoryStep(
     public GameSnapshot? After { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public GameplayReward? Reward { get; init; }
+
+    /// <summary>Knowledge or playbook item the decision relied on (see <see cref="PlaybookCitation"/>).</summary>
+    public string? CitedKnowledgeNodeId { get; init; }
+
+    /// <summary>Playbook tip the Pilot knowingly deviated from, with its stated reason.</summary>
+    public string? OverriddenPlaybookEntryId { get; init; }
+
+    public string? OverrideReason { get; init; }
+
+    /// <summary>Coarse situation tags at decision time (see <see cref="PlaybookSituation"/>).</summary>
+    public IReadOnlyList<string> SituationTags { get; init; } = [];
 }
 
 public sealed record TrajectoryEpisode(
@@ -91,6 +103,12 @@ public sealed record EpisodeOptions(
     public string? ResultPath { get; init; }
     public bool ExitOnEnd { get; init; }
     public string? PilotModel { get; init; }
+
+    /// <summary>
+    /// Playbook memory lineage. Learners with the same memory id share one cross-life memory, so a stream of
+    /// short-lived harness agents grows into one veteran. Defaults to the agent id.
+    /// </summary>
+    public string? MemoryId { get; init; }
 }
 
 public interface ITrajectoryStore
@@ -131,7 +149,8 @@ public interface ITrajectoryRecorder
         AutonomousTestActionDecision decision,
         TrajectoryDecisionSource source,
         string? objective,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<string>? situationTags = null);
 
     void ObserveSnapshot(string agentId, GameSnapshot? snapshot);
 
@@ -155,5 +174,16 @@ public interface ITrajectoryRecorder
 
 public interface IEpisodeCompletionHandler
 {
+    Task OnEpisodeEndedAsync(TrajectoryEpisode episode, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Notified by the trajectory recorder when a step's reward is measured and when an episode ends. Observers run
+/// after persistence; their failures are logged and never interrupt gameplay.
+/// </summary>
+public interface ITrajectoryObserver
+{
+    Task OnStepClosedAsync(TrajectoryStep step, CancellationToken cancellationToken = default);
+
     Task OnEpisodeEndedAsync(TrajectoryEpisode episode, CancellationToken cancellationToken = default);
 }

@@ -39,7 +39,9 @@ public sealed class AutonomousTestWorker(
     ITrajectoryRecorder? trajectoryRecorder = null,
     EpisodeSupervisor? episodeSupervisor = null,
     IEpisodeCompletionHandler? episodeCompletionHandler = null,
-    string? identityModelName = null) : BackgroundService
+    string? identityModelName = null,
+    IPlaybookGuidanceProvider? playbookGuidanceProvider = null,
+    string? playbookMemoryId = null) : BackgroundService
 {
     public const int UnlimitedActionsPerSession = 0;
     private const int KnownHighRiskSector = 99;
@@ -1397,7 +1399,8 @@ public sealed class AutonomousTestWorker(
         TrajectoryDecisionSource source,
         AutonomousActionObjective? objective,
         CancellationToken cancellationToken,
-        AutonomousRefurbQuote? refurbQuote = null)
+        AutonomousRefurbQuote? refurbQuote = null,
+        IReadOnlyList<string>? situationTags = null)
     {
         if (trajectoryRecorder is null)
         {
@@ -1411,7 +1414,8 @@ public sealed class AutonomousTestWorker(
             decision,
             source,
             objective?.Goal,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            situationTags).ConfigureAwait(false);
         if (episodeSupervisor is null || _episodeEnded)
         {
             return;
@@ -1429,6 +1433,42 @@ public sealed class AutonomousTestWorker(
                 .ConfigureAwait(false);
         }
     }
+
+    private string? PlaybookGameKey => string.IsNullOrWhiteSpace(sessionName) ? null : sessionName.Trim();
+
+    private async Task<PlaybookGuidance> GetPlaybookGuidanceAsync(
+        string currentAgentId,
+        IReadOnlySet<string> situationTags,
+        CancellationToken cancellationToken)
+    {
+        if (playbookGuidanceProvider is null)
+        {
+            return PlaybookGuidance.Empty;
+        }
+
+        try
+        {
+            return await playbookGuidanceProvider
+                .GetGuidanceAsync(
+                    PlaybookMemory.Resolve(playbookMemoryId, currentAgentId),
+                    PlaybookGameKey,
+                    situationTags,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Playbook memory must never stop play; an unreadable store means deciding without it.
+            logger.LogWarning(exception, "Playbook guidance could not be loaded for agent {AgentId}.", currentAgentId);
+            return PlaybookGuidance.Empty;
+        }
+    }
+
+    private static bool IsAtPort(GameSituationReport situation, int? currentSector) =>
+        currentSector is { } sector &&
+        situation.IntegratedGameClient?.RelevantSectors.FirstOrDefault(record => record.Number == sector) is { } record &&
+        !string.IsNullOrWhiteSpace(record.Port) &&
+        !record.Port.Trim().Equals("none", StringComparison.OrdinalIgnoreCase);
 
     private const int UnaffordableOfferLoopThreshold = 3;
     private static readonly TimeSpan UnaffordableOfferWindow = TimeSpan.FromSeconds(20);
@@ -3176,6 +3216,25 @@ public sealed class AutonomousTestWorker(
                 currentAgentId,
                 cancellationToken).ConfigureAwait(false)
             : Array.Empty<AutonomousActionKnowledgeItem>();
+        IReadOnlySet<string> situationTags = PlaybookSituation.Describe(
+            situation.Snapshot,
+            new PlaybookSituation.Extras(
+                starDockSector,
+                currentSectorIsFederationSpace,
+                IsAtPort(situation, currentSector),
+                sessionState.WorldTradeModeStarted));
+        PlaybookGuidance playbook = await GetPlaybookGuidanceAsync(
+            currentAgentId,
+            situationTags,
+            cancellationToken).ConfigureAwait(false);
+        if (playbook.All.Any())
+        {
+            // Playbook items go first: they are this agent's own memory and the coach's advice.
+            relevantKnowledge = playbook.All
+                .Select(PlaybookCitation.ToKnowledgeItem)
+                .Concat(relevantKnowledge)
+                .ToArray();
+        }
         var recentReactiveSignals = await GetRecentReactiveSignalsAsync(
             currentAgentId,
             cancellationToken).ConfigureAwait(false);
@@ -3313,7 +3372,8 @@ public sealed class AutonomousTestWorker(
             RecentReactiveSignals = recentReactiveSignals,
             AdjacentSectorKnowledge = adjacentSectorKnowledge,
             RelevantKnowledge = relevantKnowledge,
-            ExplorationRequired = explorationRequired
+            ExplorationRequired = explorationRequired,
+            SituationTags = [.. situationTags]
         };
         AutonomousTestActionDecision decision;
         TrajectoryDecisionSource decisionSource = TrajectoryDecisionSource.Policy;
@@ -3563,6 +3623,24 @@ public sealed class AutonomousTestWorker(
                 cancellationToken).ConfigureAwait(false);
             decisionSource = TrajectoryDecisionSource.Pilot;
         }
+        if (PlaybookRuleGate.FindViolation(playbook.Rules, situationTags, decision.Action) is { } violatedRule)
+        {
+            logger.LogInformation(
+                "Coach rule {EntryId} '{Title}' refused {Action} for agent {AgentId} in situation [{Situation}].",
+                violatedRule.EntryId,
+                violatedRule.Title,
+                decision.Action,
+                currentAgentId,
+                PlaybookSituation.Format(situationTags));
+            decision = new AutonomousTestActionDecision(
+                AutonomousTestAction.None,
+                $"Coach rule refused {decision.Action}: {violatedRule.Guidance}")
+            {
+                InteractionId = decision.InteractionId,
+                CitedKnowledgeNodeId = violatedRule.CitationId
+            };
+            decisionSource = TrajectoryDecisionSource.CoachRuleVeto;
+        }
         string decisionRationale = decision.Rationale;
         if (preserveFuelOreForDockShopper &&
             currentSector == starDockSector &&
@@ -3593,7 +3671,8 @@ public sealed class AutonomousTestWorker(
             decision,
             decisionSource,
             actionContext.ActiveObjective,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            situationTags: actionContext.SituationTags).ConfigureAwait(false);
         if (_episodeEnded)
         {
             return AutonomousTestActionResult.Handled;

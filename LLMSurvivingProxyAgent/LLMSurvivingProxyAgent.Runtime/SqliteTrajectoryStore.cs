@@ -24,7 +24,11 @@ public sealed class SqliteTrajectoryStore(string connectionString) : ITrajectory
         ("trajectory_episodes", "segment", "INTEGER NOT NULL DEFAULT 1"),
         ("trajectory_episodes", "visited_sectors_json", "TEXT NOT NULL DEFAULT '[]'"),
         ("trajectory_episodes", "milestone_count", "INTEGER NOT NULL DEFAULT 0"),
-        ("trajectory_steps", "segment", "INTEGER NOT NULL DEFAULT 1")
+        ("trajectory_steps", "segment", "INTEGER NOT NULL DEFAULT 1"),
+        ("trajectory_steps", "cited_knowledge_node_id", "TEXT NULL"),
+        ("trajectory_steps", "overridden_playbook_entry_id", "TEXT NULL"),
+        ("trajectory_steps", "override_reason", "TEXT NULL"),
+        ("trajectory_steps", "situation_tags_json", "TEXT NOT NULL DEFAULT '[]'")
     ];
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -174,11 +178,13 @@ public sealed class SqliteTrajectoryStore(string connectionString) : ITrajectory
             INSERT INTO trajectory_steps(
                 step_id, episode_id, agent_id, step_index, decided_at, source, action, target_sector,
                 rationale, interaction_id, objective, before_json, after_json, completed_at,
-                reward_verified, reward_total, reward_json, segment
+                reward_verified, reward_total, reward_json, segment,
+                cited_knowledge_node_id, overridden_playbook_entry_id, override_reason, situation_tags_json
             ) VALUES (
                 $id, $episodeId, $agentId, $index, $decidedAt, $source, $action, $target,
                 $rationale, $interactionId, $objective, $before, $after, $completedAt,
-                $rewardVerified, $rewardTotal, $reward, $segment
+                $rewardVerified, $rewardTotal, $reward, $segment,
+                $cited, $overridden, $overrideReason, $tags
             )
             ON CONFLICT(step_id) DO UPDATE SET
                 after_json = excluded.after_json,
@@ -205,6 +211,10 @@ public sealed class SqliteTrajectoryStore(string connectionString) : ITrajectory
         command.Parameters.AddWithValue("$rewardTotal", DbValue(step.Reward?.Total));
         command.Parameters.AddWithValue("$reward", DbValue(Serialize(step.Reward)));
         command.Parameters.AddWithValue("$segment", step.Segment);
+        command.Parameters.AddWithValue("$cited", DbValue(step.CitedKnowledgeNodeId));
+        command.Parameters.AddWithValue("$overridden", DbValue(step.OverriddenPlaybookEntryId));
+        command.Parameters.AddWithValue("$overrideReason", DbValue(step.OverrideReason));
+        command.Parameters.AddWithValue("$tags", JsonSerializer.Serialize(step.SituationTags, JsonOptions));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -272,7 +282,8 @@ public sealed class SqliteTrajectoryStore(string connectionString) : ITrajectory
         command.CommandText = """
             SELECT step_id, episode_id, agent_id, step_index, decided_at, source, action, target_sector,
                    rationale, interaction_id, objective, before_json, after_json, completed_at, reward_json,
-                   segment
+                   segment, cited_knowledge_node_id, overridden_playbook_entry_id, override_reason,
+                   situation_tags_json
             FROM trajectory_steps
             WHERE episode_id = $episodeId
             ORDER BY step_index;
@@ -299,7 +310,11 @@ public sealed class SqliteTrajectoryStore(string connectionString) : ITrajectory
                 After = Deserialize<GameSnapshot>(reader, 12),
                 CompletedAt = reader.IsDBNull(13) ? null : ParseTime(reader.GetString(13)),
                 Reward = Deserialize<GameplayReward>(reader, 14),
-                Segment = reader.GetInt32(15)
+                Segment = reader.GetInt32(15),
+                CitedKnowledgeNodeId = reader.IsDBNull(16) ? null : reader.GetString(16),
+                OverriddenPlaybookEntryId = reader.IsDBNull(17) ? null : reader.GetString(17),
+                OverrideReason = reader.IsDBNull(18) ? null : reader.GetString(18),
+                SituationTags = JsonSerializer.Deserialize<List<string>>(reader.GetString(19), JsonOptions) ?? []
             });
         }
         return steps;
