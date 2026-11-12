@@ -10,6 +10,9 @@ public sealed record ModelConfiguration(
 
     /// <summary>Upper bound on generated tokens. Null keeps each brain's default.</summary>
     public int? MaxTokens { get; init; }
+
+    /// <summary>Sampling temperature. Null keeps the server default.</summary>
+    public double? Temperature { get; init; }
 }
 
 public interface IModelProvider

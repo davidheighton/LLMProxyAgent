@@ -44,7 +44,11 @@ public sealed record BenchProfile(string Brain, string Role, string DecisionFiel
 }
 
 /// <summary>One recorded decision prompt and the decision that was made with it at the time.</summary>
-public sealed record BenchCase(string InteractionId, string RecordedModel, IReadOnlyList<LlmChatMessage> Messages, string? ReferenceDecision);
+public sealed record BenchCase(string InteractionId, string RecordedModel, IReadOnlyList<LlmChatMessage> Messages, string? ReferenceDecision)
+{
+    /// <summary>The exact schema used live, when it was recorded; otherwise the profile's generic schema is used.</summary>
+    public string? RecordedSchema { get; init; }
+}
 
 public sealed record BenchModelSpec(string Label, ModelConfiguration Configuration)
 {
@@ -95,7 +99,8 @@ public sealed record BenchModelSpec(string Label, ModelConfiguration Configurati
             [$"Brains:{brain}:Backend"] = backend,
             [$"Brains:{brain}:Model"] = spec,
             [$"Brains:{brain}:Endpoint"] = endpointText,
-            [$"Brains:{brain}:Thinking"] = think?.ToString()
+            [$"Brains:{brain}:Thinking"] = think?.ToString(),
+            [$"Brains:{brain}:Temperature"] = null
         };
         ModelConfiguration configuration = BrainConfiguration.Resolve(
             new ConfigurationBuilder().AddInMemoryCollection(settings).Build(),
@@ -142,7 +147,7 @@ public sealed class ModelBench(LlmChatClient client)
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT interaction_id, model, prompt, response FROM llm_interactions
+            SELECT interaction_id, model, prompt, response, request_schema FROM llm_interactions
             WHERE role = $role AND succeeded = 1 AND in_progress = 0 AND attempt = 1
               AND ($agentId IS NULL OR agent_id = $agentId)
             ORDER BY completed_at DESC
@@ -166,7 +171,10 @@ public sealed class ModelBench(LlmChatClient client)
                     reader.GetString(0),
                     reader.GetString(1),
                     messages,
-                    ExtractDecision(ExtractContent(reader.GetString(3)), profile.DecisionField)));
+                    ExtractDecision(ExtractContent(reader.GetString(3)), profile.DecisionField))
+                {
+                    RecordedSchema = reader.IsDBNull(4) ? null : reader.GetString(4)
+                });
             }
         }
         catch (SqliteException exception) when (exception.SqliteErrorCode == 1)
@@ -256,7 +264,7 @@ public sealed class ModelBench(LlmChatClient client)
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(cases);
-        using JsonDocument schema = JsonDocument.Parse(profile.Schema);
+        using JsonDocument genericSchema = JsonDocument.Parse(profile.Schema);
         var latencies = new List<double>();
         var tokens = new List<int>();
         var errors = new List<string>();
@@ -270,7 +278,7 @@ public sealed class ModelBench(LlmChatClient client)
         {
             try
             {
-                await client.ChatAsync(model.Configuration, Request(cases[0], schema.RootElement, profile, model), cancellationToken)
+                await client.ChatAsync(model.Configuration, Request(cases[0], genericSchema.RootElement, profile, model), cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is HttpRequestException or InvalidDataException or TaskCanceledException)
@@ -285,7 +293,7 @@ public sealed class ModelBench(LlmChatClient client)
             try
             {
                 LlmChatResult result = await client
-                    .ChatAsync(model.Configuration, Request(benchCase, schema.RootElement, profile, model), cancellationToken)
+                    .ChatAsync(model.Configuration, Request(benchCase, genericSchema.RootElement, profile, model), cancellationToken)
                     .ConfigureAwait(false);
                 latencies.Add(result.Elapsed.TotalMilliseconds);
                 if (result.CompletionTokens is { } completion)
@@ -340,6 +348,10 @@ public sealed class ModelBench(LlmChatClient client)
         string recordedBy = string.Join(", ", cases.Select(item => item.RecordedModel).Distinct(StringComparer.OrdinalIgnoreCase));
         text.AppendLine(CultureInfo.InvariantCulture,
             $"{cases.Count} recorded {profile.Role} prompts (first attempts), replayed against each model. Agreement compares `{profile.DecisionField}` with the decision recorded at the time (by {recordedBy}); it measures consistency, not correctness.");
+        int faithful = cases.Count(item => item.RecordedSchema is not null);
+        text.AppendLine();
+        text.AppendLine(CultureInfo.InvariantCulture,
+            $"{faithful} of {cases.Count} prompts replay the exact schema used live; the rest use a generic schema, so their answers are less constrained than in play.");
         text.AppendLine();
         text.AppendLine("| Model | Valid answers | Agreement | Median latency | p95 latency | Mean output tokens | Tokens/s |");
         text.AppendLine("| --- | --- | --- | --- | --- | --- | --- |");
@@ -365,8 +377,11 @@ public sealed class ModelBench(LlmChatClient client)
         return text.ToString();
     }
 
-    private static LlmChatRequest Request(BenchCase benchCase, JsonElement schema, BenchProfile profile, BenchModelSpec model) =>
-        new($"the {profile.Brain} bench", benchCase.Messages, schema)
+    private static LlmChatRequest Request(BenchCase benchCase, JsonElement genericSchema, BenchProfile profile, BenchModelSpec model) =>
+        new(
+            $"the {profile.Brain} bench",
+            benchCase.Messages,
+            benchCase.RecordedSchema is { } recorded ? JsonDocument.Parse(recorded).RootElement.Clone() : genericSchema)
         {
             Think = model.Configuration.Think,
             MaxTokens = model.Configuration.MaxTokens ?? (profile == BenchProfile.Pilot ? 2048 : null)

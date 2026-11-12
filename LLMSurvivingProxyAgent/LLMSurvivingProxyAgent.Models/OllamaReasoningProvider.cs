@@ -152,6 +152,7 @@ public sealed class OllamaReasoningProvider(
             new OllamaMessage("system", SystemPrompt),
             new OllamaMessage("user", JsonSerializer.Serialize(context, JsonOptions))
         };
+        JsonElement assessmentSchema = BuildAssessmentSchema(context);
         string interactionId = Guid.NewGuid().ToString("N");
         DateTimeOffset startedAt = DateTimeOffset.UtcNow;
         string prompt = string.Join(
@@ -186,7 +187,7 @@ public sealed class OllamaReasoningProvider(
                 new LlmChatRequest(
                     "the strategic assessment",
                     messages.Select(message => new LlmChatMessage(message.Role, message.Content)).ToArray(),
-                    BuildAssessmentSchema(context))
+                    assessmentSchema)
                 {
                     Think = configuration.Think,
                     MaxTokens = configuration.MaxTokens
@@ -235,7 +236,10 @@ public sealed class OllamaReasoningProvider(
                 prompt,
                 responseBody,
                 succeeded,
-                interactionError));
+                interactionError)
+            {
+                RequestSchema = assessmentSchema.GetRawText()
+            });
         }
     }
 

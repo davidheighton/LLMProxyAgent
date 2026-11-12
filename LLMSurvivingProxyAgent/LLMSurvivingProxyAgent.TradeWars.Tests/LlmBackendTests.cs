@@ -166,6 +166,10 @@ public sealed class LlmBackendTests
         Assert.True(strategic.Think);
         Assert.Equal(BrainConfiguration.DefaultStrategicDeliberationTokens, strategic.MaxTokens);
         Assert.Equal(pilot.Endpoint, reactive.Endpoint);
+        Assert.Equal(BrainConfiguration.DefaultDecisionTemperature, pilot.Temperature);
+        Assert.Equal(BrainConfiguration.DefaultDecisionTemperature, reactive.Temperature);
+        Assert.Null(strategic.Temperature);
+        Assert.Null(ollamaPilot.Temperature);
 
         Assert.Throws<InvalidOperationException>(() => BrainConfiguration.Resolve(
             Configuration(new() { ["Brains:Pilot:Backend"] = "vllm" }), BrainConfiguration.Pilot, "x"));
@@ -181,6 +185,8 @@ public sealed class LlmBackendTests
             Configuration(new()
             {
                 ["Brains:Strategic:LlamaCpp:ModelPath"] = "models/strategist.gguf",
+                ["Brains:Strategic:LlamaCpp:KvCacheType"] = "q8_0",
+                ["Brains:Strategic:LlamaCpp:DraftModelPath"] = "models/draft.gguf",
                 ["Brains:Strategic:LlamaCpp:Parallel"] = "2",
                 ["Brains:Strategic:LlamaCpp:ExtraArguments"] = "-fa on --cache-type-k q8_0 --chat-template-file \"C:\\My Templates\\t.jinja\""
             }),
@@ -196,6 +202,14 @@ public sealed class LlmBackendTests
         Assert.Contains("--jinja", arguments);
         Assert.Equal("C:\\My Templates\\t.jinja", Value(arguments, "--chat-template-file"));
         Assert.Equal("on", Value(arguments, "-fa"));
+        Assert.Equal("q8_0", Value(arguments, "--cache-type-k"));
+        Assert.Equal("q8_0", Value(arguments, "--cache-type-v"));
+        Assert.Equal(Path.GetFullPath("models/draft.gguf"), Value(arguments, "--model-draft"));
+        Assert.Equal("999", Value(arguments, "--gpu-layers-draft"));
+        Assert.Equal("2", Value(LlamaCppServerOptions.Read(
+            Configuration(new() { ["Brains:Pilot:LlamaCpp:ModelPath"] = "m.gguf" }),
+            BrainConfiguration.Pilot,
+            LlamaCpp())!.BuildArguments(), "--parallel"));
         Assert.Throws<InvalidOperationException>(() => LlamaCppServerOptions.Read(
             Configuration(new() { ["Brains:Pilot:LlamaCpp:ModelPath"] = "m.gguf" }),
             BrainConfiguration.Pilot,
@@ -255,7 +269,10 @@ public sealed class LlmBackendTests
                     $"i{index}", "meridian", "Pilot", "Ollama", "qwen3:8b", 1, now.AddSeconds(index), now.AddSeconds(index),
                     $"[system]\nYou pilot.\n\n[user]\n{{\"case\":{index}}}",
                     JsonSerializer.Serialize(new { message = new { content = $"{{\"action\":\"{recorded[index]}\"}}" } }),
-                    true, null));
+                    true, null)
+                {
+                    RequestSchema = index == 0 ? """{"type":"object","properties":{"action":{"type":"string","enum":["none"]}}}""" : null
+                });
             }
             history.Record(new LlmInteractionRecord(
                 "retry", "meridian", "Pilot", "Ollama", "qwen3:8b", 2, now, now, "[user]\nretry", "{}", true, null));
@@ -265,6 +282,8 @@ public sealed class LlmBackendTests
             IReadOnlyList<BenchCase> cases = ModelBench.LoadCases(connectionString, BenchProfile.Pilot, 10);
             Assert.Equal(["i0", "i1", "i2"], cases.Select(item => item.InteractionId));
             Assert.Equal("moveToAdjacentSector", cases[0].ReferenceDecision);
+            Assert.NotNull(cases[0].RecordedSchema);
+            Assert.Null(cases[1].RecordedSchema);
 
             // Warm-up, then: agrees, disagrees, invalid action.
             var handler = new QueueHandler(
@@ -278,6 +297,15 @@ public sealed class LlmBackendTests
                 cases);
 
             Assert.Equal(4, handler.Requests.Count);
+            // The first case replays the exact schema recorded live; the others fall back to the generic one.
+            using (JsonDocument replay = JsonDocument.Parse(handler.Requests[1].Body))
+            {
+                Assert.Equal(
+                    "none",
+                    replay.RootElement.GetProperty("response_format").GetProperty("json_schema").GetProperty("schema")
+                        .GetProperty("properties").GetProperty("action").GetProperty("enum")[0].GetString());
+                Assert.Equal(BrainConfiguration.DefaultDecisionTemperature, replay.RootElement.GetProperty("temperature").GetDouble());
+            }
             Assert.Equal(3, result.Cases);
             Assert.Equal(2, result.Valid);
             Assert.Equal(2, result.Comparable);
@@ -286,6 +314,7 @@ public sealed class LlmBackendTests
             Assert.Contains(result.Errors, error => error.Contains("selfDestruct", StringComparison.Ordinal));
             string markdown = ModelBench.ToMarkdown(BenchProfile.Pilot, cases, [result]);
             Assert.Contains("| llamacpp:tiny | 2/3", markdown);
+            Assert.Contains("1 of 3 prompts replay the exact schema", markdown);
         }
         finally
         {

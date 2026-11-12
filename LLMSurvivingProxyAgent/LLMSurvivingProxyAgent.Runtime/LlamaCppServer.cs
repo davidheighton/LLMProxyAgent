@@ -17,8 +17,11 @@ namespace LLMSurvivingProxyAgent.Runtime;
 /// Brains:{brain}:LlamaCpp:ModelPath       .gguf file; required for automatic launch
 /// Brains:{brain}:LlamaCpp:ServerPath      llama-server executable (default: llama-server on PATH)
 /// Brains:{brain}:LlamaCpp:ContextSize     tokens per request slot (Pilot 8192, Strategic 16384)
-/// Brains:{brain}:LlamaCpp:Parallel        concurrent request slots, i.e. agents served at once (default 4)
-/// Brains:{brain}:LlamaCpp:GpuLayers       layers offloaded to the GPU (default 999 = all that fit)
+/// Brains:{brain}:LlamaCpp:Parallel        concurrent request slots, i.e. agents served at once (default 2)
+/// Brains:{brain}:LlamaCpp:GpuLayers       layers offloaded to the GPU (default 999 = all of them)
+/// Brains:{brain}:LlamaCpp:KvCacheType     KV-cache precision, e.g. q8_0 (about half of f16's VRAM); default f16
+/// Brains:{brain}:LlamaCpp:DraftModelPath  small same-family .gguf for speculative decoding (e.g. Qwen3-0.6B for a
+///                                         Qwen3 strategist); speeds up long generations on a GPU
 /// Brains:{brain}:LlamaCpp:ExtraArguments  appended verbatim, e.g. "-fa on --cache-type-k q8_0"
 /// </code>
 /// </summary>
@@ -34,6 +37,9 @@ public sealed record LlamaCppServerOptions(
     int GpuLayers,
     string? ExtraArguments)
 {
+    public string? KvCacheType { get; init; }
+    public string? DraftModelPath { get; init; }
+
     public static LlamaCppServerOptions? Read(IConfiguration configuration, string brain, ModelConfiguration model)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -74,9 +80,13 @@ public sealed record LlamaCppServerOptions(
             model.Endpoint.Host,
             model.Endpoint.Port,
             Read("ContextSize", brain == BrainConfiguration.Strategic ? 16_384 : 8_192, 512),
-            Read("Parallel", 4, 1),
+            Read("Parallel", 2, 1),
             Read("GpuLayers", 999, 0),
-            configuration[$"{section}:ExtraArguments"]);
+            configuration[$"{section}:ExtraArguments"])
+        {
+            KvCacheType = configuration[$"{section}:KvCacheType"] is { Length: > 0 } kvCache ? kvCache.Trim() : null,
+            DraftModelPath = configuration[$"{section}:DraftModelPath"] is { Length: > 0 } draft ? Path.GetFullPath(draft) : null
+        };
     }
 
     /// <summary>The llama-server command line. Context is per slot, so the total is ContextSize × Parallel.</summary>
@@ -94,6 +104,14 @@ public sealed record LlamaCppServerOptions(
             // Chat templates (and their enable_thinking switch) need the Jinja template engine.
             "--jinja"
         };
+        if (KvCacheType is { } kvCacheType)
+        {
+            arguments.AddRange(["--cache-type-k", kvCacheType, "--cache-type-v", kvCacheType]);
+        }
+        if (DraftModelPath is { } draftModel)
+        {
+            arguments.AddRange(["--model-draft", draftModel, "--gpu-layers-draft", GpuLayers.ToString(CultureInfo.InvariantCulture)]);
+        }
         if (!string.IsNullOrWhiteSpace(ExtraArguments))
         {
             arguments.AddRange(SplitArguments(ExtraArguments));
@@ -175,6 +193,10 @@ public static class LlamaCppServer
         if (!File.Exists(options.ModelPath))
         {
             return $"{options.Brain} model file not found: {options.ModelPath}";
+        }
+        if (options.DraftModelPath is { } draft && !File.Exists(draft))
+        {
+            return $"{options.Brain} draft model file not found: {draft}";
         }
 
         var startInfo = new ProcessStartInfo

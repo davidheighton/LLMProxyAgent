@@ -8,12 +8,14 @@
   brain whose server is already healthy.
 
 .EXAMPLE
-  .\start-brains.ps1 -PilotModel D:\models\Qwen3-1.7B-Q8_0.gguf -StrategicModel D:\models\Qwen3-14B-Q4_K_M.gguf
+  # 16 GB GPU (e.g. RTX 3080 Ti Laptop), 1-2 agents: 4B Pilot + 8B strategist with a 0.6B draft model.
+  .\start-brains.ps1 -PilotModel D:\models\Qwen3-4B-Instruct-2507-Q4_K_M.gguf `
+    -StrategicModel D:\models\Qwen3-8B-Q4_K_M.gguf -StrategicDraftModel D:\models\Qwen3-0.6B-Q8_0.gguf
 
 .EXAMPLE
-  # 12 GB GPU, MoE strategist: keep 20 expert layers on the CPU so the rest fits in VRAM.
-  .\start-brains.ps1 -PilotModel D:\models\Qwen3-0.6B-Q8_0.gguf `
-    -StrategicModel D:\models\Qwen3-30B-A3B-Thinking-2507-Q4_K_M.gguf -StrategicExtraArgs "--n-cpu-moe 20"
+  # Same card, bigger strategist: 14B with shorter strategy context.
+  .\start-brains.ps1 -PilotModel D:\models\Qwen3-4B-Instruct-2507-Q4_K_M.gguf `
+    -StrategicModel D:\models\Qwen3-14B-Q4_K_M.gguf -StrategicContext 8192
 #>
 param(
     [Parameter(Mandatory)] [string] $PilotModel,
@@ -23,10 +25,14 @@ param(
     [string] $StrategicAlias = "strategist",
     [int] $PilotPort = 8081,
     [int] $StrategicPort = 8082,
-    [int] $Parallel = 4,
+    [int] $Parallel = 2,
     [int] $PilotContext = 8192,
     [int] $StrategicContext = 16384,
     [int] $GpuLayers = 999,
+    # 8-bit KV cache roughly halves context memory; it relies on flash attention, which CUDA builds enable by default.
+    [string] $KvCacheType = "q8_0",
+    # Small same-family model for speculative decoding of the strategist's long deliberation.
+    [string] $StrategicDraftModel = "",
     [string] $PilotExtraArgs = "",
     [string] $StrategicExtraArgs = "",
     [string] $LogDirectory = "$env:LOCALAPPDATA\LLMSurvivingProxyAgent\llama-server"
@@ -40,7 +46,7 @@ function Test-Healthy([int] $Port) {
     catch { $false }
 }
 
-function Start-Brain([string] $Name, [string] $Model, [string] $Alias, [int] $Port, [int] $Context, [string] $Extra) {
+function Start-Brain([string] $Name, [string] $Model, [string] $Alias, [int] $Port, [int] $Context, [string] $Extra, [string] $Draft) {
     if (Test-Healthy $Port) { Write-Host "$Name brain already running on port $Port."; return }
     if (-not (Test-Path $Model)) { throw "$Name model not found: $Model" }
     # --ctx-size is shared by all slots, so give each of the $Parallel slots $Context tokens.
@@ -49,6 +55,11 @@ function Start-Brain([string] $Name, [string] $Model, [string] $Alias, [int] $Po
         "--ctx-size", ($Context * $Parallel), "--parallel", $Parallel,
         "--n-gpu-layers", $GpuLayers, "--jinja"
     )
+    if ($KvCacheType) { $arguments += @("--cache-type-k", $KvCacheType, "--cache-type-v", $KvCacheType) }
+    if ($Draft) {
+        if (-not (Test-Path $Draft)) { throw "$Name draft model not found: $Draft" }
+        $arguments += @("--model-draft", "`"$Draft`"", "--gpu-layers-draft", $GpuLayers)
+    }
     if ($Extra) { $arguments += $Extra.Split(" ", [StringSplitOptions]::RemoveEmptyEntries) }
     $log = Join-Path $LogDirectory "$($Name.ToLowerInvariant()).log"
     Start-Process -FilePath $ServerPath -ArgumentList $arguments -WindowStyle Hidden `
@@ -56,8 +67,8 @@ function Start-Brain([string] $Name, [string] $Model, [string] $Alias, [int] $Po
     Write-Host "Starting $Name brain on port $Port (log: $log)..."
 }
 
-Start-Brain "Pilot" $PilotModel $PilotAlias $PilotPort $PilotContext $PilotExtraArgs
-Start-Brain "Strategic" $StrategicModel $StrategicAlias $StrategicPort $StrategicContext $StrategicExtraArgs
+Start-Brain "Pilot" $PilotModel $PilotAlias $PilotPort $PilotContext $PilotExtraArgs ""
+Start-Brain "Strategic" $StrategicModel $StrategicAlias $StrategicPort $StrategicContext $StrategicExtraArgs $StrategicDraftModel
 
 $deadline = (Get-Date).AddMinutes(5)
 foreach ($port in @($PilotPort, $StrategicPort)) {
@@ -68,6 +79,10 @@ foreach ($port in @($PilotPort, $StrategicPort)) {
     Write-Host "Port $port ready."
 }
 
+if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+    Write-Host ""
+    nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader
+}
 Write-Host ""
 Write-Host "Point the agents at them (environment variables, or the same keys in appsettings.json):"
 Write-Host "  `$env:Brains__Pilot__Backend = 'LlamaCpp';     `$env:Brains__Pilot__Model = '$PilotAlias'"

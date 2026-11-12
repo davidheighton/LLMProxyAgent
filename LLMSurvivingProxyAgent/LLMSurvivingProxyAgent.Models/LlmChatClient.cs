@@ -74,7 +74,8 @@ public sealed class LlmChatClient(HttpClient httpClient)
         request = request with
         {
             Think = request.Think ?? configuration.Think,
-            MaxTokens = request.MaxTokens ?? configuration.MaxTokens
+            MaxTokens = request.MaxTokens ?? configuration.MaxTokens,
+            Temperature = request.Temperature ?? configuration.Temperature
         };
         return LlmBackends.Normalize(configuration.Provider) switch
         {

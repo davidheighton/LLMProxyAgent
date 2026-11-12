@@ -15,6 +15,8 @@ namespace LLMSurvivingProxyAgent.Runtime;
 /// Brains:{brain}:Model                         model name (an Ollama tag, or the llama-server --alias)
 /// Brains:{brain}:Thinking                      true/false; default: Strategic on llama.cpp deliberates, others unset
 /// Brains:{brain}:MaxTokens                     generation cap; default: Strategic on llama.cpp 4096, others unset
+/// Brains:{brain}:Temperature                   sampling temperature; default: Pilot/Reactive on llama.cpp 0.2
+///                                              (decisions should be consistent), otherwise the server default
 /// </code>
 /// <c>Reasoning:Backend</c> sets the default backend for every brain.
 /// </summary>
@@ -31,6 +33,7 @@ public static class BrainConfiguration
     public const string DefaultLlamaCppPilotEndpoint = "http://127.0.0.1:8081/";
     public const string DefaultLlamaCppStrategicEndpoint = "http://127.0.0.1:8082/";
     public const int DefaultStrategicDeliberationTokens = 4096;
+    public const double DefaultDecisionTemperature = 0.2;
 
     public static ModelConfiguration Resolve(IConfiguration configuration, string brain, string defaultModel)
     {
@@ -69,10 +72,18 @@ public static class BrainConfiguration
                 : throw new InvalidOperationException($"{section}:MaxTokens must be a positive integer.")
             : brain == Strategic && backend == LlmBackends.LlamaCpp ? DefaultStrategicDeliberationTokens : null;
 
+        double? temperature = configuration[$"{section}:Temperature"] is { Length: > 0 } temperatureText
+            ? double.TryParse(temperatureText, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) &&
+              value is >= 0 and <= 2
+                ? value
+                : throw new InvalidOperationException($"{section}:Temperature must be a number from 0 to 2.")
+            : brain != Strategic && backend == LlmBackends.LlamaCpp ? DefaultDecisionTemperature : null;
+
         return new ModelConfiguration(backend, model, endpoint)
         {
             Think = think,
-            MaxTokens = maxTokens
+            MaxTokens = maxTokens,
+            Temperature = temperature
         };
     }
 

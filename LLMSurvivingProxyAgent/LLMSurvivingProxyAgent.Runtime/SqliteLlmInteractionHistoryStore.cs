@@ -33,10 +33,10 @@ public sealed class SqliteLlmInteractionHistoryStore : ILlmInteractionHistorySto
             command.CommandText = """
                 INSERT INTO llm_interactions(
                     interaction_id, agent_id, role, provider, model, attempt, started_at, completed_at,
-                    prompt, response, succeeded, error, applied_outcome, in_progress
+                    prompt, response, succeeded, error, applied_outcome, in_progress, request_schema
                 ) VALUES (
                     $id, $agentId, $role, $provider, $model, $attempt, $startedAt, $completedAt,
-                    $prompt, $response, $succeeded, $error, $appliedOutcome, $inProgress
+                    $prompt, $response, $succeeded, $error, $appliedOutcome, $inProgress, $requestSchema
                 )
                 ON CONFLICT(interaction_id) DO UPDATE SET
                     completed_at = excluded.completed_at,
@@ -45,7 +45,8 @@ public sealed class SqliteLlmInteractionHistoryStore : ILlmInteractionHistorySto
                     succeeded = excluded.succeeded,
                     error = excluded.error,
                     applied_outcome = COALESCE(excluded.applied_outcome, llm_interactions.applied_outcome),
-                    in_progress = excluded.in_progress;
+                    in_progress = excluded.in_progress,
+                    request_schema = COALESCE(excluded.request_schema, llm_interactions.request_schema);
                 """;
             command.Parameters.AddWithValue("$id", interaction.InteractionId);
             command.Parameters.AddWithValue("$agentId", interaction.AgentId);
@@ -61,6 +62,7 @@ public sealed class SqliteLlmInteractionHistoryStore : ILlmInteractionHistorySto
             command.Parameters.AddWithValue("$error", (object?)interaction.Error ?? DBNull.Value);
             command.Parameters.AddWithValue("$appliedOutcome", (object?)interaction.AppliedOutcome ?? DBNull.Value);
             command.Parameters.AddWithValue("$inProgress", interaction.IsInProgress ? 1 : 0);
+            command.Parameters.AddWithValue("$requestSchema", (object?)interaction.RequestSchema ?? DBNull.Value);
             command.ExecuteNonQuery();
         }
     }
@@ -126,6 +128,17 @@ public sealed class SqliteLlmInteractionHistoryStore : ILlmInteractionHistorySto
                 ON llm_interactions(agent_id, role, started_at DESC);
             """;
         command.ExecuteNonQuery();
+
+        // Added after the first schema version.
+        using var columnCheck = connection.CreateCommand();
+        columnCheck.CommandText =
+            "SELECT COUNT(*) FROM pragma_table_info('llm_interactions') WHERE name = 'request_schema';";
+        if (Convert.ToInt64(columnCheck.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+        {
+            using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE llm_interactions ADD COLUMN request_schema TEXT NULL;";
+            alter.ExecuteNonQuery();
+        }
     }
 
     private void LoadRecentIntoCache()

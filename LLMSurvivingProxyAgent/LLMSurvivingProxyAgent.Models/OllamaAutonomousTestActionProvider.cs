@@ -317,6 +317,8 @@ public sealed class OllamaAutonomousTestActionProvider(
             (!LlmBackends.IsLlamaCpp(configuration) &&
              configuration.Model.StartsWith("qwen3", StringComparison.OrdinalIgnoreCase));
         bool retryWithoutThinking = false;
+        JsonElement decisionSchema = JsonSerializer.SerializeToElement(CreateDecisionSchema(actionContext), JsonOptions);
+        string decisionSchemaText = decisionSchema.GetRawText();
         for (int attempt = 0; attempt < MaximumDecisionAttempts; attempt++)
         {
             string interactionId = Guid.NewGuid().ToString("N");
@@ -353,7 +355,7 @@ public sealed class OllamaAutonomousTestActionProvider(
                 new LlmChatRequest(
                     "the test-action decision",
                     messages.Select(message => new LlmChatMessage(message.Role, message.Content ?? string.Empty)).ToArray(),
-                    JsonSerializer.SerializeToElement(CreateDecisionSchema(actionContext), JsonOptions))
+                    decisionSchema)
                 {
                     Think = enableQwenThinking ? !retryWithoutThinking : null,
                     MaxTokens = configuration.MaxTokens ?? MaximumDecisionResponseTokens
@@ -813,7 +815,10 @@ public sealed class OllamaAutonomousTestActionProvider(
                     prompt,
                     responseBody,
                     succeeded,
-                    interactionError));
+                    interactionError)
+                {
+                    RequestSchema = decisionSchemaText
+                });
             }
         }
 
