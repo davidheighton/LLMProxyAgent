@@ -48,7 +48,6 @@ public sealed class SqliteAgentStore(string connectionString) : IAgentStore
             CREATE TABLE IF NOT EXISTS agent_schema_migrations (
                 migration_id TEXT PRIMARY KEY
             );
-            UPDATE agents SET status = 'Offline' WHERE status <> 'Offline';
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
 

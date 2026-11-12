@@ -5,7 +5,11 @@ public sealed record AutonomousGameLoginCredentials(
     string GameLetter,
     string Password,
     string TraderAlias = "",
-    bool AllowNewCharacterCreation = false);
+    bool AllowNewCharacterCreation = false,
+    string ShipName = "",
+    string HomePlanetName = "",
+    string GameProfileKey = "",
+    string CredentialProfilePath = "");
 
 public interface IAutonomousGameLoginCredentialProvider
 {
@@ -52,8 +56,19 @@ public sealed class AutonomousExistingAccountLoginSession
                     "A trader alias is required when new-character creation is enabled.",
                     nameof(credentials));
             }
+            if (!IsValidCharacterName(credentials.ShipName) ||
+                !IsValidCharacterName(credentials.HomePlanetName))
+            {
+                throw new ArgumentException(
+                    "Ship and home planet names are required when new-character creation is enabled.",
+                    nameof(credentials));
+            }
 
-            _sequence.SetNewCharacterCredentials(credentials.TraderAlias, credentials.Password);
+            _sequence.SetNewCharacterCredentials(
+                credentials.TraderAlias,
+                credentials.Password,
+                credentials.ShipName,
+                credentials.HomePlanetName);
         }
     }
 
@@ -118,4 +133,10 @@ public sealed class AutonomousExistingAccountLoginSession
                 nameof(credentials));
         }
     }
+
+    private static bool IsValidCharacterName(string value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Length is >= 3 and <= 30 &&
+        value == value.Trim() &&
+        value.All(character => char.IsAsciiLetter(character) || character == ' ');
 }

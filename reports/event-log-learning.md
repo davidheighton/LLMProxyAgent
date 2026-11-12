@@ -78,3 +78,137 @@ Historical event JSONL, terminal logs, MTC diagnostics, and the old `.xdb` are
 preserved under `reports/pre-reset-20261029/` for provenance. Active game-state
 caches are reset separately so future autonomous decisions cannot treat the
 old character's state as current.
+
+## Credit spending and WorldTrade launch review
+
+- At 2026-10-29 07:51:26 UTC, the ship was in sector 369 with 36,919 credits
+  and 18 empty holds. At 07:52 UTC, the terminal prompted to install Cargo
+  Holds; the recorded quantity was 22. The next complete status, in sector 1,
+  showed 22,466 credits, 40 total holds, and 18 Fuel Ore. The 14,453-credit
+  decrease is therefore attributable to the StarDock hold purchase in this
+  interval; no scanner was recorded. The logs confirm what was bought, but do
+  not preserve the Pilot/Strategic decision that selected it.
+- The later archived balance of 21,856 credits followed a separate purchase:
+  at 08:10 UTC the ship bought 16 Equipment for a 610-credit reduction. At
+  08:44 UTC the cargo was empty and credits remained 21,856, so the archive
+  does not verify positive earnings from that cargo.
+- WorldTrade launches around 08:00 UTC failed to compile:
+  `trading-cashing/2-worldtrade.ts` reported a missing `include\header` at
+  line 124. Thus the script-name inputs are not evidence of a running routine
+  or earned credits.
+- These transactions predate the later one-credit state. The retained event
+  logs do not show the transaction that caused that later balance, so do not
+  conflate the 14,453-credit purchase with the one-credit loss.
+- Operational guard: while the goal is scanner acquisition, authorize only a
+  Density Scanner by default. Require explicit approval and a budget check for
+  cargo holds or other hardware. Verify each transaction from fresh status
+  deltas, and do not call a trade profitable without a positive credit delta.
+
+## Learn-mode Game D and Game E sessions (2026-11-03 to 2026-11-04)
+
+### Scope and capture
+
+Reviewed both dates of the Game D and Game E terminal recordings, their
+per-game debug logs, the relevant colonization script, and the persisted
+Learn-mode observations. The main sessions are:
+
+- **Game D recovery:** `learn-bcad5d7089a245daa3aa8c02c4d55437`, 13
+  `SituationObservation` records from 05:26:57Z to 05:54:24Z (22:26-22:54
+  local on November 3).
+- **Game E:** `learn-944cb0874b5a40f4936084d4307f5653`, 22
+  `SituationObservation` records from 05:57:03Z to 07:28:30Z (22:57 on
+  November 3 to 00:28 on November 4).
+- **Separate Game D follow-up:** `learn-3d53022605d948f5a9c3ec8c29e91128`,
+  4 observations from 07:01:31Z to 07:16:53Z (00:01-00:16 on November 4).
+  This is not the Escape Pod recovery session.
+
+The Learn records are state observations, not linked action trajectories:
+there are no matching trajectory episodes or steps, and outcomes are marked
+unmeasured. The terminal logs do expose specific actions and resulting states,
+so those sequences can be kept as operational evidence; they still do not
+reliably identify which older agent issued every command or provide a
+consistent action/reward label. Do not count observations as actions or infer
+agent performance from them.
+
+### Game D: ship loss and recovery
+
+The recovery session starts in sector 172 in a Kvertoo Merchant Cruiser with
+20 empty holds, a Density Scanner, 8,039 credits, and 65,520 turns. Before the
+loss, the log shows the cruiser expanded to 75 holds and fitted with 400
+shields. At sector 829, a Ferrengi attack overwhelmed its single fighter
+against 1,926 attackers. The pilot abandoned the destroyed cruiser in an
+Escape Pod.
+
+The pod reached StarDock in sector 551 with about 482,057 credits, one cargo
+hold, 30 shields, and a Density Scanner. Selling its remaining Organics added
+79 credits. The pilot then purchased a T'Khasi Orion and refitted it: 30
+additional holds for 34,170 credits (60 total), 750 shields for 82,500, and
+750 fighters for 179,250. A later Learn snapshot records the Orion in sector
+512 with 60 holds full of Equipment, 750 shields, and 6,583 credits. This is
+a logged successful ship-recovery sequence after a catastrophic hull loss,
+not a reward label for a named agent.
+
+### Game E: ship refits and planet development
+
+The session begins in sector 10 with a Sverdlov Merchant Cruiser, 20 holds
+full of Fuel Ore, 39,727 credits, and 65,484 turns. It includes a Colonial
+Transport refit with 200 additional holds for 647,800 credits, 500 shields,
+and 200 fighters, plus further ship changes. A QuadStar Merchant Freighter
+snapshot shows 65 holds, 300 fighters, 500 shields, and a Holo Scanner. The
+final Learn snapshot is an Antarian Colonial Transport in sector 536 with
+250 empty holds, 1,399,690 credits, and 58,586 turns. Cash peaked at
+3,049,533 in sector 2909, so neither the peak nor the cash delta alone
+measures the value of this multi-ship session. Recheck scanner state after
+each hull change.
+
+The log records purchase of two Aldus Genesis Torpedoes for 40,000 credits;
+subsequent status still shows both aboard. It does not show them being fired
+or creating the planet discussed below, so do not attribute that planet to
+this purchase.
+
+The colonization activity concerns planet #5, Erebus E, in sector 536
+(Class O, Oceanic, no Citadel). The `planet-citadel\\2-col.ts` script ran
+from 00:12:47 to 00:28:21 and the terminal shows repeated Terra-to-planet
+colonist runs, assigning the arrivals to Organics. Planet status grows from
+49,000 Organics colonists in early observations to 399,000 and then in
+repeated 250,000 increments, reaching 6,400,000; daily Organics output rises
+from 24 to 3,200. At the final status, a separate 30,000-colonist allocation
+to Fighters produces 213 Fighters daily, with 2 Fighters on the planet and
+200 aboard the ship. This is clear ongoing colony development and production
+investment, but not evidence of a completed Citadel or a finished
+colonization objective.
+
+### Separate Game D follow-up
+
+The short post-midnight D session starts with 66,026 credits and a High
+Velocity corporate FlagShip with 85 empty holds and a Holo Scanner. It peaks
+at 1,189,183 credits and ends in sector 551 with 86,007 credits and 85 Fuel
+Ore aboard, using 1,458 turns. Keep it separate from the earlier Kvertoo
+loss/Escape Pod/Orion recovery; its cash and cargo are unrelated.
+
+### Learning carried forward
+
+1. Preserve the D recovery chain as a concrete operational sequence:
+   ship/fighter mismatch, Escape Pod survival, StarDock arrival, hull purchase,
+   refit, and resumed travel. Treat the loss and recovery as observed outcomes,
+   not as model reward or proof that a named agent caused them.
+2. Record ship type, holds, shields, fighters, cargo, scanner, credits, and
+   turns before and after each hull change. Cash alone hides both the cost and
+   retained value of ships and cargo.
+3. Treat the E colonization log as positive evidence for repeated colonist
+   delivery and production growth. Preserve the table's units and distinguish
+   workforce/output from stock on hand; do not infer Genesis Torpedo use or
+   Citadel completion.
+4. Keep the two D Learn sessions distinct, and do not compare these older
+   agent sessions to learner bots as action-level performance until command
+   attribution and trajectory/reward capture are available.
+
+### Sources
+
+- [Game D terminal log, November 3](<../LLMControlCenter/logs/2026-11-03 exiledTWGS  - Game D.log>)
+- [Game D terminal log, November 4](<../LLMControlCenter/logs/2026-11-04 exiledTWGS  - Game D.log>)
+- [Game E terminal log, November 3](<../LLMControlCenter/logs/2026-11-03 exiledTWGS  - Game E.log>)
+- [Game E terminal log, November 4](<../LLMControlCenter/logs/2026-11-04 exiledTWGS  - Game E.log>)
+- [Game D debug log](<../LLMControlCenter/logs/exiledTWGS  - Game D_debug.log>)
+- [Game E debug log](<../LLMControlCenter/logs/exiledTWGS  - Game E_debug.log>)
+- [2-col.ts](<../LLMProxyScripts/planet-citadel/2-col.ts>)

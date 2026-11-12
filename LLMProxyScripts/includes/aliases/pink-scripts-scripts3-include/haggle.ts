@@ -18,6 +18,7 @@ pause
 :sell
 killTrigger done
 send "*"
+setVar $awaitingQuote 0
 setVar $firstOffer 0
 setVar $offerPerc (1000 + $SellFactor[$Sector])
 :SellReset
@@ -29,6 +30,13 @@ pause
   
 :sellLine
 getWord CURRENTLINE $test 1
+# One offer per server reply: echoed numbers and repeated offer prompts are not replies.
+getWord CURRENTLINE $replyWord2 2
+isNumber $echoOnly $test
+getWordPos CURRENTLINE $offerPromptPos "Your offer"
+if ((($echoOnly = 0) or ($replyWord2 <> 0)) and ($offerPromptPos = 0))
+setVar $awaitingQuote 0
+end
   
 if ($test = 0)
 setVar $lastLineBlank 1
@@ -56,6 +64,11 @@ setTextLineTrigger line :sellLine
 pause 
   
 :sellOffer
+# Answer each quote once; the same prompt is also reported when its line completes.
+if ($awaitingQuote = 1)
+setTextTrigger offer :sellOffer "Your offer ["
+pause
+end
 if ($firstOffer = 0)
 getWord CURRENTLINE $firstOffer 3
 stripText $firstOffer "["
@@ -67,6 +80,7 @@ setVar $offer $firstOffer
 multiply $offer $offerPerc
 divide $offer 1000
 send $offer "*"
+setVar $awaitingQuote 1
 if ($SellFactor[$Sector] < 0)
 if ($SellDone[$Sector])
 add $offerPerc 5
@@ -115,8 +129,20 @@ setTextTrigger done :done "Command [TL="
 pause
 end
   
+# The default quantity is credit-limited at the listed price, but the negotiated quote can exceed the credits.
+# After an unaffordable quote this port's purchases are capped (see :buyOffer) instead of re-offering forever.
+getText CURRENTLINE $defaultQty "[" "]"
+stripText $defaultQty ","
+isNumber $isQty $defaultQty
+if ($isQty = 0)
+setVar $defaultQty 0
+end
+setVar $tooPoor 0
+setVar $awaitingQuote 0
 if ($Quantity > 0)
 send $Quantity "*"
+elseif (($BuyQtyLimit[$Sector] > 0) and ($BuyQtyLimit[$Sector] < $defaultQty))
+send $BuyQtyLimit[$Sector] "*"
 else
 send "*"
 end
@@ -132,11 +158,25 @@ pause
   
 :buyLine
 getWord CURRENTLINE $test 1
+# One offer per server reply: echoed numbers and repeated offer prompts are not replies.
+getWord CURRENTLINE $replyWord2 2
+isNumber $echoOnly $test
+getWordPos CURRENTLINE $offerPromptPos "Your offer"
+if ((($echoOnly = 0) or ($replyWord2 <> 0)) and ($offerPromptPos = 0))
+setVar $awaitingQuote 0
+end
   
 if ($test = 0)
 setVar $lastLineBlank 1
 else
 setVar $lastLinkBlank 0
+  
+getWordPos CURRENTLINE $poorPos "You only have"
+if ($poorPos > 0)
+getWord CURRENTLINE $haveCredits 4
+stripText $haveCredits ","
+setVar $tooPoor 1
+end
   
 if (CURRENTLINE = "We're not interested.")
 goto :Abort
@@ -164,6 +204,34 @@ setTextTrigger offer :buyOffer "Your offer ["
 pause
 end
   
+# Answer each quote once: the same prompt is also reported when its line completes, and a second answer arrived
+# at the Command prompt as a sector number.
+if ($awaitingQuote = 1)
+setTextTrigger offer :buyOffer "Your offer ["
+pause
+end
+  
+if ($tooPoor = 1)
+setVar $tooPoor 0
+setVar $awaitingQuote 0
+setVar $limit 0
+if (($defaultQty > 0) and ($firstOffer > 0))
+setVar $limit $defaultQty
+multiply $limit $haveCredits
+multiply $limit 90
+divide $limit $firstOffer
+divide $limit 100
+end
+if ($limit < 1)
+setVar $limit 1
+end
+setVar $BuyQtyLimit[$Sector] $limit
+# An offer of 0 declines the purchase and returns to the port menu.
+send "0*"
+setVar $awaitingQuote 1
+goto :BuyReset
+end
+  
 if ($firstOffer = 0)
 getWord CURRENTLINE $firstOffer 3
 stripText $firstOffer "["
@@ -175,6 +243,7 @@ setVar $offer $firstOffer
 multiply $offer $offerPerc
 divide $offer 1000
 send $offer "*"
+setVar $awaitingQuote 1
 if ($BuyFactor[$Sector] < 0)
 if ($BuyDone[$Sector])
 subtract $offerPerc 5

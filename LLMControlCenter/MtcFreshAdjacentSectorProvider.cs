@@ -231,6 +231,15 @@ internal sealed class MtcFreshAdjacentSectorProvider(
             return Task.FromResult<AutonomousPortTradeOpportunity?>(null);
         }
 
+        // Nearly broke: Fuel Ore is the cheapest cargo, so it can still be bought (one unit at a time if need be) to
+        // rebuild credits.
+        if (preferredProduct is null &&
+            snapshot.SynchronizedCredits is { } lowCredits &&
+            lowCredits < AutonomousTradePolicy.LowCreditFuelOreThreshold)
+        {
+            preferredProduct = TradeProduct.FuelOre;
+        }
+
         Core.SectorData? current = database.GetSector(currentSector);
         Core.Port? currentPort = current?.SectorPort;
         if (!IsFresh(current))
@@ -249,7 +258,9 @@ internal sealed class MtcFreshAdjacentSectorProvider(
                     current!,
                     nextSector,
                     excludedTradeSectors,
-                    preferredProduct);
+                    preferredProduct,
+                    snapshot,
+                    carriedProduct);
             return Task.FromResult<AutonomousPortTradeOpportunity?>(
                 new AutonomousPortTradeOpportunity(
                     currentSector,
@@ -267,12 +278,13 @@ internal sealed class MtcFreshAdjacentSectorProvider(
             {
                 Core.SectorData? previous = database.GetSector(previousSector.Value);
                 Core.Port? previousPort = previous?.SectorPort;
+                // Only cargo actually aboard can be sold here; a product merely compatible with the port pair is not.
                 TradeProduct? product =
                     excludedTradeSectors?.Contains(previousSector.Value) != true &&
                     IsFresh(previous) &&
                     IsRegularPort(previousPort) &&
                     IsRegularPort(currentPort)
-                    ? PortTradeCompatibility.FindTradeProduct(previousPort!.ClassIndex, currentPort!.ClassIndex)
+                    ? FindCarriedPairProduct(snapshot, previousPort!.ClassIndex, currentPort!.ClassIndex)
                     : null;
                 if (product is { } sellProduct)
                 {
@@ -296,6 +308,23 @@ internal sealed class MtcFreshAdjacentSectorProvider(
         if (snapshot.HoldsEmpty is > 0 &&
             snapshot.SynchronizedCredits is > 0)
         {
+            // The Dock Shopper needs holds full of Fuel Ore at StarDock, so any port selling it will do; StarDock is
+            // the "partner" the cargo is carried to.
+            if (preferredProduct == TradeProduct.FuelOre &&
+                snapshot.HoldsEmpty == snapshot.HoldsTotal &&
+                IsRegularPort(currentPort) &&
+                excludedTradeSectors?.Contains(currentSector) != true &&
+                PortTradeCompatibility.SellsProduct(currentPort!.ClassIndex, TradeProduct.FuelOre) &&
+                database.DBHeader.StarDock is > 0 and var dockShopperSector &&
+                dockShopperSector != currentSector)
+            {
+                return Task.FromResult<AutonomousPortTradeOpportunity?>(
+                    new AutonomousPortTradeOpportunity(
+                        dockShopperSector,
+                        TradeProduct.FuelOre,
+                        SellingExistingCargo: false));
+            }
+
             IReadOnlyList<int> adjacentSectors = current!.Warp
                 .Where(destination =>
                     destination > 0 &&
@@ -309,7 +338,7 @@ internal sealed class MtcFreshAdjacentSectorProvider(
 
             if (IsRegularPort(currentPort))
             {
-                foreach (TradeProduct productPriority in GetTradeProductPriority(preferredProduct))
+                foreach (TradeProduct productPriority in GetTradeProductPriority(preferredProduct, snapshot.SynchronizedCredits, snapshot.HoldsEmpty))
                 {
                     foreach (int buyerSector in adjacentSectors)
                     {
@@ -343,7 +372,7 @@ internal sealed class MtcFreshAdjacentSectorProvider(
                 TradeProduct? product = null;
                 if (IsRegularPort(sellerPort) && IsRegularPort(currentPort))
                 {
-                    foreach (TradeProduct productPriority in GetTradeProductPriority(preferredProduct))
+                    foreach (TradeProduct productPriority in GetTradeProductPriority(preferredProduct, snapshot.SynchronizedCredits, snapshot.HoldsEmpty))
                     {
                         if (PortTradeCompatibility.FindTradeProduct(
                                 sellerPort!.ClassIndex,
@@ -369,16 +398,23 @@ internal sealed class MtcFreshAdjacentSectorProvider(
                 }
             }
 
+            // Before the scanner, a funded agent heads to StarDock instead of starting distant trades; once a scanner is
+            // installed, multi-hop pairs are how it keeps earning (adjacent pairs alone are rare).
+            bool scannerInstalled = snapshot.DensityScannerInstalled is true || snapshot.HoloScannerInstalled is true;
             if (snapshot.SynchronizedCredits is { } credits &&
                 (credits < AutonomousTradePolicy.MinimumScannerUpgradeCredits ||
-                 preferredProduct is not null))
+                 preferredProduct is not null ||
+                 scannerInstalled))
             {
                 AutonomousPortTradeOpportunity? knownPair = FindNearestTradePlan(
                     database,
                     currentSector,
                     nextSector,
                     excludedTradeSectors,
-                    preferredProduct);
+                    preferredProduct,
+                    scannerless: !scannerInstalled,
+                    availableCredits: credits,
+                    emptyHolds: snapshot.HoldsEmpty);
                 if (knownPair is not null)
                 {
                     return Task.FromResult<AutonomousPortTradeOpportunity?>(knownPair);
@@ -521,10 +557,12 @@ internal sealed class MtcFreshAdjacentSectorProvider(
                     continue;
                 }
 
-                TradeProduct? product = PortTradeCompatibility.FindTradeProduct(
+                TradeProduct? product = PortTradeCompatibility.FindMostProfitableProduct(
                     seller!.SectorPort!.ClassIndex,
                     buyer!.SectorPort!.ClassIndex,
-                    preferredProduct);
+                    preferredProduct,
+                    snapshot.SynchronizedCredits,
+                    snapshot.HoldsEmpty);
                 if (product is not { } tradeProduct)
                 {
                     continue;
@@ -827,6 +865,22 @@ internal sealed class MtcFreshAdjacentSectorProvider(
         return (null, null);
     }
 
+    private static TradeProduct? FindCarriedPairProduct(GameSnapshot snapshot, int sellerClass, int buyerClass) =>
+        PortTradeCompatibility.ValueOrder
+            .Where(product =>
+                CarriedUnits(snapshot, product) > 0 &&
+                PortTradeCompatibility.SellsProduct(sellerClass, product) &&
+                PortTradeCompatibility.BuysProduct(buyerClass, product))
+            .Cast<TradeProduct?>()
+            .FirstOrDefault();
+
+    private static int CarriedUnits(GameSnapshot snapshot, TradeProduct product) => product switch
+    {
+        TradeProduct.FuelOre => snapshot.FuelOre ?? 0,
+        TradeProduct.Organics => snapshot.Organics ?? 0,
+        _ => snapshot.Equipment ?? 0
+    };
+
     private static bool HasCarriedCargo(GameSnapshot snapshot) =>
         snapshot.FuelOre is > 0 ||
         snapshot.Organics is > 0 ||
@@ -837,13 +891,19 @@ internal sealed class MtcFreshAdjacentSectorProvider(
         int currentSector,
         int? preferredRouteSector,
         IReadOnlySet<int>? excludedTradeSectors,
-        TradeProduct? preferredProduct)
+        TradeProduct? preferredProduct,
+        bool scannerless,
+        long? availableCredits = null,
+        int? emptyHolds = null)
     {
+        int starDockSector = database.DBHeader.StarDock;
         var ports = new Dictionary<int, Core.Port>();
         for (int sector = 1; sector <= database.SectorCount; sector++)
         {
             Core.SectorData? sectorData = database.GetSector(sector);
-            if (IsFresh(sectorData) && IsRegularPort(sectorData?.SectorPort))
+            if (IsFresh(sectorData) &&
+                IsRegularPort(sectorData?.SectorPort) &&
+                (!scannerless || IsScannerlessSectorAllowed(sector, sectorData, starDockSector)))
             {
                 ports[sector] = sectorData!.SectorPort!;
             }
@@ -851,6 +911,7 @@ internal sealed class MtcFreshAdjacentSectorProvider(
 
         AutonomousPortTradeOpportunity? bestPlan = null;
         int bestProductPriority = int.MaxValue;
+        double bestProfitPerHop = double.MinValue;
         int bestDistance = int.MaxValue;
         int bestPairDistance = int.MaxValue;
         int bestRoutePriority = int.MaxValue;
@@ -865,14 +926,18 @@ internal sealed class MtcFreshAdjacentSectorProvider(
                 database,
                 sellerSector,
                 ports,
-                MaximumPortPairTradeHops);
+                MaximumPortPairTradeHops,
+                scannerless,
+                starDockSector);
             if (reachableBuyers.Count == 0)
             {
                 continue;
             }
 
             IReadOnlyList<int> path = database.CalculateShortestPath(currentSector, sellerSector);
-            if (path.Count == 0 || (sellerSector != currentSector && path.Count <= 1))
+            if (path.Count == 0 ||
+                (sellerSector != currentSector && path.Count <= 1) ||
+                (scannerless && !IsScannerlessRouteAllowed(database, path, starDockSector)))
             {
                 continue;
             }
@@ -882,35 +947,61 @@ internal sealed class MtcFreshAdjacentSectorProvider(
 
             foreach ((int buyerSector, int pairDistance) in reachableBuyers)
             {
-                if (buyerSector == sellerSector ||
-                    excludedTradeSectors?.Contains(buyerSector) == true)
+                // The attempted set only stops another trade *at* a port; the port just traded at is often the best
+                // partner (the other half of a bidirectional pair), so it is not excluded as a buyer.
+                if (buyerSector == sellerSector)
                 {
                     continue;
                 }
 
                 Core.Port buyerPort = ports[buyerSector];
-                TradeProduct? product = PortTradeCompatibility.FindTradeProduct(
+                IReadOnlyList<int> pairPath = database.CalculateShortestPath(sellerSector, buyerSector);
+                if (pairPath.Count is < 2 or > MaximumPortPairTradeHops + 1 ||
+                    (scannerless &&
+                     !IsScannerlessRouteAllowed(database, pairPath, starDockSector)))
+                {
+                    continue;
+                }
+                TradeProduct? product = PortTradeCompatibility.FindMostProfitableProduct(
                     sellerPort.ClassIndex,
                     buyerPort.ClassIndex,
-                    preferredProduct);
+                    preferredProduct,
+                    availableCredits,
+                    emptyHolds);
                 if (product is not { } tradeProduct)
                 {
                     continue;
                 }
                 int productPriority =
                     preferredProduct is { } preferred && tradeProduct != preferred ? 1 : 0;
+                // Round-trip profit per hop: the cargo carried to the buyer plus the best cargo carried back. A pair
+                // that trades Organics one way and Equipment the other earns on both legs and ranks highest.
+                long returnProfit = PortTradeCompatibility.FindMostProfitableProduct(
+                        buyerPort.ClassIndex,
+                        sellerPort.ClassIndex,
+                        null,
+                        availableCredits,
+                        emptyHolds) is { } returnProduct
+                    ? PortTradeCompatibility.EstimateTripProfit(returnProduct, availableCredits, emptyHolds)
+                    : 0;
+                double profitPerHop =
+                    (PortTradeCompatibility.EstimateTripProfit(tradeProduct, availableCredits, emptyHolds) + returnProfit) /
+                    (double)Math.Max(1, distance + 2 * pairDistance);
 
                 if (productPriority > bestProductPriority ||
                     (productPriority == bestProductPriority &&
-                     (distance > bestDistance ||
-                      (distance == bestDistance &&
-                       (pairDistance > bestPairDistance ||
-                        (pairDistance == bestPairDistance && routePriority >= bestRoutePriority))))))
+                     (profitPerHop < bestProfitPerHop ||
+                      (profitPerHop == bestProfitPerHop &&
+                       (distance > bestDistance ||
+                        (distance == bestDistance &&
+                         (pairDistance > bestPairDistance ||
+                          (pairDistance == bestPairDistance && routePriority >= bestRoutePriority))))))))
                 {
                     continue;
                 }
 
                 bestProductPriority = productPriority;
+                bestProfitPerHop = profitPerHop;
                 bestDistance = distance;
                 bestPairDistance = pairDistance;
                 bestRoutePriority = routePriority;
@@ -932,7 +1023,9 @@ internal sealed class MtcFreshAdjacentSectorProvider(
         Core.ModDatabase database,
         int sellerSector,
         IReadOnlyDictionary<int, Core.Port> ports,
-        int maximumHops)
+        int maximumHops,
+        bool scannerless,
+        int starDockSector)
     {
         var distances = new Dictionary<int, int>();
         var visited = new HashSet<int> { sellerSector };
@@ -957,6 +1050,11 @@ internal sealed class MtcFreshAdjacentSectorProvider(
                 {
                     continue;
                 }
+                Core.SectorData? nextData = database.GetSector(nextSector);
+                if (scannerless && !IsScannerlessSectorAllowed(nextSector, nextData, starDockSector))
+                {
+                    continue;
+                }
 
                 int nextDistance = current.Distance + 1;
                 if (ports.ContainsKey(nextSector))
@@ -964,7 +1062,7 @@ internal sealed class MtcFreshAdjacentSectorProvider(
                     distances[nextSector] = nextDistance;
                 }
 
-                if (nextDistance < maximumHops && IsFresh(database.GetSector(nextSector)))
+                if (nextDistance < maximumHops && IsFresh(nextData))
                 {
                     pending.Enqueue((nextSector, nextDistance));
                 }
@@ -973,6 +1071,22 @@ internal sealed class MtcFreshAdjacentSectorProvider(
 
         return distances;
     }
+
+    private static bool IsScannerlessRouteAllowed(
+        Core.ModDatabase database,
+        IReadOnlyList<int> route,
+        int starDockSector) =>
+        route.All(sector =>
+            IsScannerlessSectorAllowed(sector, database.GetSector(sector), starDockSector));
+
+    private static bool IsScannerlessSectorAllowed(
+        int sector,
+        Core.SectorData? sectorData,
+        int starDockSector) =>
+        sector != 99 &&
+        (sector is >= 1 and <= 10 ||
+         sector == starDockSector ||
+         IsFresh(sectorData) && sectorData!.Explored == Core.ExploreType.Yes);
 
     private static AutonomousPortTradeOpportunity? FindNearestCargoBuyerPlan(
         Core.ModDatabase database,
@@ -1037,7 +1151,9 @@ internal sealed class MtcFreshAdjacentSectorProvider(
         Core.SectorData currentSector,
         int? preferredPartnerSector,
         IReadOnlySet<int>? excludedTradeSectors,
-        TradeProduct? preferredProduct)
+        TradeProduct? preferredProduct,
+        GameSnapshot snapshot,
+        TradeProduct soldProduct)
     {
         Core.Port? sellerPort = currentSector.SectorPort;
         if (!IsRegularPort(sellerPort))
@@ -1045,48 +1161,101 @@ internal sealed class MtcFreshAdjacentSectorProvider(
             return (null, null);
         }
 
-        IEnumerable<int> adjacentSectors = currentSector.Warp
-            .Where(destination =>
-                destination > 0 &&
-                destination <= database.SectorCount &&
-                destination != currentSector.Number)
-            .Select(destination => (int)destination)
-            .Distinct()
-            .OrderBy(destination => destination == preferredPartnerSector ? 0 : 1)
-            .ThenBy(destination => destination);
-
-        int[] partnerSectors = adjacentSectors.ToArray();
-        foreach (TradeProduct productPriority in GetTradeProductPriority(preferredProduct))
+        // Credits and holds once the carried cargo is sold, so the follow-up product is chosen for what the ship can
+        // actually buy here (a sale usually makes Equipment or Organics affordable).
+        int soldUnits = soldProduct switch
         {
-            foreach (int partnerSector in partnerSectors)
-            {
-                if (excludedTradeSectors?.Contains(partnerSector) == true)
-                {
-                    continue;
-                }
+            TradeProduct.FuelOre => snapshot.FuelOre ?? 0,
+            TradeProduct.Organics => snapshot.Organics ?? 0,
+            _ => snapshot.Equipment ?? 0
+        };
+        (int soldUnitCost, int soldUnitMargin) = PortTradeCompatibility.TypicalEconomics(soldProduct);
+        long? creditsAfterSale = snapshot.SynchronizedCredits is { } credits
+            ? credits + (long)soldUnits * (soldUnitCost + soldUnitMargin)
+            : null;
+        int? emptyHoldsAfterSale = snapshot.HoldsEmpty is { } empty ? empty + soldUnits : null;
 
-                Core.SectorData? partnerData = database.GetSector(partnerSector);
-                Core.Port? partnerPort = partnerData?.SectorPort;
-                TradeProduct? product = IsFresh(partnerData) && IsRegularPort(partnerPort)
-                    ? PortTradeCompatibility.FindTradeProduct(
-                        sellerPort!.ClassIndex,
-                        partnerPort!.ClassIndex,
-                        productPriority)
-                    : null;
-                if (product == productPriority)
-                {
-                    return (productPriority, partnerSector);
-                }
+        bool scannerless = snapshot.DensityScannerInstalled is not true && snapshot.HoloScannerInstalled is not true;
+        int starDockSector = database.DBHeader.StarDock;
+        var ports = new Dictionary<int, Core.Port>();
+        for (int sector = 1; sector <= database.SectorCount; sector++)
+        {
+            Core.SectorData? sectorData = database.GetSector(sector);
+            if (sector != currentSector.Number &&
+                IsFresh(sectorData) &&
+                IsRegularPort(sectorData?.SectorPort) &&
+                (!scannerless || IsScannerlessSectorAllowed(sector, sectorData, starDockSector)))
+            {
+                ports[sector] = sectorData!.SectorPort!;
             }
         }
 
-        return (null, null);
+        IReadOnlyDictionary<int, int> partners = FindReachablePortDistances(
+            database,
+            currentSector.Number,
+            ports,
+            MaximumPortPairTradeHops,
+            scannerless,
+            starDockSector);
+        TradeProduct? bestProduct = null;
+        int? bestPartner = null;
+        int bestProductPriority = int.MaxValue;
+        double bestProfitPerHop = double.MinValue;
+        int bestPartnerPriority = int.MaxValue;
+        int bestDistance = int.MaxValue;
+        foreach ((int partnerSector, int distance) in partners.OrderBy(pair => pair.Key))
+        {
+            TradeProduct? product = PortTradeCompatibility.FindMostProfitableProduct(
+                sellerPort!.ClassIndex,
+                ports[partnerSector].ClassIndex,
+                preferredProduct,
+                creditsAfterSale,
+                emptyHoldsAfterSale);
+            if (product is not { } tradeProduct)
+            {
+                continue;
+            }
+
+            int productPriority = preferredProduct is { } preferred && tradeProduct != preferred ? 1 : 0;
+            // Round trip: also count what the partner sells that this port buys, so a two-way pair wins.
+            long returnProfit = PortTradeCompatibility.FindMostProfitableProduct(
+                    ports[partnerSector].ClassIndex,
+                    sellerPort.ClassIndex,
+                    null,
+                    creditsAfterSale,
+                    emptyHoldsAfterSale) is { } returnProduct
+                ? PortTradeCompatibility.EstimateTripProfit(returnProduct, creditsAfterSale, emptyHoldsAfterSale)
+                : 0;
+            double profitPerHop =
+                (PortTradeCompatibility.EstimateTripProfit(tradeProduct, creditsAfterSale, emptyHoldsAfterSale) + returnProfit) /
+                (double)Math.Max(1, 2 * distance);
+            int partnerPriority = partnerSector == preferredPartnerSector ? 0 : 1;
+            if (productPriority > bestProductPriority ||
+                productPriority == bestProductPriority &&
+                (profitPerHop < bestProfitPerHop ||
+                 profitPerHop == bestProfitPerHop &&
+                 (partnerPriority > bestPartnerPriority ||
+                  partnerPriority == bestPartnerPriority && distance >= bestDistance)))
+            {
+                continue;
+            }
+
+            bestProductPriority = productPriority;
+            bestProfitPerHop = profitPerHop;
+            bestPartnerPriority = partnerPriority;
+            bestDistance = distance;
+            bestProduct = tradeProduct;
+            bestPartner = partnerSector;
+        }
+
+        return (bestProduct, bestPartner);
     }
 
-    private static IReadOnlyList<TradeProduct> GetTradeProductPriority(TradeProduct? preferredProduct) =>
-        preferredProduct is { } preferred
-            ? [preferred, .. Enum.GetValues<TradeProduct>().Where(product => product != preferred)]
-            : [TradeProduct.Equipment, TradeProduct.FuelOre, TradeProduct.Organics];
+    private static IReadOnlyList<TradeProduct> GetTradeProductPriority(
+        TradeProduct? preferredProduct,
+        long? availableCredits = null,
+        int? emptyHolds = null) =>
+        PortTradeCompatibility.RankByProfit(preferredProduct, availableCredits, emptyHolds);
 
     private static bool IsFresh(DateTime observedAt)
     {

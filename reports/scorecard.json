@@ -1474,6 +1474,461 @@
         "A manual CIM refresh completed, but the read-only Pair Port Trade plan found no complementary pair from the current map data.",
         "The app auto-started Meridian after restart; it was explicitly stopped after verifying the hold. Runtime metrics and LLM history were unavailable, so those scores remain null."
       ]
+    },
+    {
+      "iteration": 32,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": null,
+      "autonomous_recovery_score": null,
+      "regression_rate": 100.0,
+      "defect_closure_rate": 18.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": false,
+        "observed_productive_seconds": null,
+        "metric_samples": 1,
+        "metrics_start": "2026-10-31T03:31:25.450-06:00",
+        "metrics_end": "2026-10-31T03:31:25.450-06:00",
+        "end_of_window_process": {
+          "working_set_mib": 524.1,
+          "private_mib": 471.2,
+          "threads": 95
+        },
+        "end_of_window_container_memory_mib": {
+          "litellm": 325.1,
+          "api": 47.71,
+          "openwebui": 691.2,
+          "apache": 6.98,
+          "db": 32.05
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": false,
+        "reflex_responses": 294,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The full window ran from 2026-10-31T03:16:25.006-06:00 to 2026-10-31T03:31:25.450-06:00 (900.444 seconds). The process survived; exact connected seconds were not retained.",
+        "The game log recorded 159 sector changes and 480 turns consumed. The ship moved 805→172→551, then repeatedly 172↔206. Three trade attempts produced no verified transaction; credits remained 500, all 20 holds were empty, and no scanner or WorldTrade progress was verified.",
+        "The copied debug log showed 294 Reflex processing entries and no Pilot or Strategic entries. The event archive does not retain prompt/response content, so lane invocation and contract compliance cannot be fully audited.",
+        "The end-of-window resource snapshot was MTC 524.1 MiB working set, 471.2 MiB private memory, 95 threads; container memory in MiB: LiteLLM 325.1, API 47.71, OpenWebUI 691.2, Apache 6.98, DB 32.05. These are endpoint samples, not time-series averages.",
+        "After the window, the worker recovery path was fixed to pass verified credits into the sender and accept exact-balance quotes. The focused worker tests passed 71/71 and the MTC RPC safety/dashboard harness passed 149 checks. This source repair was not live-validated.",
+        "DEFECT-0026 recurred. The StarDock route-opportunity payload and hold inputs were not retained, so the departure cause remains unknown. Six of 32 defects are runtime-validated."
+      ]
+    },
+    {
+      "iteration": 33,
+      "build_stability_score": null,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": null,
+      "autonomous_recovery_score": null,
+      "regression_rate": null,
+      "defect_closure_rate": 18.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": null,
+        "early_terminated": null,
+        "observed_productive_seconds": null,
+        "metric_samples": 0,
+        "metrics_start": null,
+        "metrics_end": null
+      },
+      "llm_contract_observations": {
+        "pilot_responses": null,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": null,
+        "reflex_contract_failures": null,
+        "strategic_responses": null,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The session handoff says the run completed but retained no raw runtime archive or timestamps. Do not infer the actual duration or productivity score.",
+        "The last reported state was 500 credits and 20 empty holds with no scanner. A 161-credit Fuel Ore quote was answered with 0; no trade or WorldTrade progress was verified."
+      ]
+    },
+    {
+      "iteration": 34,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 99.95,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": 100.0,
+      "defect_closure_rate": 18.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 899.576,
+        "process_survived": true,
+        "early_terminated": false,
+        "observed_productive_seconds": 899.576,
+        "metric_samples": 29,
+        "metrics_start": "2026-10-31T04:17:30.4973975-06:00",
+        "metrics_end": "2026-10-31T04:32:27.4494584-06:00",
+        "sample_interval_elapsed_seconds": 896.952,
+        "average_working_set_mib": 490.7,
+        "minimum_working_set_mib": 418.5,
+        "maximum_working_set_mib": 569.5,
+        "average_private_mib": 438.5,
+        "minimum_private_mib": 364.0,
+        "maximum_private_mib": 519.5,
+        "average_thread_count": 94.97,
+        "minimum_thread_count": 91,
+        "maximum_thread_count": 99,
+        "sample_cpu_seconds": 431.6875,
+        "sample_one_core_cpu_percent": 48.13,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "api": 47.71,
+          "openwebui": 691.2,
+          "apache": 6.977,
+          "db": 32.05
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 324.9,
+          "api": 47.71,
+          "openwebui": 691.2,
+          "apache": 6.977,
+          "db": 32.05
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": 328,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "MTC remained alive through the scheduled 15-minute window and closed gracefully at 2026-10-31T04:32:30.048-06:00, 0.424 seconds before the planned end.",
+        "The run recorded 168 sector transitions among 172, 206, and 805. Three Fuel Ore purchases were attempted; the 107- and 191-credit quotes were declined despite 500 available credits, while the 140-credit attempt had no verified balance. Credits remained 500 and all 20 holds stayed empty.",
+        "The debug log contained 328 Reflex entries but no Pilot or Strategic entries. No scanner purchase, scan, or WorldTrade start was verified.",
+        "The root cause and source repairs are recorded in DEFECT-0029. The next live run is required to verify a purchase and fresh cargo/credit deltas."
+      ]
+    },
+    {
+      "iteration": 35,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 98.89,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": 0.0,
+      "defect_closure_rate": 18.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 889.969,
+        "process_survived": true,
+        "early_terminated": false,
+        "observed_productive_seconds": 32.443,
+        "metric_samples": 26,
+        "metrics_start": "2026-10-31T04:49:51.1170996-06:00",
+        "metrics_end": "2026-10-31T05:03:11.8509224-06:00",
+        "sample_interval_elapsed_seconds": 800.734,
+        "average_working_set_mib": 468.7,
+        "minimum_working_set_mib": 398.7,
+        "maximum_working_set_mib": 543.1,
+        "average_private_mib": 415.8,
+        "minimum_private_mib": 346.0,
+        "maximum_private_mib": 489.0,
+        "average_thread_count": 92.9,
+        "minimum_thread_count": 89,
+        "maximum_thread_count": 97,
+        "sample_cpu_seconds": 94.61,
+        "sample_one_core_cpu_percent": 11.82,
+        "container_memory_mib_first_sample": {
+          "litellm": 326.1,
+          "api": 47.71,
+          "openwebui": 691.2,
+          "apache": 6.977,
+          "db": 32.05
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.1,
+          "api": 47.71,
+          "openwebui": 691.2,
+          "apache": 6.977,
+          "db": 32.05
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": 12,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The scheduled window was 2026-10-31T04:48:19.091-06:00 to 05:03:19.091-06:00. Shutdown was requested at 05:03:19.097; the process exited at 05:03:24.262 after 905.171 seconds.",
+        "The 191-credit Fuel Ore quote was accepted at 05:02:46.648. A fresh snapshot verified 20 Fuel Ore, 20/20 occupied holds, and 309 credits at 05:02:51.118; the ship then moved from sector 805 to 290.",
+        "The next port offered 876 credits for the 20 Fuel Ore, but the quote was still unanswered at shutdown. No earnings, scanner purchase, or WorldTrade start were verified.",
+        "Two server disconnect gaps totaled 10.031 seconds and auto-reconnected. The persisted debug log contained 12 Reflex entries and no Pilot or Strategic entries; lane invocation remains ambiguous."
+      ]
+    },
+    {
+      "iteration": 36,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 98.88,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": 0.0,
+      "defect_closure_rate": 18.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 889.964,
+        "process_survived": true,
+        "early_terminated": false,
+        "observed_productive_seconds": null,
+        "metric_samples": 28,
+        "metrics_start": "2026-10-31T05:15:47.688-06:00",
+        "metrics_end": "2026-10-31T05:30:12.506-06:00",
+        "sample_interval_elapsed_seconds": 864.8,
+        "average_working_set_mib": 536.5,
+        "minimum_working_set_mib": 433.4,
+        "maximum_working_set_mib": 571.9,
+        "average_private_mib": 486.0,
+        "minimum_private_mib": 390.0,
+        "maximum_private_mib": 519.6,
+        "average_thread_count": 92.9,
+        "minimum_thread_count": 89,
+        "maximum_thread_count": 102,
+        "sample_cpu_seconds": 89.44,
+        "sample_one_core_cpu_percent": 10.34,
+        "container_memory_mib_first_sample": {
+          "litellm": 324.9,
+          "api": 47.71,
+          "openwebui": 691.6,
+          "apache": 6.977,
+          "db": 32.05
+        },
+        "container_memory_mib_last_sample": {
+          "litellm": 325.1,
+          "api": 47.71,
+          "openwebui": 691.3,
+          "apache": 6.977,
+          "db": 32.05
+        }
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": 14,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The scheduled window was 2026-10-31T05:15:19.913-06:00 to 05:30:19.913-06:00. Shutdown was requested at 05:30:19.010; the process exited at 05:30:24.199 after 905.199 seconds.",
+        "The ship began at sector 290 with 309 credits and 20 empty holds, moved to sector 805, then made two 20-hold Fuel Ore purchase attempts. Neither quote was accepted or verified; no positive credit delta, scanner purchase, or WorldTrade start was recorded.",
+        "Two reconnect gaps totaled 10.036 seconds. The debug log contained 14 Reflex entries and no Pilot or Strategic entries; lane invocation remains ambiguous without durable role history.",
+        "The 5-second trade-prompt correlation gap was extended to 45 seconds after the live window. The delayed-correlation regression case passed; the Release build has 0 warnings and 0 errors. Iteration 37 must live-validate this repair."
+      ]
+    },
+    {
+      "iteration": 37,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 98.99,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": 0.0,
+      "defect_closure_rate": 18.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 890.912,
+        "process_survived": true,
+        "early_terminated": false,
+        "observed_productive_seconds": 0,
+        "metric_samples": 30,
+        "metrics_start": "2026-10-31T05:37:30.248-06:00",
+        "metrics_end": "2026-10-31T05:52:01.132-06:00",
+        "sample_interval_elapsed_seconds": 870.9,
+        "average_working_set_mib": 532.4,
+        "minimum_working_set_mib": 407.4,
+        "maximum_working_set_mib": 572.4,
+        "average_private_mib": 481.3,
+        "minimum_private_mib": 353.5,
+        "maximum_private_mib": 519.9,
+        "sample_cpu_seconds": 94.9,
+        "sample_one_core_cpu_percent": 10.9
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": 8,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The observation window ran from 2026-10-31T05:37:30.237-06:00 to 05:52:31.171 and lasted 900.934 seconds. The 30-second sampler overshot the 900-second target by 0.934 seconds; cap the final sleep in subsequent runs.",
+        "Meridian began at sector 805 with 309 credits and 20 empty holds and ended at sector 805 with 309 credits and 20 empty holds. It selected 20 Fuel Ore holds three times; the offers were 153, 215, and 153 credits, all affordable, but none was answered. No trade, scanner purchase, or WorldTrade start was verified.",
+        "Two reconnect gaps totaled 10.022 seconds. The debug log contained eight Reflex entries and no Pilot or Strategic entries; role invocation remains ambiguous without durable prompt/reply history.",
+        "The event archive showed confirmed presence heartbeats repeating the PortTradeOffer surface after actual quote prompts. The source now excludes heartbeat copies from actionable trade recovery and pending-prompt sequencing.",
+        "After the run, the MTC safety/dashboard harness passed 151 checks and the Release build succeeded with 0 warnings and 0 errors. The heartbeat repair requires live validation in iteration 38."
+      ]
+    },
+    {
+      "iteration": 38,
+      "build_stability_score": 99.64,
+      "runtime_stability_score": 99.44,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": 100.0,
+      "regression_rate": 0.0,
+      "defect_closure_rate": 18.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 895.010,
+        "process_survived": true,
+        "early_terminated": false,
+        "observed_productive_seconds": null,
+        "metric_samples": 31,
+        "metrics_start": "2026-10-31T06:07:43.354-06:00",
+        "metrics_end": "2026-10-31T06:22:43.358-06:00",
+        "sample_interval_elapsed_seconds": 900.0,
+        "average_working_set_mib": 480.0,
+        "minimum_working_set_mib": 401.4,
+        "maximum_working_set_mib": 615.3,
+        "average_private_mib": 425.2,
+        "minimum_private_mib": 344.5,
+        "maximum_private_mib": 562.1,
+        "sample_cpu_seconds": 197.7,
+        "sample_one_core_cpu_percent": 21.97
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": 65,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The observation window ran from 2026-10-31T06:07:43.350-06:00 to 06:22:43.375 and lasted 900.026 seconds.",
+        "Nine verified port transactions increased credits from 309 to 4,072 (+3,763). The ship reached StarDock sector 551 carrying 20 Fuel Ore; no scanner purchase or WorldTrade start was verified.",
+        "The heartbeat filtering repair was live-validated. A separate Organics recovery attempt lost its requested product and 1,010-credit context and submitted 0; a pre-send active-trade context repair is now covered by worker and MTC harness regressions.",
+        "One reconnect gap lasted approximately 5.016 seconds. The debug log contained 65 Reflex entries and no Pilot or Strategic entries; role invocation remains ambiguous without durable prompt/reply history.",
+        "The MTC harness passed 152 checks and the Release build succeeded with 0 warnings and 0 errors. The worker test class passed 72/72. The full suite had one transient WorldEngine fixture cleanup failure (275/276); that test passed in isolation."
+      ]
+    },
+    {
+      "iteration": 39,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": null,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": 0.0,
+      "defect_closure_rate": 18.8,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": null,
+        "process_survived": true,
+        "early_terminated": false,
+        "observed_productive_seconds": null,
+        "metric_samples": 30,
+        "metrics_start": "2026-10-31T06:37:06.1054406-06:00",
+        "metrics_end": "2026-10-31T06:52:06.1021510-06:00",
+        "sample_interval_elapsed_seconds": 900.006,
+        "average_working_set_mib": 499.8,
+        "minimum_working_set_mib": 434.2,
+        "maximum_working_set_mib": 587.6,
+        "average_private_mib": 443.9,
+        "minimum_private_mib": 381.2,
+        "maximum_private_mib": 531.6,
+        "sample_cpu_seconds": 420.3,
+        "sample_one_core_cpu_percent": 46.7
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": null,
+        "reflex_responses": 330,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The observation window ran from 2026-10-31T06:37:06.096-06:00 to 06:52:07.884 and lasted 901.788 seconds per shutdown metadata. The process survived; exact connected duration was not recorded.",
+        "The run began at StarDock sector 551 with 4,072 credits and 20 Fuel Ore, and ended at sector 172 with 5,752 credits and 20 empty holds. A 20-unit Fuel Ore purchase and sale were accepted; a later 209-credit quote lost recovery context and was followed by an unnecessary 0 at an Organics quantity prompt.",
+        "No Density Scanner purchase or WorldTrade start was verified. The available debug log contained 330 Reflex entries and no Pilot or Strategic entries; missing durable history prevents concluding that those lanes were never invoked.",
+        "After the live run, active trade context was changed to remain available until fresh transaction verification or bounded expiry. Targeted recovery tests passed 2/2, the full worker test class passed 73/73, the full TradeWars suite passed 277/277, the MTC harness passed 152 checks, and the MTC Release build succeeded with 0 warnings and 0 errors.",
+        "The capture interval was 900.006 seconds, but shutdown metadata overshot the scheduled window by 1.788 seconds. Recompute remaining time after metrics/container sampling."
+      ]
+    },
+    {
+      "iteration": 40,
+      "build_stability_score": 100.0,
+      "runtime_stability_score": 100.0,
+      "llm_reasoning_score": null,
+      "prompt_quality_score": 100.0,
+      "autonomous_recovery_score": null,
+      "regression_rate": 0.0,
+      "defect_closure_rate": 21.9,
+      "sampled_runtime": {
+        "window_seconds": 900,
+        "connected_seconds": 900,
+        "process_survived": true,
+        "early_terminated": false,
+        "observed_productive_seconds": null,
+        "metric_samples": 29,
+        "metrics_start": "2026-10-31T07:08:56.618-06:00",
+        "metrics_end": "2026-10-31T07:23:53.156-06:00",
+        "sample_interval_elapsed_seconds": 896.541,
+        "average_working_set_mib": 470.2,
+        "minimum_working_set_mib": 431.5,
+        "maximum_working_set_mib": 571.4,
+        "average_private_mib": 414.8,
+        "minimum_private_mib": 375.2,
+        "maximum_private_mib": 521.4,
+        "sample_cpu_seconds": 89.312,
+        "sample_one_core_cpu_percent": 9.96
+      },
+      "llm_contract_observations": {
+        "pilot_responses": 0,
+        "pilot_requests_completed": null,
+        "pilot_requests_failed": null,
+        "pilot_history_visible": false,
+        "reflex_responses": 54,
+        "reflex_contract_failures": null,
+        "strategic_responses": 0,
+        "aggregate_contract_compliance_percent": null
+      },
+      "notes": [
+        "The measured window ran from 2026-10-31T07:08:56.613-06:00 to 07:23:56.634 and lasted 900.019 seconds. MTC remained connected through the window; client disconnection was logged after the cutoff.",
+        "Before the measured window, startup trading bought 20 Fuel Ore for 197 credits and moved the ship from sector 172 to StarDock 551. At the window start it had 5,555 credits and a full 20-unit hold. A separate Equipment quantity prompt logged selected=0; it was not a price-quote response, and its strategic intent is unconfirmed.",
+        "Within the window, untracked recovery retained the selected 20-unit Fuel Ore sale and 5,555-credit context, accepted a 966-credit quote, and fresh ship telemetry verified 6,521 credits and 20 empty holds at sector 551.",
+        "No Density Scanner purchase or WorldTrade start was verified. An HTTP fetch of dashboard markup included 0 decisions and generic unhandled/reconnect text, but without an interactive browser this does not confirm the reconnect state was visibly active. The debug log contained 54 Reflex entries and no Pilot or Strategic entries; missing durable history prevents distinguishing uninvoked lanes from missing telemetry.",
+        "The delayed recovery fix is live-validated. The full TradeWars suite passed 277/277, the worker tests 73/73, the MTC harness 152 checks, and the MTC Release build had 0 warnings and 0 errors. No source changes were made in this iteration.",
+        "The remaining-time-capped sampler finished at 900.019 seconds, 0.019 seconds beyond the target."
+      ]
     }
   ]
 }

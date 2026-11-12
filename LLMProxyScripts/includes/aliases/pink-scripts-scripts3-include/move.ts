@@ -34,7 +34,7 @@ send "a9999*"
 pause
     
 :MinePrompt
-send "*"
+send "n"
 pause
     
 :Arrived
@@ -60,7 +60,11 @@ waitOn "Relative Density Scan"
 waitOn "Command [TL="
 elseif ($NoScan = 0)
 setVar $scannedHolo 0
+if ($DensityOnlyScanner = 1)
+send "s"
+else
 send "sd"
+end
 waitOn "Relative Density Scan"
 waitOn "Command [TL="
 end

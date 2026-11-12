@@ -11,6 +11,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using LLMSurvivingProxyAgent.Runtime;
 using SkiaSharp;
 using Core = TWXProxy.Core;
 
@@ -169,7 +170,7 @@ public partial class MainWindow
 
     private Control BuildLayout()
     {
-        // Root: DockPanel – menu top, status bottom, swappable shell in the middle.
+        // The root keeps the agent dashboard footer separate from each terminal's controls.
         var dock = new DockPanel { Background = HudWindow };
         _rootDock = dock;
 
@@ -178,8 +179,6 @@ public partial class MainWindow
         // ── Menu ──────────────────────────────────────────────────────────
         _menuBar = BuildMenuBar();
         _menuBarHost.Child = BuildMenuBarHost();
-        DockPanel.SetDock(_menuBarHost, Dock.Top);
-        dock.Children.Add(_menuBarHost);
 
         // ── Status bar ────────────────────────────────────────────────────
         _statusText.Text              = "[ disconnected ]";
@@ -211,9 +210,8 @@ public partial class MainWindow
         _statusBar.Height = UiSize(34);
         InvalidateStatusBarLayout();
         _statusBar.Child = _statusBarLayoutRoot;
-        _statusBar.IsVisible = _activeWorkspaceView == WorkspaceView.AgentTerminal && _appPrefs.ShowBottomBar;
-        DockPanel.SetDock(_statusBar, Dock.Bottom);
-        dock.Children.Add(_statusBar);
+        _statusBar.IsVisible = _activeWorkspaceView == WorkspaceView.AgentTerminal &&
+            _appPrefs.ShowBottomBar;
 
         _shellHost.Background = Brushes.Transparent;
         _dashboardPage = BuildDashboardPlaceholder();
@@ -221,15 +219,40 @@ public partial class MainWindow
         _workspacePageHost.Children.Add(_dashboardPage);
         _shellHost.Child = _workspacePageHost;
         _shellHost.Padding = new Thickness(0);
+        _mtcSessionWindowHost = new MtcSessionWindowHost(this, _shellHost);
+        _mtcSessionWindowHost.SessionsChanged += RefreshDockedSessionNavigation;
+        _mtcSessionWindowHost.SelectionChanged += OnMtcSessionSelectionChanged;
+
+        DockPanel.SetDock(BuildAgentDashboardFooter(), Dock.Bottom);
+        dock.Children.Add(_agentDashboardFooter);
+
+        _agentDashboardFooterTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromSeconds(2),
+        };
+        _agentDashboardFooterTimer.Tick += (_, _) => RefreshAgentDashboardFooter();
+        _agentDashboardFooterTimer.Start();
 
         var workspaceGrid = new Grid { Background = HudWindow };
-        workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(UiSize(236)) });
-        workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Control workspaceNavigation = BuildWorkspaceNavigation();
-        Grid.SetColumn(workspaceNavigation, 0);
-        Grid.SetColumn(_shellHost, 1);
-        workspaceGrid.Children.Add(workspaceNavigation);
-        workspaceGrid.Children.Add(_shellHost);
+        if (IsDockedSessionWindow)
+        {
+            workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star)
+            });
+            Grid.SetColumn(_shellHost, 0);
+            workspaceGrid.Children.Add(_shellHost);
+        }
+        else
+        {
+            workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(UiSize(236)) });
+            workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Control workspaceNavigation = BuildWorkspaceNavigation();
+            Grid.SetColumn(workspaceNavigation, 0);
+            Grid.SetColumn(_shellHost, 1);
+            workspaceGrid.Children.Add(workspaceNavigation);
+            workspaceGrid.Children.Add(_shellHost);
+        }
         dock.Children.Add(workspaceGrid);
 
         ApplySelectedSkinSafe();
@@ -314,11 +337,13 @@ public partial class MainWindow
         AddWorkspaceNavigationButton(content, "controller-settings", "System settings",
             () => NavigateDashboardAsync("controller-settings", "/controller-settings"));
 
-        AddWorkspaceNavigationHeader(content, "MERIDIAN · AGENT SESSION");
+        string agentId = DefaultAgentId;
+        string escapedAgentId = Uri.EscapeDataString(agentId);
+        AddWorkspaceNavigationHeader(content, $"{agentId.ToUpperInvariant()} · AGENT SESSION");
         AddWorkspaceNavigationButton(content, "agent-overview", "Overview",
-            () => NavigateDashboardAsync("agent-overview", "/agents/meridian"));
+            () => NavigateDashboardAsync("agent-overview", $"/agents/{escapedAgentId}"));
         AddWorkspaceNavigationButton(content, "agent-monitor", "Live monitor",
-            () => NavigateDashboardAsync("agent-monitor", "/agents/meridian/monitor"));
+            () => NavigateDashboardAsync("agent-monitor", $"/agents/{escapedAgentId}/monitor"));
         AddWorkspaceNavigationButton(content, "agent-live", "Live terminal",
             () =>
             {
@@ -327,15 +352,26 @@ public partial class MainWindow
                 return Task.CompletedTask;
             });
         AddWorkspaceNavigationButton(content, "agent-runtime", "Runtime",
-            () => NavigateDashboardAsync("agent-runtime", "/agents/meridian/runtime"));
+            () => NavigateDashboardAsync("agent-runtime", $"/agents/{escapedAgentId}/runtime"));
         AddWorkspaceNavigationButton(content, "agent-strategy", "Strategy",
-            () => NavigateDashboardAsync("agent-strategy", "/agents/meridian/strategy"));
+            () => NavigateDashboardAsync("agent-strategy", $"/agents/{escapedAgentId}/strategy"));
         AddWorkspaceNavigationButton(content, "agent-objectives", "Objectives",
-            () => NavigateDashboardAsync("agent-objectives", "/agents/meridian/objectives"));
+            () => NavigateDashboardAsync("agent-objectives", $"/agents/{escapedAgentId}/objectives"));
         AddWorkspaceNavigationButton(content, "agent-events", "Events",
-            () => NavigateDashboardAsync("agent-events", "/agents/meridian/events"));
+            () => NavigateDashboardAsync("agent-events", $"/agents/{escapedAgentId}/events"));
         AddWorkspaceNavigationButton(content, "agent-settings", "Session settings",
-            () => NavigateDashboardAsync("agent-settings", "/agents/meridian/settings"));
+            () => NavigateDashboardAsync("agent-settings", $"/agents/{escapedAgentId}/settings"));
+
+        AddWorkspaceNavigationHeader(content, "MTC GAME SESSIONS");
+        AddWorkspaceNavigationButton(content, "mtc-local-session",
+            $"{GetGameAgentGameName()} · {agentId}",
+            () =>
+            {
+                _mtcSessionWindowHost?.ActivateLocal();
+                return Task.CompletedTask;
+            });
+        content.Children.Add(_dockedSessionNavigation);
+        RefreshDockedSessionNavigation();
 
         var navigation = new Border
         {
@@ -352,6 +388,80 @@ public partial class MainWindow
 
         RefreshWorkspaceNavigationState();
         return navigation;
+    }
+
+    private void RefreshDockedSessionNavigation()
+    {
+        foreach (string key in _workspaceNavigationButtons.Keys
+                     .Where(key => key.StartsWith("mtc-docked:", StringComparison.OrdinalIgnoreCase) ||
+                                   key.Equals("mtc-undock-active", StringComparison.OrdinalIgnoreCase))
+                     .ToArray())
+        {
+            _workspaceNavigationButtons.Remove(key);
+        }
+
+        _dockedSessionNavigation.Children.Clear();
+        if (_mtcSessionWindowHost is null)
+        {
+            RefreshAgentDashboardFooter();
+            return;
+        }
+
+        foreach (MtcDockedSessionInfo session in _mtcSessionWindowHost.GetSessions())
+        {
+            string id = $"mtc-docked:{session.AgentId}";
+            string state = session.Error is not null
+                ? " · window operation failed"
+                : session.IsDocked
+                    ? string.Empty
+                    : session.IsReady ? " · separate window" : " · starting";
+            AddWorkspaceNavigationButton(
+                _dockedSessionNavigation,
+                id,
+                $"{session.GameName} · {session.AgentId}{state}",
+                () =>
+                {
+                    _mtcSessionWindowHost.Activate(session.AgentId);
+                    return Task.CompletedTask;
+                });
+        }
+
+        if (_mtcSessionWindowHost.ActiveAgentId is not null &&
+            _mtcSessionWindowHost.GetSessions().Any(session =>
+                string.Equals(session.AgentId, _mtcSessionWindowHost.ActiveAgentId,
+                    StringComparison.OrdinalIgnoreCase) &&
+                session.IsDocked))
+        {
+            AddWorkspaceNavigationButton(
+                _dockedSessionNavigation,
+                "mtc-undock-active",
+                "Undock selected session",
+                () =>
+                {
+                    _mtcSessionWindowHost.UndockActive();
+                    return Task.CompletedTask;
+                });
+        }
+
+        RefreshWorkspaceNavigationState();
+        RefreshAgentDashboardFooter();
+    }
+
+    private void OnMtcSessionSelectionChanged(string? agentId)
+    {
+        if (agentId is null)
+        {
+            _activeWorkspaceNavigationId = "mtc-local-session";
+            SetWorkspaceView(WorkspaceView.AgentTerminal);
+        }
+        else
+        {
+            _activeWorkspaceNavigationId = $"mtc-docked:{agentId}";
+            SetWorkspaceView(WorkspaceView.DockedMtcSession);
+        }
+
+        RefreshWorkspaceNavigationState();
+        RefreshAgentDashboardFooter();
     }
 
     private void AddWorkspaceNavigationHeader(StackPanel content, string label)
@@ -427,7 +537,7 @@ public partial class MainWindow
                     },
                     new TextBlock
                     {
-                        Text = "Terminal for the Meridian agent session. The game connection remains explicit.",
+                        Text = $"Terminal for the {DefaultAgentId} agent session. The game connection remains explicit.",
                         Foreground = HudMuted,
                         FontSize = 11,
                     },
@@ -436,16 +546,241 @@ public partial class MainWindow
         };
 
         var page = new DockPanel();
+        DockPanel.SetDock(_menuBarHost, Dock.Top);
+        page.Children.Add(_menuBarHost);
         DockPanel.SetDock(header, Dock.Top);
         page.Children.Add(header);
+        DockPanel.SetDock(_statusBar, Dock.Bottom);
+        page.Children.Add(_statusBar);
         page.Children.Add(terminalShell);
         return page;
     }
 
+    private Control BuildAgentDashboardFooter()
+    {
+        _agentDashboardFooter.Background = BgStatus;
+        _agentDashboardFooter.IsVisible = !IsDockedSessionWindow;
+        _agentDashboardFooter.BorderBrush = HudEdge;
+        _agentDashboardFooter.BorderThickness = new Thickness(0, 1, 0, 0);
+        _agentDashboardFooter.Height = UiSize(62);
+        _agentDashboardFooter.Padding = UiThickness(8, 4, 8, 4);
+
+        _agentDashboardFooterTitle.Foreground = HudText;
+        _agentDashboardFooterTitle.FontSize = UiSize(11);
+        _agentDashboardFooterTitle.FontWeight = FontWeight.Bold;
+        _agentDashboardFooterTitle.TextTrimming = TextTrimming.CharacterEllipsis;
+
+        _agentDashboardFooterDetails.Foreground = HudMuted;
+        _agentDashboardFooterDetails.FontSize = UiSize(10);
+        _agentDashboardFooterDetails.TextTrimming = TextTrimming.CharacterEllipsis;
+
+        _agentDashboardFooterTelemetry.Foreground = HudMuted;
+        _agentDashboardFooterTelemetry.FontSize = UiSize(10);
+        _agentDashboardFooterTelemetry.TextTrimming = TextTrimming.CharacterEllipsis;
+
+        var content = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+            },
+            ColumnSpacing = UiSize(10),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(_agentDashboardFooterTabs, 0);
+        content.Children.Add(_agentDashboardFooterTabs);
+
+        var details = new StackPanel
+        {
+            Spacing = UiSize(2),
+            VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                _agentDashboardFooterTitle,
+                _agentDashboardFooterDetails,
+                _agentDashboardFooterTelemetry,
+            },
+        };
+        Grid.SetColumn(details, 1);
+        content.Children.Add(details);
+        _agentDashboardFooter.Child = content;
+
+        RefreshAgentDashboardFooter();
+        return _agentDashboardFooter;
+    }
+
+    private void RefreshAgentDashboardFooter()
+    {
+        if (_agentDashboardFooter.Child is null)
+            return;
+
+        _agentDashboardFooterTabs.Children.Clear();
+        string? selectedAgentId =
+            _activeWorkspaceView == WorkspaceView.DockedMtcSession
+                ? _mtcSessionWindowHost?.ActiveAgentId
+                : null;
+        AddAgentDashboardTab(
+            DefaultAgentId,
+            DefaultAgentId,
+            "LOCAL",
+            selectedAgentId is null);
+
+        IReadOnlyList<MtcDockedSessionInfo> sessions =
+            _mtcSessionWindowHost?.GetSessions() ?? [];
+        foreach (MtcDockedSessionInfo session in sessions)
+        {
+            AddAgentDashboardTab(
+                session.AgentId,
+                session.GameName,
+                session.Error is not null
+                    ? "ERROR"
+                    : session.IsReady ? "OPEN" : "STARTING",
+                string.Equals(selectedAgentId, session.AgentId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (selectedAgentId is not null)
+        {
+            MtcDockedSessionInfo? session = sessions.FirstOrDefault(item =>
+                string.Equals(item.AgentId, selectedAgentId, StringComparison.OrdinalIgnoreCase));
+            if (session is not null)
+            {
+                string processState = session.Error is not null
+                    ? $"SESSION ERROR · {session.Error}"
+                    : session.IsReady
+                        ? session.IsDocked ? "DOCKED SESSION" : "SEPARATE WINDOW"
+                        : "SESSION STARTING";
+                _agentDashboardFooterTitle.Text =
+                    $"{session.AgentId} · {processState} · {session.GameName}";
+                _agentDashboardFooterDetails.Text =
+                    $"MTC process {session.ProcessId} · live worker and model telemetry are shown in this session";
+                _agentDashboardFooterTelemetry.Text = session.Error is null
+                    ? "Select LOCAL to return to this process; select another agent tab to switch sessions."
+                    : session.Error;
+                _agentDashboardFooterTitle.Foreground =
+                    session.Error is null ? HudText : HudAccentWarn;
+                return;
+            }
+        }
+
+        GameAgentBackgroundStatusSnapshot snapshot =
+            _dashboardHost.GetAgentMonitorSnapshot(DefaultAgentId);
+        string workerState = snapshot.LearningModeRunning
+            ? "LEARN"
+            : snapshot.AutonomousWorkerRunning
+                ? "RUNNING"
+                : snapshot.Worker?.IsConnected == true
+                    ? "CONNECTED"
+                    : snapshot.DashboardHostAvailable ? "STOPPED" : "STARTING";
+        string gameName = string.IsNullOrWhiteSpace(_state.GameName)
+            ? "No game selected"
+            : _state.GameName;
+        _agentDashboardFooterTitle.Text =
+            $"{DefaultAgentId} · {workerState} · {gameName}";
+        _agentDashboardFooterTitle.Foreground =
+            snapshot.AutonomousWorkerRunning || snapshot.LearningModeRunning
+                ? HudAccentOk
+                : HudText;
+
+        AutonomousTestWorkerStatus? worker = snapshot.Worker;
+        string modelLabel = worker is null || string.IsNullOrWhiteSpace(worker.ModelName)
+            ? "model unavailable"
+            : $"{worker.ModelProvider}/{worker.ModelName}";
+        string requests = worker is null
+            ? "requests 0 · failures 0"
+            : $"requests {worker.ModelRequestsCompleted} · failures {worker.ModelRequestFailures}" +
+              (worker.LastModelRequestDuration is { } duration
+                  ? $" · last {duration.TotalMilliseconds:N0} ms"
+                  : string.Empty);
+        _agentDashboardFooterDetails.Text =
+            $"MTC process {Environment.ProcessId} · {modelLabel} · {requests}";
+
+        AgentRuntimeStatus? runtime = snapshot.Runtime;
+        string runtimeSummary = runtime is null
+            ? "LLM runtime unavailable"
+            : $"runtime {(runtime.IsRunning ? "running" : "stopped")} · " +
+              $"queues R{runtime.ReactiveQueueDepth}/S{runtime.StrategicQueueDepth}";
+        string activity = string.IsNullOrWhiteSpace(worker?.Activity)
+            ? "No recent agent activity"
+            : worker.Activity;
+        _agentDashboardFooterTelemetry.Text = $"{runtimeSummary} · {activity}";
+    }
+
+    private void AddAgentDashboardTab(
+        string agentId,
+        string label,
+        string state,
+        bool selected)
+    {
+        var title = new TextBlock
+        {
+            Text = label,
+            FontSize = UiSize(10),
+            FontWeight = FontWeight.Bold,
+            Foreground = HudText,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        var subtitle = new TextBlock
+        {
+            Text = state,
+            FontSize = UiSize(8),
+            Foreground = HudMuted,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        var button = new Button
+        {
+            Content = new StackPanel
+            {
+                Spacing = 1,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children = { title, subtitle },
+            },
+            MinWidth = UiSize(78),
+            Height = UiSize(44),
+            Padding = UiThickness(7, 3, 7, 3),
+            Background = selected ? HudHeader : HudFrame,
+            BorderBrush = selected ? HudAccent : HudInnerEdge,
+            BorderThickness = new Thickness(1),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(button, $"{agentId} · {state}");
+        button.Click += (_, _) => SelectAgentDashboardTab(agentId);
+        _agentDashboardFooterTabs.Children.Add(button);
+    }
+
+    private void SelectAgentDashboardTab(string agentId)
+    {
+        if (string.Equals(agentId, DefaultAgentId, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_mtcSessionWindowHost?.ActiveAgentId is not null)
+                _mtcSessionWindowHost.ActivateLocal();
+            else
+                SetWorkspaceView(WorkspaceView.AgentTerminal);
+        }
+        else
+        {
+            _mtcSessionWindowHost?.Activate(agentId);
+        }
+
+        RefreshAgentDashboardFooter();
+    }
+
     private void SetWorkspaceView(WorkspaceView view)
     {
+        if (view != WorkspaceView.DockedMtcSession &&
+            _mtcSessionWindowHost?.ActiveAgentId is not null)
+        {
+            _mtcSessionWindowHost.HideAll();
+        }
+
         _activeWorkspaceView = view;
-        if (view == WorkspaceView.AgentTerminal)
+        if (view == WorkspaceView.AgentTerminal &&
+            !string.Equals(
+                _activeWorkspaceNavigationId,
+                "mtc-local-session",
+                StringComparison.OrdinalIgnoreCase))
             _activeWorkspaceNavigationId = "agent-live";
         if (_dashboardPage is null)
             throw new InvalidOperationException("The dashboard page has not been initialized.");
@@ -454,6 +789,13 @@ public partial class MainWindow
         {
             _shellHost.Padding = new Thickness(0);
             _dashboardPage.IsVisible = true;
+            if (_agentTerminalPage is not null)
+                _agentTerminalPage.IsVisible = false;
+        }
+        else if (view == WorkspaceView.DockedMtcSession)
+        {
+            _shellHost.Padding = new Thickness(0);
+            _dashboardPage.IsVisible = false;
             if (_agentTerminalPage is not null)
                 _agentTerminalPage.IsVisible = false;
         }
@@ -478,7 +820,8 @@ public partial class MainWindow
 
         if (_sessionMenuBarTools != null)
             _sessionMenuBarTools.IsVisible = view == WorkspaceView.AgentTerminal;
-        _statusBar.IsVisible = view == WorkspaceView.AgentTerminal && _appPrefs.ShowBottomBar;
+        _statusBar.IsVisible = view == WorkspaceView.AgentTerminal &&
+            _appPrefs.ShowBottomBar;
         RefreshNativeAppMenu();
         RefreshNativeDockMenu();
         RefreshWorkspaceNavigationState();
@@ -2054,6 +2397,7 @@ public partial class MainWindow
         _menuBar.Foreground = HudText;
         _menuBarHost.Background = HudMenu;
         _statusBar.Background = HudStatus;
+        _agentDashboardFooter.Background = BgStatus;
         _statusText.Foreground = HudText;
         _statusTerminalSizeText.Foreground = HudMuted;
         UpdateTerminalLiveSelector();
@@ -2616,6 +2960,10 @@ public partial class MainWindow
         _statusBotFrame.VerticalAlignment = VerticalAlignment.Center;
         _statusHaggleFrame.Margin = new Thickness(0, 4, 0, 4);
         _statusHaggleFrame.VerticalAlignment = VerticalAlignment.Center;
+        _statusAgentPauseFrame.Margin = new Thickness(0, 4, 0, 4);
+        _statusAgentPauseFrame.VerticalAlignment = VerticalAlignment.Center;
+        _statusAgentLearnFrame.Margin = new Thickness(0, 4, 0, 4);
+        _statusAgentLearnFrame.VerticalAlignment = VerticalAlignment.Center;
         _statusLivePausedFrame.Margin = new Thickness(0, 4, 0, 4);
         _statusLivePausedFrame.VerticalAlignment = VerticalAlignment.Center;
         _statusRedAlertFrame.Margin = new Thickness(0, 4, 8, 4);
@@ -2634,6 +2982,8 @@ public partial class MainWindow
                 _statusMapFrame,
                 _statusBotFrame,
                 _statusHaggleFrame,
+                _statusAgentPauseFrame,
+                _statusAgentLearnFrame,
                 _statusCommFrame,
                 _statusStopAllFrame,
                 _statusMacrosFrame,

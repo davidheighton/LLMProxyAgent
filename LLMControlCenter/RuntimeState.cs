@@ -33,7 +33,11 @@ public partial class MainWindow
         ObserveGameAgentConnectionChanged(connected: true);
         RefreshSessionLogTarget(CurrentInterpreter?.ScriptDirectory);
         // Open (or create) the sector database for this game connection
-        OpenSessionDatabase(DeriveGameName(), _state.Sectors, useSharedProxyDatabase: false);
+        if (!OpenSessionDatabase(DeriveGameName(), _state.Sectors, useSharedProxyDatabase: false))
+        {
+            _telnet.Disconnect();
+            return;
+        }
         Dispatcher.UIThread.Post(() =>
         {
             SetTerminalConnected(true);

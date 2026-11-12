@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
 using LLMSurvivingProxyAgent.Core;
 
 namespace LLMSurvivingProxyAgent.Runtime;
@@ -6,6 +8,9 @@ public sealed class GameSituationObservationService(
     IGameSituationProvider situationProvider,
     IAgentExperienceRecorder experienceRecorder)
 {
+    private readonly ConcurrentDictionary<string, string> _lastRecordedStates =
+        new(StringComparer.Ordinal);
+
     public async Task<GameSituationObservationResult> CaptureAndRecordAsync(
         string agentId,
         string sessionId,
@@ -26,6 +31,41 @@ public sealed class GameSituationObservationService(
             sessionId,
             report,
             cancellationToken);
+        return new GameSituationObservationResult(report, true, null);
+    }
+
+    public async Task<GameSituationObservationResult> CaptureAndRecordChangedAsync(
+        string agentId,
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        var report = await situationProvider.CaptureSituationAsync(agentId, cancellationToken);
+        var rejectionReason = GetRejectionReason(report);
+        if (rejectionReason is not null)
+        {
+            return new GameSituationObservationResult(report, false, rejectionReason);
+        }
+
+        string sessionKey = $"{agentId}\n{sessionId}";
+        string stateFingerprint = GetStateFingerprint(report);
+        if (_lastRecordedStates.TryGetValue(sessionKey, out string? lastState) &&
+            string.Equals(lastState, stateFingerprint, StringComparison.Ordinal))
+        {
+            return new GameSituationObservationResult(
+                report,
+                false,
+                "The synchronized game state has not changed since the previous observation.");
+        }
+
+        await experienceRecorder.RecordSituationObservationAsync(
+            agentId,
+            sessionId,
+            report,
+            cancellationToken);
+        _lastRecordedStates[sessionKey] = stateFingerprint;
         return new GameSituationObservationResult(report, true, null);
     }
 
@@ -50,5 +90,27 @@ public sealed class GameSituationObservationService(
         }
 
         return null;
+    }
+
+    private static string GetStateFingerprint(GameSituationReport report)
+    {
+        GameSnapshot snapshot = report.Snapshot! with
+        {
+            ObservedAt = default,
+            CurrentPromptObservedAt = null
+        };
+        return JsonSerializer.Serialize(new
+        {
+            report.Presence,
+            report.Authentication,
+            report.Synchronization,
+            report.CurrentPrompt,
+            report.UnknownFields,
+            RecentServerText = report.RecentServerText.Select(item => item.Text).ToArray(),
+            ScriptInputPrompt = report.ScriptInputPrompt is { } prompt
+                ? new { prompt.ScriptName, prompt.Text, prompt.SingleKey }
+                : null,
+            Snapshot = snapshot
+        });
     }
 }

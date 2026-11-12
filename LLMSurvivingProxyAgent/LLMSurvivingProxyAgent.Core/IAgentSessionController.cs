@@ -3,6 +3,7 @@ namespace LLMSurvivingProxyAgent.Core;
 public sealed record AgentSessionControlStatus(
     bool IsConnected,
     bool IsAgentRunning,
+    bool IsLearning,
     bool CanConnect);
 
 public interface IAgentSessionController
@@ -21,4 +22,6 @@ public interface IAgentSessionController
     Task RefreshCimAsync(string agentId, CancellationToken cancellationToken = default);
     Task StartAgentAsync(string agentId, CancellationToken cancellationToken = default);
     Task StopAgentAsync(string agentId, CancellationToken cancellationToken = default);
+    Task StartLearningAsync(string agentId, CancellationToken cancellationToken = default);
+    Task StopLearningAsync(string agentId, CancellationToken cancellationToken = default);
 }

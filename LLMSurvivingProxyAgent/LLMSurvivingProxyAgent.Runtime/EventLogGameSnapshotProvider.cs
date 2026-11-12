@@ -664,10 +664,10 @@ public class EventLogGameSnapshotProvider :
             Alignment = TryGetMetadataInt64(metadata, "alignment", out _) ? alignment : null,
             CorporationId = TryGetMetadataInt32(metadata, "corporationId", out _) ? corporationId : null,
             HoloScannerInstalled = TryGetMetadataString(metadata, "scannerType", out var scannerType)
-                ? scannerType?.Contains("Holo", StringComparison.OrdinalIgnoreCase) == true
+                ? GameScannerType.IsHoloScanner(scannerType)
                 : null,
             DensityScannerInstalled = TryGetMetadataString(metadata, "scannerType", out scannerType)
-                ? scannerType?.Contains("Density", StringComparison.OrdinalIgnoreCase) == true
+                ? GameScannerType.IsDensityScanner(scannerType)
                 : null
         };
     }
@@ -738,12 +738,8 @@ public class EventLogGameSnapshotProvider :
             CorporationId = TryGetMetadataInt32(metadata, "corporationId", out int corporationId)
                 ? corporationId
                 : previousSnapshot.CorporationId,
-            HoloScannerInstalled = scannerType?.Contains(
-                "Holo",
-                StringComparison.OrdinalIgnoreCase) == true,
-            DensityScannerInstalled = scannerType?.Contains(
-                "Density",
-                StringComparison.OrdinalIgnoreCase) == true
+            HoloScannerInstalled = GameScannerType.IsHoloScanner(scannerType),
+            DensityScannerInstalled = GameScannerType.IsDensityScanner(scannerType)
         };
         return true;
     }

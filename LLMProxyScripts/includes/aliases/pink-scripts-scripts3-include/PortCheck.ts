@@ -15,13 +15,21 @@ return
 end
 end
 if ($Scanned = "0")
+if ($DensityOnly = 1)
+send "s"
+else
 send "sd"
+end
 waitOn "Relative Density Scan"
 waitOn "Command [TL="
 setVar $Scanned "1"
 end
   
-if ($Scanned = "1")
+# Density-only ships cannot holo-scan: on them "sh" is a scan followed by H (mine control), which stalls at the
+# mine-type prompt. Use the fresh density scan instead and require a lone port (density exactly 100) below.
+if ($Scanned = "1") and ($DensityOnly = 1)
+setVar $Scanned "2"
+elseif ($Scanned = "1")
 setVar $holoScan 0
 setVar $i 1
 while ($i <= SECTOR.WARPCOUNT[$Sector])
@@ -52,7 +60,7 @@ while ($i <= SECTOR.WARPCOUNT[$Sector]) and ($TradeProdA = "")
 setVar $sect SECTOR.WARPS[$Sector][$i]
 setVar $pairClass PORT.CLASS[$sect]
       
-if (($pairClass > 0) and ($pairClass < 9) and ((SECTOR.FIGS.QUANTITY[$sect] = "0") or (SECTOR.FIGS.OWNER[$sect] = "yours") or (SECTOR.FIGS.OWNER[$sect] = "belong to your Corp") or (($Danger = "1") and ($SECTOR.FIGS.QUANTITY[$sect] <= 20)) or ($Danger = "2")) and ((SECTOR.MINES.QUANTITY[$sect] = "0") or (SECTOR.MINES.OWNER[$sect] = "yours") or (SECTOR.MINES.OWNER[$sect] = "belong to your Corp") or (($Danger = "1") and ($SECTOR.MINES.QUANTITY[$sect] <= 5)) or ($Danger = "2")) and ((SECTOR.NAVHAZ[$sect] = 0) or ((SECTOR.NAVHAZ[$sect] <= 3) and ($Danger = "1")) or ($Danger = "2")) and ((SECTOR.PLANETCOUNT[$sect] = 0) or ($Danger = "2")) and ((SECTOR.TRADERCOUNT[$sect] = 0) or ($Danger = "2")))
+if (($pairClass > 0) and ($pairClass < 9) and (($DensityOnly <> 1) or (SECTOR.DENSITY[$sect] = 100)) and ((SECTOR.FIGS.QUANTITY[$sect] = "0") or (SECTOR.FIGS.OWNER[$sect] = "yours") or (SECTOR.FIGS.OWNER[$sect] = "belong to your Corp") or (($Danger = "1") and ($SECTOR.FIGS.QUANTITY[$sect] <= 20)) or ($Danger = "2")) and ((SECTOR.MINES.QUANTITY[$sect] = "0") or (SECTOR.MINES.OWNER[$sect] = "yours") or (SECTOR.MINES.OWNER[$sect] = "belong to your Corp") or (($Danger = "1") and ($SECTOR.MINES.QUANTITY[$sect] <= 5)) or ($Danger = "2")) and ((SECTOR.NAVHAZ[$sect] = 0) or ((SECTOR.NAVHAZ[$sect] <= 3) and ($Danger = "1")) or ($Danger = "2")) and ((SECTOR.PLANETCOUNT[$sect] = 0) or ($Danger = "2")) and ((SECTOR.TRADERCOUNT[$sect] = 0) or ($Danger = "2")))
         
 if ($PortType = 1)
 gosub :sub_PPTCheck

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json;
 using LLMSurvivingProxyAgent.Core;
 using LLMSurvivingProxyAgent.Runtime;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,6 +9,75 @@ namespace LLMSurvivingProxyAgent.TradeWars.Tests;
 
 public sealed class AutonomousTestWorkerTests
 {
+    [Fact]
+    public void DensityScannerFundingTargetIncludesPostPurchaseTradeReserve()
+    {
+        Assert.Equal(2_000, AutonomousTradePolicy.DensityScannerPurchaseCost);
+        Assert.Equal(500, AutonomousTradePolicy.MinimumPostDensityScannerTradeReserveCredits);
+        Assert.Equal(
+            2_500,
+            AutonomousTradePolicy.GetMinimumScannerUpgradeCredits(ScannerPurchaseTarget.Density));
+    }
+
+    [Fact]
+    public async Task SuppliesRecentTeamStatusToActionProvider()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        var teammate = new AgentTeamStatus(
+            "trade-team",
+            "game-e",
+            "Game E",
+            observedAt.AddSeconds(-1),
+            true,
+            552,
+            100,
+            35_000,
+            "Trade");
+        var teamStore = new RecordingAgentTeamStore([teammate]);
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(AutonomousTestAction.None, "No action."));
+        using var worker = CreateWorker(
+            eventHub,
+            new RecordingSituationProvider(CreateMovementEligibleSituation() with
+            {
+                CurrentPromptObservedAt = observedAt
+            }),
+            actionProvider,
+            new RecordingCommandSender(),
+            allowGameActions: false,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            teamStore: teamStore,
+            teamId: "trade-team",
+            sessionName: "Game D");
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+
+            await WaitForActionCallCountAsync(actionProvider, 1);
+
+            AgentTeamStatus publishedStatus = Assert.IsType<AgentTeamStatus>(teamStore.PublishedStatus);
+            Assert.Equal("trade-team", publishedStatus.TeamId);
+            Assert.Equal("meridian", publishedStatus.AgentId);
+            Assert.Equal("Game D", publishedStatus.SessionName);
+            Assert.True(publishedStatus.HasFreshSnapshot);
+            Assert.Equal(1, publishedStatus.CurrentSector);
+            Assert.Equal("trade-team", actionProvider.ActionContext!.TeamId);
+            Assert.Equal("game-e", Assert.Single(actionProvider.ActionContext.TeamMembers).AgentId);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
     [Fact]
     public async Task ExitsFreshNavPointSelectionWithoutCallingTheActionModel()
     {
@@ -532,6 +602,275 @@ public sealed class AutonomousTestWorkerTests
     }
 
     [Fact]
+    public async Task RequestsFreshSnapshotAfterRecoveringAnUntrackedTrade()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset connectedAt = DateTimeOffset.UtcNow;
+        var situation = new GameSituationReport(
+            connectedAt,
+            GamePresenceState.Connected,
+            GameAuthenticationState.Authenticated,
+            GameSynchronizationState.Healthy,
+            "Command",
+            connectedAt,
+            new GameSnapshot(369, 300, 20, null, connectedAt),
+            []);
+        var commandSender = new RecordingCommandSender();
+        var actionProvider = new SequenceActionProvider(
+            new AutonomousTestActionDecision(AutonomousTestAction.None, "No model action."));
+        var opportunity = new AutonomousPortTradeOpportunity(
+            PartnerSector: 206,
+            Product: TradeProduct.FuelOre,
+            SellingExistingCargo: false)
+        {
+            TradeSector = 369
+        };
+        using var worker = CreateWorker(
+            eventHub,
+            new RecordingSituationProvider(situation),
+            actionProvider,
+            commandSender,
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(opportunity));
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(connectedAt, "Connected")));
+            var quantityPromptAt = connectedAt.AddMilliseconds(1);
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(
+                    quantityPromptAt,
+                    "ServerPrompt",
+                    PromptSurface: "PortTradeQuantity")));
+            await commandSender.PortTradeRecoveryRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(
+                    quantityPromptAt.AddSeconds(1),
+                    "ServerPrompt",
+                    PromptSurface: "Command")));
+            await commandSender.StatusRequestSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Contains(
+                commandSender.Commands,
+                request => request.Command == GameCommand.RequestShipInformation);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task RecoversAnUntrackedPortTradeOfferPrompt()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset connectedAt = DateTimeOffset.UtcNow;
+        var situation = new GameSituationReport(
+            connectedAt,
+            GamePresenceState.Connected,
+            GameAuthenticationState.Authenticated,
+            GameSynchronizationState.Stale,
+            "PortTradeOffer",
+            connectedAt,
+            new GameSnapshot(369, 300, 20, null, connectedAt),
+            ["Synchronization health"]);
+        var commandSender = new RecordingCommandSender();
+        using var worker = CreateWorker(
+            eventHub,
+            new RecordingSituationProvider(situation),
+            new RecordingActionProvider(
+                new AutonomousTestActionDecision(AutonomousTestAction.None, "No model action.")),
+            commandSender,
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(connectedAt, "Connected")));
+            var offerPromptAt = connectedAt.AddMilliseconds(1);
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(
+                    offerPromptAt,
+                    "ServerPrompt",
+                    PromptSurface: "PortTradeOffer")));
+            await commandSender.PortTradeRecoveryRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal([offerPromptAt], commandSender.UntrackedPortTradePrompts);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task AnswersAFighterEncounterWithTheBoundedResolution()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset connectedAt = DateTimeOffset.UtcNow;
+        var situation = new GameSituationReport(
+            connectedAt,
+            GamePresenceState.Connected,
+            GameAuthenticationState.Authenticated,
+            GameSynchronizationState.Healthy,
+            "FighterEncounter",
+            connectedAt,
+            new GameSnapshot(2627, 3_000, 20, null, connectedAt),
+            []);
+        var commandSender = new RecordingCommandSender();
+        using var worker = CreateWorker(
+            eventHub,
+            new RecordingSituationProvider(situation),
+            new RecordingActionProvider(
+                new AutonomousTestActionDecision(AutonomousTestAction.None, "No model action.")),
+            commandSender,
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent("meridian", new ProxyGameEvent(connectedAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(connectedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "FighterEncounter")));
+            await WaitForCommandCountAsync(commandSender, 1);
+
+            Assert.Equal(new GameCommandRequest(GameCommand.ResolveFighterEncounter), commandSender.Commands.Single());
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task LeavesPortAndMovementPromptsToARunningWorldTradeScript()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset connectedAt = DateTimeOffset.UtcNow;
+        var situation = new GameSituationReport(
+            connectedAt,
+            GamePresenceState.Connected,
+            GameAuthenticationState.Authenticated,
+            GameSynchronizationState.Stale,
+            "PortTradeOffer",
+            connectedAt,
+            new GameSnapshot(369, 3_000, 20, null, connectedAt),
+            ["Synchronization health"]);
+        var commandSender = new RecordingCommandSender();
+        var scriptRunner = new RecordingGameScriptRunner();
+        await scriptRunner.StartWorldTradeModeAsync("meridian");
+        using var worker = CreateWorker(
+            eventHub,
+            new RecordingSituationProvider(situation),
+            new RecordingActionProvider(
+                new AutonomousTestActionDecision(AutonomousTestAction.None, "No model action.")),
+            commandSender,
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            gameScriptRunner: scriptRunner);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent("meridian", new ProxyGameEvent(connectedAt, "Connected")));
+            foreach ((string surface, int offsetMs) in new[] { ("PortTradeOffer", 1), ("StopInSector", 2), ("AutopilotConfirmation", 3) })
+            {
+                eventHub.TryPublish(new ProxySessionEvent(
+                    "meridian",
+                    new ProxyGameEvent(connectedAt.AddMilliseconds(offsetMs), "ServerPrompt", PromptSurface: surface)));
+            }
+            await Task.Delay(300);
+
+            Assert.Empty(commandSender.UntrackedPortTradePrompts);
+            Assert.Empty(commandSender.Commands);
+
+            // Once the script has stopped, the worker recovers an untracked port prompt as before.
+            await scriptRunner.StopWorldTradeModeAsync("meridian");
+            DateTimeOffset afterScriptAt = DateTimeOffset.UtcNow;
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(afterScriptAt, "ServerPrompt", PromptSurface: "PortTradeOffer")));
+            await commandSender.PortTradeRecoveryRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal([afterScriptAt], commandSender.UntrackedPortTradePrompts);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task RetriesUntrackedPortTradeRecoveryWhenQuantityPromptAdvancesToOffer()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset connectedAt = DateTimeOffset.UtcNow;
+        var situation = new GameSituationReport(
+            connectedAt,
+            GamePresenceState.Connected,
+            GameAuthenticationState.Authenticated,
+            GameSynchronizationState.Stale,
+            "PortTradeQuantity",
+            connectedAt,
+            new GameSnapshot(369, 300, 20, null, connectedAt),
+            ["Synchronization health"]);
+        var commandSender = new RecordingCommandSender();
+        using var worker = CreateWorker(
+            eventHub,
+            new RecordingSituationProvider(situation),
+            new RecordingActionProvider(
+                new AutonomousTestActionDecision(AutonomousTestAction.None, "No model action.")),
+            commandSender,
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(connectedAt, "Connected")));
+            var quantityPromptAt = connectedAt.AddMilliseconds(1);
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(
+                    quantityPromptAt,
+                    "ServerPrompt",
+                    PromptSurface: "PortTradeQuantity")));
+            await commandSender.PortTradeRecoveryRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            var offerPromptAt = quantityPromptAt.AddSeconds(1);
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(
+                    offerPromptAt,
+                    "ServerPrompt",
+                    PromptSurface: "PortTradeOffer")));
+            await commandSender.SecondPortTradeRecoveryRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(
+                [quantityPromptAt, offerPromptAt],
+                commandSender.UntrackedPortTradePrompts);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task RecoversAnUntrackedPortTradePromptOnlyOnceUntilCommandReturns()
     {
         var eventHub = new ProxyGameEventHub();
@@ -568,6 +907,7 @@ public sealed class AutonomousTestWorkerTests
                 new ProxyGameEvent(firstPromptAt, "ServerPrompt", PromptSurface: "PortTradeQuantity")));
             await commandSender.PortTradeRecoveryRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
+            Assert.Equal(300, commandSender.UntrackedAvailableCredits.Single());
             eventHub.TryPublish(new ProxySessionEvent(
                 "meridian",
                 new ProxyGameEvent(
@@ -981,6 +1321,118 @@ public sealed class AutonomousTestWorkerTests
     }
 
     [Fact]
+    public async Task NewCharacterIdentityIsPersistedToTheSelectedGameProfile()
+    {
+        string profileDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"tw-generated-login-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(profileDirectory);
+        string profilePath = Path.Combine(profileDirectory, "game-login.json");
+        await File.WriteAllTextAsync(
+            profilePath,
+            """
+            {
+              "AutonomousLogin": {
+                "Enabled": true,
+                "AgentId": "meridian",
+                "LoginName": "",
+                "SelectedGame": "default",
+                "Games": {
+                  "default": { "GameLetter": "E", "TraderAlias": "", "Password": "NovaPass42" },
+                  "enhanced": { "GameLetter": "H", "TraderAlias": "OtherTrader", "Password": "OtherPass42" }
+                }
+              }
+            }
+            """);
+        string sharedProfilePath = Path.Combine(profileDirectory, "shared-game-login.json");
+        File.Copy(profilePath, sharedProfilePath);
+
+        var eventHub = new ProxyGameEventHub();
+        var identityProvider = new RecordingLoginIdentityProvider();
+        using var worker = new AutonomousTestWorker(
+            "meridian",
+            "qwen3:8b",
+            new Uri("http://localhost:11434/"),
+            eventHub,
+            new RecordingSituationProvider(CreateEligibleSituation()),
+            new RecordingActionProvider(
+                new AutonomousTestActionDecision(AutonomousTestAction.None, "Wait for a command prompt.")),
+            new RecordingCommandSender(),
+            NullLogger<AutonomousTestWorker>.Instance,
+            loginCredentialProvider: new FixedLoginCredentialProvider(
+                new AutonomousGameLoginCredentials(
+                    string.Empty,
+                    "E",
+                    "NovaPass42",
+                    AllowNewCharacterCreation: true,
+                    GameProfileKey: "default",
+                    CredentialProfilePath: profilePath)),
+            loginInputSender: new RecordingLoginInputSender(),
+            loginIdentityProvider: identityProvider,
+            loginCredentialStore: new AutonomousLoginCredentialStore(sharedProfilePath));
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            JsonDocument? profile = null;
+            while (profile is null)
+            {
+                timeout.Token.ThrowIfCancellationRequested();
+                await Task.Delay(10, timeout.Token);
+                try
+                {
+                    var candidate = JsonDocument.Parse(await File.ReadAllTextAsync(profilePath, timeout.Token));
+                    var login = candidate.RootElement.GetProperty("AutonomousLogin");
+                    if (login.GetProperty("LoginName").GetString() == AutonomousTestWorker.MakeUniqueLoginName("Meridian", "meridian") &&
+                        login.GetProperty("Games").GetProperty("default")
+                            .GetProperty("HomePlanetName").GetString() == "New Terra")
+                    {
+                        profile = candidate;
+                    }
+                    else
+                    {
+                        candidate.Dispose();
+                    }
+                }
+                catch (Exception exception) when (exception is KeyNotFoundException or IOException or JsonException)
+                {
+                }
+            }
+
+            using (profile)
+            {
+                var login = profile.RootElement.GetProperty("AutonomousLogin");
+                var games = login.GetProperty("Games");
+                var selectedGame = games.GetProperty("default");
+                Assert.Equal(AutonomousTestWorker.MakeUniqueLoginName("Meridian", "meridian"), login.GetProperty("LoginName").GetString());
+                Assert.Equal("StarMap", selectedGame.GetProperty("TraderAlias").GetString());
+                Assert.Equal("NovaPass42", selectedGame.GetProperty("Password").GetString());
+                Assert.Equal("Starward Crown", selectedGame.GetProperty("ShipName").GetString());
+                Assert.Equal("New Terra", selectedGame.GetProperty("HomePlanetName").GetString());
+                Assert.Equal("OtherTrader", games.GetProperty("enhanced").GetProperty("TraderAlias").GetString());
+                Assert.False(games.TryGetProperty("E", out _));
+                Assert.Equal(
+                    ["login-name", "trader-alias", "ship-name", "home-planet-name"],
+                    identityProvider.Calls);
+            }
+
+            using var sharedProfile = JsonDocument.Parse(await File.ReadAllTextAsync(sharedProfilePath));
+            var sharedLogin = sharedProfile.RootElement.GetProperty("AutonomousLogin");
+            Assert.Equal(string.Empty, sharedLogin.GetProperty("LoginName").GetString());
+            Assert.Equal(
+                string.Empty,
+                sharedLogin.GetProperty("Games").GetProperty("default")
+                    .GetProperty("TraderAlias").GetString());
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+            Directory.Delete(profileDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task DeclinesNewCharacterPromptAndStopsBeforeGameplay()
     {
         var eventHub = new ProxyGameEventHub();
@@ -1337,7 +1789,7 @@ public sealed class AutonomousTestWorkerTests
         var actionProvider = new RecordingActionProvider(
             new AutonomousTestActionDecision(
                 AutonomousTestAction.MoveToAdjacentSector,
-                "Move one verified hop.",
+                "Move to the verified adjacent sector.",
                 3));
         var commandSender = new RecordingCommandSender();
         var moveTargetProvider = new RecordingMoveTargetProvider(
@@ -1677,6 +2129,74 @@ public sealed class AutonomousTestWorkerTests
     }
 
     [Fact]
+    public async Task RoutesAffordableHoloScannerShipTowardStarDockBeforeFedSpaceSweep()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        var situationProvider = new RecordingSituationProvider(
+            CreateMovementEligibleSituation() with
+            {
+                CurrentPromptObservedAt = observedAt,
+                Snapshot = new GameSnapshot(
+                    3,
+                    AutonomousTradePolicy.MinimumHoloScannerUpgradeCredits,
+                    65_520,
+                    new Ship("Meridian", string.Empty, "Merchant Cruiser", 3, 27, observedAt),
+                    observedAt)
+                {
+                    HoloScannerInstalled = false,
+                    DensityScannerInstalled = true,
+                    HoldsEmpty = 0,
+                    HoldsTotal = 18,
+                    FuelOre = 18,
+                    Organics = 0,
+                    Equipment = 0,
+                    Shields = 10
+                }
+            });
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.MoveToAdjacentSector,
+                "Follow the route to StarDock for the Holo Scanner.",
+                2));
+        var commandSender = new RecordingCommandSender();
+        var statusStore = new AutonomousTestWorkerStatusStore();
+        using var worker = CreateWorker(
+            eventHub,
+            situationProvider,
+            actionProvider,
+            commandSender,
+            new RecordingMoveTargetProvider([2, 3]),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            statusStore: statusStore,
+            gameWorldProvider: new FixedGameWorldProvider(551, 2, isFederationSpace: true),
+            moveApprovalGate: new ImmediateMoveApprovalGate());
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+            await WaitForCommandCountAsync(commandSender, 1);
+
+            Assert.Equal(0, actionProvider.CallCount);
+            Assert.Contains("Holo Scanner", statusStore.GetStatus("meridian").LastRationale);
+            Assert.Equal(
+                new GameCommandRequest(GameCommand.MoveToSector, 2),
+                commandSender.Commands.Last());
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task RoutesScannerlessShipTowardStarDockDespiteStaleTradingObjective()
     {
         var eventHub = new ProxyGameEventHub();
@@ -1742,7 +2262,89 @@ public sealed class AutonomousTestWorkerTests
     }
 
     [Fact]
-    public async Task KeepsScannerAcquisitionObjectiveAtStarDockDespiteStaleTradingObjective()
+    public async Task ResumesDecidedExplorationMoveAfterStaleStatusRefresh()
+    {
+        DateTimeOffset promptAt = DateTimeOffset.UtcNow;
+        GameSituationReport Situation(DateTimeOffset snapshotAt) => new(
+            DateTimeOffset.UtcNow,
+            GamePresenceState.Connected,
+            GameAuthenticationState.Authenticated,
+            GameSynchronizationState.Healthy,
+            "Command",
+            DateTimeOffset.UtcNow,
+            new GameSnapshot(551, 1, 500, null, snapshotAt)
+            {
+                HoldsEmpty = 20,
+                HoldsTotal = 20,
+                FuelOre = 0,
+                Organics = 0,
+                Equipment = 0,
+                DensityScannerInstalled = false,
+                HoloScannerInstalled = false
+            },
+            []);
+        // Call 2 is the pre-move revalidation: the model took long enough for the snapshot to go stale.
+        var situationProvider = new CallTimeSituationProvider(call =>
+            Situation(call == 2 ? DateTimeOffset.UtcNow.AddSeconds(-60) : DateTimeOffset.UtcNow));
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(AutonomousTestAction.MoveToAdjacentSector, "Explore 172.", 172));
+        var commandSender = new RecordingCommandSender();
+        var eventHub = new ProxyGameEventHub();
+        using var worker = CreateWorker(
+            eventHub,
+            situationProvider,
+            actionProvider,
+            commandSender,
+            new RecordingMoveTargetProvider(
+                [172, 750],
+                [
+                    new AdjacentSectorKnowledge(172, ExplorationStatus.Unknown, false, false),
+                    new AdjacentSectorKnowledge(750, ExplorationStatus.Unknown, false, false)
+                ]),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            actionObjectiveProvider: new RecordingActionObjectiveProvider(
+                new AutonomousActionObjective("Increase income", "Find a safe scanner-funding trade.")),
+            gameWorldProvider: new FixedGameWorldProvider(551, isFederationSpace: true),
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(null),
+            moveApprovalGate: new ImmediateMoveApprovalGate());
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent("meridian", new ProxyGameEvent(promptAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+            await WaitForCommandCountAsync(commandSender, 1);
+            Assert.Equal(GameCommand.RequestShipInformation, commandSender.Commands.Single().Command);
+
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(DateTimeOffset.UtcNow, "ServerPrompt", PromptSurface: "Command")));
+            await WaitForCommandCountAsync(commandSender, 2);
+
+            Assert.Equal(new GameCommandRequest(GameCommand.MoveToSector, 172), commandSender.Commands.Last());
+            Assert.Equal(1, actionProvider.CallCount);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private sealed class CallTimeSituationProvider(Func<int, GameSituationReport> create) : IGameSituationProvider
+    {
+        private int _calls;
+
+        public Task<GameSituationReport> CaptureSituationAsync(
+            string agentId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(create(Interlocked.Increment(ref _calls)));
+    }
+
+    [Fact]
+    public async Task ExplorationObjectiveKeepsBlockedScannerGoalAtStarDock()
     {
         DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         var situationProvider = new RecordingSituationProvider(
@@ -1793,17 +2395,15 @@ public sealed class AutonomousTestWorkerTests
                     PromptSurface: "Command")));
             await WaitForActionCallCountAsync(actionProvider, 1);
 
+            Assert.True(actionProvider.ActionContext!.ExplorationRequired);
+            Assert.Equal([172], actionProvider.ActionContext.AvailableAdjacentSectors);
             Assert.StartsWith(
+                "Explore an adjacent sector",
+                actionProvider.ActionContext.ActiveObjective?.Goal,
+                StringComparison.Ordinal);
+            Assert.Contains(
                 "Acquire the Density Scanner at StarDock sector 551",
-                actionProvider.ActionContext?.ActiveObjective?.Goal,
-                StringComparison.Ordinal);
-            Assert.Contains(
-                "verified compatible port-pair trade",
-                actionProvider.ActionContext?.ActiveObjective?.Rationale,
-                StringComparison.Ordinal);
-            Assert.Contains(
-                "Never enter sector 99 or an unexplored sector",
-                actionProvider.ActionContext?.ActiveObjective?.Rationale,
+                actionProvider.ActionContext.ActiveObjective?.Rationale,
                 StringComparison.Ordinal);
         }
         finally
@@ -1955,8 +2555,10 @@ public sealed class AutonomousTestWorkerTests
         }
     }
 
-    [Fact]
-    public async Task HoldsAtStarDockWithoutScannerWhenNoVerifiedFundingTradeExists()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExploresWhenScannerIsAffordableButNoStarDockRouteIsKnown(bool holdsFullOfFuelOreForDockShopper)
     {
         DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         var situationProvider = new RecordingSituationProvider(
@@ -1967,7 +2569,297 @@ public sealed class AutonomousTestWorkerTests
                 GameSynchronizationState.Healthy,
                 "Command",
                 observedAt,
-                new GameSnapshot(551, 1, 64, null, observedAt)
+                new GameSnapshot(20, 3_000, 500, null, observedAt)
+                {
+                    HoldsEmpty = holdsFullOfFuelOreForDockShopper ? 0 : 20,
+                    HoldsTotal = 20,
+                    FuelOre = holdsFullOfFuelOreForDockShopper ? 20 : 0,
+                    Organics = 0,
+                    Equipment = 0,
+                    DensityScannerInstalled = false,
+                    HoloScannerInstalled = false
+                },
+                []));
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.MoveToAdjacentSector,
+                "Chart a new sector to find a route to StarDock.",
+                750));
+        var commandSender = new RecordingCommandSender();
+        var eventHub = new ProxyGameEventHub();
+        using var worker = CreateWorker(
+            eventHub,
+            situationProvider,
+            actionProvider,
+            commandSender,
+            new RecordingMoveTargetProvider(
+                [172, 750],
+                [
+                    new AdjacentSectorKnowledge(172, ExplorationStatus.Explored, false, false),
+                    new AdjacentSectorKnowledge(750, ExplorationStatus.Explored, false, false)
+                ]),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            gameWorldProvider: new FixedGameWorldProvider(551, isFederationSpace: false),
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(
+                new AutonomousPortTradeOpportunity(PartnerSector: 172, TradeProduct.Organics, SellingExistingCargo: false)),
+            moveApprovalGate: new ImmediateMoveApprovalGate());
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+            DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while (commandSender.Commands.Count == 0 && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(10);
+            }
+
+            Assert.Equal(new GameCommandRequest(GameCommand.PlotCourseToSector, 551), commandSender.Commands.Single());
+
+            // The plot revealed no route, so the next decision explores instead of plotting again.
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(DateTimeOffset.UtcNow, "ServerPrompt", PromptSurface: "Command")));
+            deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while (commandSender.Commands.Count < 2 && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(10);
+            }
+
+            Assert.True(actionProvider.ActionContext!.ExplorationRequired);
+            Assert.Equal(new GameCommandRequest(GameCommand.MoveToSector, 750), commandSender.Commands.Last());
+            Assert.Equal(2, commandSender.Commands.Count);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task FollowsPlottedStarDockRouteThroughUnexploredSectorWithoutScanner()
+    {
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        var situationProvider = new RecordingSituationProvider(
+            new GameSituationReport(
+                observedAt,
+                GamePresenceState.Connected,
+                GameAuthenticationState.Authenticated,
+                GameSynchronizationState.Healthy,
+                "Command",
+                observedAt,
+                new GameSnapshot(20, 3_000, 500, null, observedAt)
+                {
+                    HoldsEmpty = 20,
+                    HoldsTotal = 20,
+                    FuelOre = 0,
+                    Organics = 0,
+                    Equipment = 0,
+                    DensityScannerInstalled = false,
+                    HoloScannerInstalled = false
+                },
+                []));
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(AutonomousTestAction.None, "Wait."));
+        var commandSender = new RecordingCommandSender();
+        var eventHub = new ProxyGameEventHub();
+        using var worker = CreateWorker(
+            eventHub,
+            situationProvider,
+            actionProvider,
+            commandSender,
+            new RecordingMoveTargetProvider(
+                [172, 750],
+                [
+                    new AdjacentSectorKnowledge(172, ExplorationStatus.WarpOnly, false, false),
+                    new AdjacentSectorKnowledge(750, ExplorationStatus.Explored, false, false)
+                ]),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            gameWorldProvider: new FixedGameWorldProvider(551, nextSector: 172, isFederationSpace: false),
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(null),
+            moveApprovalGate: new ImmediateMoveApprovalGate());
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+            DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while (commandSender.Commands.Count == 0 && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(10);
+            }
+
+            Assert.Equal(new GameCommandRequest(GameCommand.MoveToSector, 172), commandSender.Commands.Single());
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task SkipsNewBuysAndHeadsToStarDockOnceScannerIsAffordable()
+    {
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        var situationProvider = new RecordingSituationProvider(
+            new GameSituationReport(
+                observedAt,
+                GamePresenceState.Connected,
+                GameAuthenticationState.Authenticated,
+                GameSynchronizationState.Healthy,
+                "Command",
+                observedAt,
+                new GameSnapshot(20, 8_000, 500, null, observedAt)
+                {
+                    HoldsEmpty = 20,
+                    HoldsTotal = 20,
+                    FuelOre = 0,
+                    Organics = 0,
+                    Equipment = 0,
+                    DensityScannerInstalled = false,
+                    HoloScannerInstalled = false
+                },
+                []));
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(AutonomousTestAction.TradeAtCurrentPort, "Buy more cargo."));
+        var commandSender = new RecordingCommandSender();
+        var eventHub = new ProxyGameEventHub();
+        using var worker = CreateWorker(
+            eventHub,
+            situationProvider,
+            actionProvider,
+            commandSender,
+            new RecordingMoveTargetProvider(
+                [172, 750],
+                [
+                    new AdjacentSectorKnowledge(172, ExplorationStatus.Explored, false, false),
+                    new AdjacentSectorKnowledge(750, ExplorationStatus.Explored, false, false)
+                ]),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            gameWorldProvider: new FixedGameWorldProvider(551, nextSector: 172, isFederationSpace: false),
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(
+                new AutonomousPortTradeOpportunity(PartnerSector: 750, TradeProduct.Organics, SellingExistingCargo: false)),
+            moveApprovalGate: new ImmediateMoveApprovalGate());
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+            DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while (commandSender.Commands.Count == 0 && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(10);
+            }
+
+            Assert.Equal(new GameCommandRequest(GameCommand.MoveToSector, 172), commandSender.Commands.Single());
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task BuysFuelOreForDockShopperBeforeReturningToStarDock()
+    {
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        var situationProvider = new RecordingSituationProvider(
+            new GameSituationReport(
+                observedAt,
+                GamePresenceState.Connected,
+                GameAuthenticationState.Authenticated,
+                GameSynchronizationState.Healthy,
+                "Command",
+                observedAt,
+                new GameSnapshot(20, 8_000, 500, null, observedAt)
+                {
+                    HoldsEmpty = 20,
+                    HoldsTotal = 20,
+                    FuelOre = 0,
+                    Organics = 0,
+                    Equipment = 0,
+                    DensityScannerInstalled = false,
+                    HoloScannerInstalled = false
+                },
+                []));
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(AutonomousTestAction.TradeAtCurrentPort, "Buy Fuel Ore for the Dock Shopper."));
+        var commandSender = new RecordingCommandSender();
+        var eventHub = new ProxyGameEventHub();
+        using var worker = CreateWorker(
+            eventHub,
+            situationProvider,
+            actionProvider,
+            commandSender,
+            new RecordingMoveTargetProvider(
+                [172, 750],
+                [
+                    new AdjacentSectorKnowledge(172, ExplorationStatus.Explored, false, false),
+                    new AdjacentSectorKnowledge(750, ExplorationStatus.Explored, false, false)
+                ]),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            gameWorldProvider: new FixedGameWorldProvider(551, nextSector: 172, isFederationSpace: false),
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(
+                new AutonomousPortTradeOpportunity(PartnerSector: 551, TradeProduct.FuelOre, SellingExistingCargo: false)),
+            moveApprovalGate: new ImmediateMoveApprovalGate());
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+            DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while (commandSender.Commands.Count == 0 && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(10);
+            }
+
+            GameCommandRequest command = commandSender.Commands.Single();
+            Assert.Equal(GameCommand.TradeAtCurrentPort, command.Command);
+            Assert.Equal(TradeProduct.FuelOre, command.Product);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task ExploresFromStarDockWhenNoScannerFundingTradeExists()
+    {
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        var situationProvider = new RecordingSituationProvider(
+            new GameSituationReport(
+                observedAt,
+                GamePresenceState.Connected,
+                GameAuthenticationState.Authenticated,
+                GameSynchronizationState.Healthy,
+                "Command",
+                observedAt,
+                new GameSnapshot(551, 1, 500, null, observedAt)
                 {
                     HoldsEmpty = 20,
                     HoldsTotal = 20,
@@ -2003,7 +2895,8 @@ public sealed class AutonomousTestWorkerTests
                 new AutonomousActionObjective("Increase income", "Find a safe scanner-funding trade.")),
             gameWorldProvider: new FixedGameWorldProvider(551, isFederationSpace: true),
             portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(null),
-            statusStore: statusStore);
+            statusStore: statusStore,
+            moveApprovalGate: new ImmediateMoveApprovalGate());
 
         await worker.StartAsync(CancellationToken.None);
         try
@@ -2015,17 +2908,18 @@ public sealed class AutonomousTestWorkerTests
                 "meridian",
                 new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
             DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
-            while (statusStore.GetStatus("meridian").LastAction is null &&
-                   DateTimeOffset.UtcNow < deadline)
+            while (commandSender.Commands.Count == 0 && DateTimeOffset.UtcNow < deadline)
             {
                 await Task.Delay(10);
             }
 
             AutonomousTestWorkerStatus status = statusStore.GetStatus("meridian");
-            Assert.Equal(0, actionProvider.CallCount);
-            Assert.Equal("None", status.LastAction);
-            Assert.Contains("StarDock", status.LastRationale, StringComparison.Ordinal);
-            Assert.Empty(commandSender.Commands);
+            Assert.Equal(1, actionProvider.CallCount);
+            Assert.True(actionProvider.ActionContext!.ExplorationRequired);
+            Assert.Equal([172, 750], actionProvider.ActionContext.AvailableAdjacentSectors);
+            Assert.StartsWith("Explore an adjacent sector", actionProvider.ActionContext.ActiveObjective?.Goal, StringComparison.Ordinal);
+            Assert.Equal("MoveToSector 172", status.LastAction);
+            Assert.Equal(new GameCommandRequest(GameCommand.MoveToSector, 172), commandSender.Commands.Single());
         }
         finally
         {
@@ -2434,11 +3328,14 @@ public sealed class AutonomousTestWorkerTests
         var eventHub = new ProxyGameEventHub();
         var situationProvider = new MutableSituationProvider(
             CreateSituation(1, DateTimeOffset.UtcNow));
-        var actionProvider = new RecordingActionProvider(
+        var actionProvider = new SequenceActionProvider(
             new AutonomousTestActionDecision(
                 AutonomousTestAction.MoveToAdjacentSector,
                 "Move one verified hop.",
-                3));
+                3),
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.TradeAtCurrentPort,
+                "Trade at the current compatible port."));
         var commandSender = new RecordingCommandSender();
         var statusStore = new AutonomousTestWorkerStatusStore();
         var localTradeOpportunity = new AutonomousPortTradeOpportunity(
@@ -2505,8 +3402,12 @@ public sealed class AutonomousTestWorkerTests
                     new GameCommandRequest(
                         GameCommand.TradeAtCurrentPort,
                         Product: TradeProduct.Organics)
+                    {
+                        AvailableCredits = 1_000
+                    }
                 ],
                 commandSender.Commands);
+            Assert.Equal(2, actionProvider.CallCount);
         }
         finally
         {
@@ -2665,7 +3566,7 @@ public sealed class AutonomousTestWorkerTests
             CurrentPromptObservedAt = observedAt,
             Snapshot = new GameSnapshot(
                 551,
-                AutonomousTradePolicy.MinimumScannerUpgradeCredits,
+                6_403,
                 300,
                 null,
                 observedAt)
@@ -2691,7 +3592,12 @@ public sealed class AutonomousTestWorkerTests
             allowGameActions: true,
             maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
             gameWorldProvider: new FixedGameWorldProvider(551),
-            gameScriptRunner: scriptRunner);
+            gameScriptRunner: scriptRunner,
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(
+                new AutonomousPortTradeOpportunity(
+                    550,
+                    TradeProduct.Organics,
+                    SellingExistingCargo: true)));
 
         await worker.StartAsync(CancellationToken.None);
         try
@@ -2716,6 +3622,73 @@ public sealed class AutonomousTestWorkerTests
             Assert.Single(commandSender.Commands);
             Assert.Equal(GameCommand.DisplayCurrentSector, commandSender.Commands.Single().Command);
             Assert.Equal(0, actionProvider.CallCount);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task StopsWorldTradeThatKeepsOfferingMoreCreditsThanTheShipHas()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset initialObservedAt = DateTimeOffset.UtcNow;
+        GameSituationReport initialSituation = CreateMovementEligibleSituation() with
+        {
+            CurrentPromptObservedAt = initialObservedAt,
+            Snapshot = new GameSnapshot(551, AutonomousTradePolicy.MinimumScannerUpgradeCredits, 300, null, initialObservedAt)
+            {
+                HoloScannerInstalled = true,
+                DensityScannerInstalled = true
+            }
+        };
+        var situationProvider = new MutableSituationProvider(initialSituation);
+        var scriptRunner = new RecordingGameScriptRunner();
+        using var worker = CreateWorker(
+            eventHub,
+            situationProvider,
+            new SequenceActionProvider(new AutonomousTestActionDecision(AutonomousTestAction.None, "Wait.")),
+            new RecordingCommandSender(),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            gameWorldProvider: new FixedGameWorldProvider(551),
+            gameScriptRunner: scriptRunner);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent("meridian", new ProxyGameEvent(initialObservedAt, "Connected")));
+            for (int index = 0; index < 3; index++)
+            {
+                eventHub.TryPublish(new ProxySessionEvent(
+                    "meridian",
+                    new ProxyGameEvent(initialObservedAt.AddMilliseconds(index + 1), "ServerPrompt", PromptSurface: "Command")));
+            }
+            await scriptRunner.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            DateTimeOffset loopAt = DateTimeOffset.UtcNow;
+            GameSituationReport stuckSituation = initialSituation with
+            {
+                CurrentPrompt = "PortTradeOffer",
+                CurrentPromptObservedAt = loopAt,
+                RecentServerText =
+                [
+                    new ObservedGameText(loopAt.AddSeconds(-3), "You only have 697 credits!"),
+                    new ObservedGameText(loopAt.AddSeconds(-2), "You only have 697 credits!"),
+                    new ObservedGameText(loopAt.AddSeconds(-1), "You only have 697 credits!")
+                ]
+            };
+            situationProvider.Enqueue(stuckSituation);
+            situationProvider.Enqueue(stuckSituation);
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(loopAt, "PresenceHeartbeat", PromptSurface: "PortTradeOffer")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(loopAt.AddMilliseconds(1), "PresenceHeartbeat", PromptSurface: "PortTradeOffer")));
+
+            await scriptRunner.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(5));
         }
         finally
         {
@@ -2894,7 +3867,10 @@ public sealed class AutonomousTestWorkerTests
     {
         var eventHub = new ProxyGameEventHub();
         var actionProvider = new RecordingActionProvider(
-            new AutonomousTestActionDecision(AutonomousTestAction.None, "Use the detected trade route."));
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.MoveToAdjacentSector,
+                "Skip the trade plan and move toward the destination.",
+                TargetSector: 3));
         var commandSender = new RecordingCommandSender();
         var objective = new AutonomousActionObjective(
             "Reach StarDock after building credits through port trades.",
@@ -2907,9 +3883,17 @@ public sealed class AutonomousTestWorkerTests
             TradeSector = 2,
             RouteSector = 2
         };
+        GameSituationReport startingSituation = CreateMovementEligibleSituation() with
+        {
+            Snapshot = new GameSnapshot(1, 500, 1000, null, DateTimeOffset.UtcNow)
+            {
+                DensityScannerInstalled = false,
+                HoloScannerInstalled = false
+            }
+        };
         using var worker = CreateWorker(
             eventHub,
-            new RecordingSituationProvider(CreateMovementEligibleSituation()),
+            new RecordingSituationProvider(startingSituation),
             actionProvider,
             commandSender,
             moveTargetProvider: new RecordingMoveTargetProvider([2, 3]),
@@ -2936,7 +3920,148 @@ public sealed class AutonomousTestWorkerTests
             Assert.Equal(
                 new GameCommandRequest(GameCommand.MoveToSector, 2),
                 commandSender.Commands.Single());
+            Assert.Equal(1, actionProvider.CallCount);
+            Assert.Equal(
+                AutonomousTradePolicy.MinimumScannerUpgradeCredits,
+                actionProvider.ActionContext!.ScannerFundingTargetCredits);
+            Assert.Equal(2_000, actionProvider.ActionContext.ScannerFundingShortfallCredits);
+            Assert.Contains(
+                "shortfall of 2,000",
+                actionProvider.ActionContext.ActiveObjective!.Rationale,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task ReturnsToStarDockForAffordableScannerBeforeTakingOptionalPortTrade()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        GameSituationReport startingSituation = CreateMovementEligibleSituation() with
+        {
+            CurrentPromptObservedAt = observedAt,
+            Snapshot = new GameSnapshot(172, 3_201, 1_000, null, observedAt)
+            {
+                DensityScannerInstalled = false,
+                HoloScannerInstalled = false,
+                HoldsEmpty = 20,
+                HoldsTotal = 20,
+                FuelOre = 0,
+                Organics = 0,
+                Equipment = 0
+            }
+        };
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.TradeAtCurrentPort,
+                "Trade here before returning to StarDock."));
+        var commandSender = new RecordingCommandSender();
+        var opportunity = new AutonomousPortTradeOpportunity(
+            PartnerSector: 173,
+            TradeProduct.Organics,
+            SellingExistingCargo: false)
+        {
+            TradeSector = 172,
+            RouteSector = 172
+        };
+        using var worker = CreateWorker(
+            eventHub,
+            new RecordingSituationProvider(startingSituation),
+            actionProvider,
+            commandSender,
+            moveTargetProvider: new RecordingMoveTargetProvider([551]),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            gameWorldProvider: new FixedGameWorldProvider(551, nextSector: 551),
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(opportunity),
+            moveApprovalGate: new ImmediateMoveApprovalGate());
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+
+            await WaitForCommandCountAsync(commandSender, 1);
+
+            Assert.Equal(
+                new GameCommandRequest(GameCommand.MoveToSector, 551),
+                commandSender.Commands.Single());
             Assert.Equal(0, actionProvider.CallCount);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task TradesAtPlannedSellerWhenItIsReached()
+    {
+        var eventHub = new ProxyGameEventHub();
+        var situationProvider = new SectorSequenceSituationProvider(1, 1, 2, 2);
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(AutonomousTestAction.None, "Use the verified trade plan."));
+        var commandSender = new RecordingCommandSender();
+        var opportunity = new AutonomousPortTradeOpportunity(
+            PartnerSector: 3,
+            TradeProduct.FuelOre,
+            SellingExistingCargo: false)
+        {
+            TradeSector = 2,
+            RouteSector = 2
+        };
+        using var worker = CreateWorker(
+            eventHub,
+            situationProvider,
+            actionProvider,
+            commandSender,
+            new RecordingMoveTargetProvider([2]),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            actionObjectiveProvider: new RecordingActionObjectiveProvider(
+                new AutonomousActionObjective(
+                    "Fund the scanner through the verified port pair.",
+                    "Buy fuel ore at sector 2, then sell it at sector 3.")),
+            moveApprovalGate: new ImmediateMoveApprovalGate(),
+            gameWorldProvider: new FixedGameWorldProvider(551),
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(opportunity));
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            DateTimeOffset promptAt = DateTimeOffset.UtcNow;
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+            await WaitForCommandCountAsync(commandSender, 1);
+
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt.AddMilliseconds(2), "ServerPrompt", PromptSurface: "Command")));
+            await WaitForCommandCountAsync(commandSender, 2);
+
+            GameCommandRequest[] commands = commandSender.Commands.ToArray();
+            Assert.Equal(
+                new GameCommandRequest(GameCommand.MoveToSector, 2),
+                commands[0]);
+            Assert.Equal(
+                new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.FuelOre)
+                {
+                    AvailableCredits = 1_000
+                },
+                commands[1]);
         }
         finally
         {
@@ -3168,12 +4293,15 @@ public sealed class AutonomousTestWorkerTests
                 "meridian",
                 new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
 
-            await WaitForActivityAsync(
-                statusStore,
-                "World Trade deferred until Density or Holo scanning capability is verified");
+            await WaitForActionCallCountAsync(actionProvider, 1);
+            await Task.Delay(100);
 
+            // Without a scanner, the invalid World Trade choice is replaced by bootstrap exploration.
+            Assert.True(actionProvider.ActionContext!.ExplorationRequired);
             Assert.Equal(1, actionProvider.CallCount);
-            Assert.Empty(commandSender.Commands);
+            Assert.DoesNotContain(
+                commandSender.Commands,
+                command => command.Command != GameCommand.MoveToSector);
             Assert.False(scriptRunner.Started.Task.IsCompleted);
         }
         finally
@@ -3208,9 +4336,6 @@ public sealed class AutonomousTestWorkerTests
         };
         var actionProvider = new SequenceActionProvider(
             new AutonomousTestActionDecision(
-                AutonomousTestAction.RunStarDockShopper,
-                "Buy the first-tier Density Scanner."),
-            new AutonomousTestActionDecision(
                 AutonomousTestAction.RespondToScriptInputPrompt,
                 "Refresh the shopper prices.")
             {
@@ -3221,12 +4346,6 @@ public sealed class AutonomousTestWorkerTests
                 "Select long-range scanners.")
             {
                 ScriptInputResponse = "R"
-            },
-            new AutonomousTestActionDecision(
-                AutonomousTestAction.RespondToScriptInputPrompt,
-                "Select the Density Scanner.")
-            {
-                ScriptInputResponse = "D"
             },
             new AutonomousTestActionDecision(
                 AutonomousTestAction.RespondToScriptInputPrompt,
@@ -3268,9 +4387,9 @@ public sealed class AutonomousTestWorkerTests
             string[] scriptPrompts =
             [
                 "Item Costs Need To Be Updated, Proceed (Y/N)?",
-                "StarDock Shopper menu: <R> Long Range Scanners",
+                "StarDock Shopper menu:\r\n<R> Long Range Scanners 25,000:\r\n<Y> Tow & Outfit Another Ship\r\n<X> Execute Q - Quit\r\nCash On Hand : $6,403",
                 "Scanner type (Y/N/D)? Holo=Y, Density=D",
-                "StarDock Shopper menu: <X> Execute Purchase"
+                "StarDock Shopper menu:\r\n<R> Long Range Scanners 25,000: Density ($2,000)\r\n<X> Execute Q - Quit\r\nCash On Hand : $6,403"
             ];
             for (int inputCount = 1; inputCount <= scriptPrompts.Length; inputCount++)
             {
@@ -3291,7 +4410,7 @@ public sealed class AutonomousTestWorkerTests
             }
 
             Assert.Equal(['Y', 'R', 'D', 'X'], scriptRunner.DockShopperInputs);
-            Assert.Equal(ScannerPurchaseTarget.Density, actionProvider.ActionContexts[0].ScannerTarget);
+            Assert.Equal(0, actionProvider.CallCount);
             Assert.False(scriptRunner.Started.Task.IsCompleted);
             Assert.NotEqual(
                 nameof(AutonomousTestAction.StartWorldTradeMode),
@@ -3304,7 +4423,7 @@ public sealed class AutonomousTestWorkerTests
     }
 
     [Fact]
-    public async Task BuysHoloScannerAtFederationStarDockAsOptionalUpgradeAfterFunding()
+    public async Task BuysHoloScannerAtFederationStarDockWithoutFighterOrShieldUpgrades()
     {
         var eventHub = new ProxyGameEventHub();
         DateTimeOffset observedAt = DateTimeOffset.UtcNow.AddSeconds(-20);
@@ -3328,44 +4447,10 @@ public sealed class AutonomousTestWorkerTests
                 Shields = 10
             }
         };
-        var actionProvider = new SequenceActionProvider(
+        var actionProvider = new RecordingActionProvider(
             new AutonomousTestActionDecision(
                 AutonomousTestAction.None,
-                "The Density Scanner is verified, but Fighters and Shields have not both improved yet."),
-            new AutonomousTestActionDecision(
-                AutonomousTestAction.None,
-                "Fighters improved, but Shields still need a verified upgrade."),
-            new AutonomousTestActionDecision(
-                AutonomousTestAction.RunStarDockShopper,
-                "The full Fuel Ore holds and StarDock prerequisites are verified."),
-            new AutonomousTestActionDecision(
-                AutonomousTestAction.RespondToScriptInputPrompt,
-                "The script asks whether it may update its item costs.")
-            {
-                ScriptInputResponse = "Y"
-            },
-            new AutonomousTestActionDecision(
-                AutonomousTestAction.RespondToScriptInputPrompt,
-                "The visible menu offers the Holo Scanner under R.")
-            {
-                ScriptInputResponse = "R"
-            },
-            new AutonomousTestActionDecision(
-                AutonomousTestAction.RespondToScriptInputPrompt,
-                "The prompt asks whether to buy the Holo Scanner.")
-            {
-                ScriptInputResponse = "Y"
-            },
-            new AutonomousTestActionDecision(
-                AutonomousTestAction.RespondToScriptInputPrompt,
-                "The script menu offers X to execute the selected purchase.")
-            {
-                ScriptInputResponse = "X"
-            },
-            new AutonomousTestActionDecision(
-                AutonomousTestAction.None,
-                "The World Trade funding target is already reached.")
-            );
+                "The Holo Scanner purchase is handled by the verified StarDock shopper."));
         var commandSender = new RecordingCommandSender();
         var scriptRunner = new RecordingGameScriptRunner();
         var statusStore = new AutonomousTestWorkerStatusStore();
@@ -3397,60 +4482,15 @@ public sealed class AutonomousTestWorkerTests
                 "meridian",
                 new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
 
-            await WaitForActionCallCountAsync(actionProvider, 1);
-            Assert.Null(actionProvider.ActionContexts[0].ScannerTarget);
-            DateTimeOffset upgradedAt = observedAt.AddSeconds(6);
-            situationProvider.Enqueue(starDockSituation with
-            {
-                CapturedAt = upgradedAt,
-                CurrentPromptObservedAt = upgradedAt,
-                Snapshot = starDockSituation.Snapshot! with
-                {
-                    Ship = starDockSituation.Snapshot.Ship! with
-                    {
-                        Fighters = 28,
-                        ObservedAt = upgradedAt
-                    },
-                    Shields = 10,
-                    ObservedAt = upgradedAt
-                }
-            });
-            eventHub.TryPublish(new ProxySessionEvent(
-                "meridian",
-                new ProxyGameEvent(upgradedAt, "ServerPrompt", PromptSurface: "Command")));
-            await WaitForActionCallCountAsync(actionProvider, 2);
-            Assert.Null(actionProvider.ActionContexts[1].ScannerTarget);
-
-            DateTimeOffset shieldedAt = observedAt.AddSeconds(12);
-            situationProvider.Enqueue(starDockSituation with
-            {
-                CapturedAt = shieldedAt,
-                CurrentPromptObservedAt = shieldedAt,
-                Snapshot = starDockSituation.Snapshot! with
-                {
-                    Ship = starDockSituation.Snapshot.Ship! with
-                    {
-                        Fighters = 28,
-                        ObservedAt = shieldedAt
-                    },
-                    Shields = 11,
-                    ObservedAt = shieldedAt
-                }
-            });
-            eventHub.TryPublish(new ProxySessionEvent(
-                "meridian",
-                new ProxyGameEvent(shieldedAt, "ServerPrompt", PromptSurface: "Command")));
-            await WaitForActionCallCountAsync(actionProvider, 3);
-            Assert.Equal(ScannerPurchaseTarget.Holo, actionProvider.ActionContexts[2].ScannerTarget);
-            Assert.True(actionProvider.ActionContexts[2].StarDockShopperReady);
             await scriptRunner.DockShopperStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, actionProvider.CallCount);
 
             string[] scriptPrompts =
             [
                 "Item Costs Need To Be Updated, Proceed (Y/N)?",
-                "StarDock Shopper menu: <R> Long Range Scanners",
+                "StarDock Shopper menu:\r\n<R> Long Range Scanners 25,000:\r\n<Y> Tow & Outfit Another Ship\r\n<X> Execute Q - Quit\r\nCash On Hand : $1,000,000",
                 "Scanner type (Y/N/D)? Holo=Y, Density=D",
-                "StarDock Shopper menu: <X> Execute Purchase"
+                "StarDock Shopper menu:\r\n<R> Long Range Scanners 25,000: Yes ($25,000)\r\n<X> Execute Q - Quit\r\nCash On Hand : $1,000,000"
             ];
             for (int inputCount = 1; inputCount <= scriptPrompts.Length; inputCount++)
             {
@@ -3461,12 +4501,7 @@ public sealed class AutonomousTestWorkerTests
                     CurrentPromptObservedAt = promptAt,
                     Snapshot = starDockSituation.Snapshot! with
                     {
-                        Ship = starDockSituation.Snapshot.Ship! with
-                        {
-                            Fighters = 28,
-                            ObservedAt = promptAt
-                        },
-                        Shields = 11,
+                        Ship = starDockSituation.Snapshot.Ship! with { ObservedAt = promptAt },
                         ObservedAt = promptAt
                     },
                     ScriptInputPrompt = new GameScriptInputPrompt(
@@ -3484,10 +4519,7 @@ public sealed class AutonomousTestWorkerTests
             }
 
             Assert.Equal(['Y', 'R', 'Y', 'X'], scriptRunner.DockShopperInputs);
-            Assert.Equal(7, actionProvider.CallCount);
-            Assert.Null(actionProvider.ActionContexts[0].ScannerTarget);
-            Assert.Null(actionProvider.ActionContexts[1].ScannerTarget);
-            Assert.Equal(ScannerPurchaseTarget.Holo, actionProvider.ActionContexts[2].ScannerTarget);
+            Assert.Equal(0, actionProvider.CallCount);
             scriptRunner.SetDockShopperRunning(false);
             eventHub.TryPublish(new ProxySessionEvent(
                 "meridian",
@@ -3527,11 +4559,12 @@ public sealed class AutonomousTestWorkerTests
             eventHub.TryPublish(new ProxySessionEvent(
                 "meridian",
                 new ProxyGameEvent(DateTimeOffset.UtcNow, "PresenceHeartbeat")));
-            await WaitForActionCallCountAsync(actionProvider, 8);
+            await WaitForActionCallCountAsync(actionProvider, 1);
             AutonomousTestWorkerStatus worldTradeStatus = statusStore.GetStatus("meridian");
             Assert.False(scriptRunner.Started.Task.IsCompleted);
 
-            Assert.Equal(8, actionProvider.CallCount);
+            Assert.Equal(1, actionProvider.CallCount);
+            Assert.Null(actionProvider.ActionContext?.ScannerTarget);
             Assert.NotEqual(AutonomousTestAction.StartWorldTradeMode.ToString(), worldTradeStatus.LastAction);
         }
         finally
@@ -3623,7 +4656,7 @@ public sealed class AutonomousTestWorkerTests
             CurrentPromptObservedAt = observedAt,
             Snapshot = new GameSnapshot(
                 551,
-                AutonomousTradePolicy.MinimumScannerUpgradeCredits,
+                3_201,
                 300,
                 null,
                 observedAt)
@@ -3637,16 +4670,99 @@ public sealed class AutonomousTestWorkerTests
                 Equipment = 0
             }
         };
-        var actionProvider = new SequenceActionProvider(
+        var actionProvider = new RecordingActionProvider(
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.None,
+                "A verified port sale would normally be available here."));
+        var commandSender = new RecordingCommandSender();
+        var scriptRunner = new RecordingGameScriptRunner();
+        var statusStore = new AutonomousTestWorkerStatusStore();
+        var portSale = new AutonomousPortTradeOpportunity(
+            551,
+            TradeProduct.FuelOre,
+            SellingExistingCargo: true)
+        {
+            TradeSector = 551
+        };
+        using var worker = CreateWorker(
+            eventHub,
+            new RecordingSituationProvider(starDockSituation),
+            actionProvider,
+            commandSender,
+            moveTargetProvider: new RecordingMoveTargetProvider([550]),
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            statusStore: statusStore,
+            gameWorldProvider: new FixedGameWorldProvider(
+                551,
+                hasOwnedFighter: false,
+                isFederationSpace: true),
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(portSale),
+            gameScriptRunner: scriptRunner);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+
+            await scriptRunner.DockShopperStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(0, actionProvider.CallCount);
+            Assert.Empty(commandSender.Commands);
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(observedAt.AddSeconds(1), "PresenceHeartbeat")));
+            await WaitForActivityAsync(
+                statusStore,
+                "Dock Shopper is running; waiting for its next observed script prompt");
+            Assert.Empty(scriptRunner.DockShopperInputs);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task RetriesDockShopperWhenTheScriptFailsBeforeStarting()
+    {
+        var eventHub = new ProxyGameEventHub();
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        GameSituationReport starDockSituation = CreateMovementEligibleSituation() with
+        {
+            CurrentPromptObservedAt = observedAt,
+            Snapshot = new GameSnapshot(
+                551,
+                2_813,
+                300,
+                null,
+                observedAt)
+            {
+                HoloScannerInstalled = false,
+                DensityScannerInstalled = false,
+                HoldsEmpty = 0,
+                HoldsTotal = 20,
+                FuelOre = 20,
+                Organics = 0,
+                Equipment = 0
+            }
+        };
+        var situationProvider = new MutableSituationProvider(starDockSituation);
+        var actionProvider = new RecordingActionProvider(
             new AutonomousTestActionDecision(
                 AutonomousTestAction.RunStarDockShopper,
-                "Start the scanner shopper without deploying a fighter in Federation space."));
+                "The scanner is affordable; run the approved Dock Shopper."));
         var commandSender = new RecordingCommandSender();
         var scriptRunner = new RecordingGameScriptRunner();
         var statusStore = new AutonomousTestWorkerStatusStore();
         using var worker = CreateWorker(
             eventHub,
-            new RecordingSituationProvider(starDockSituation),
+            situationProvider,
             actionProvider,
             commandSender,
             moveTargetProvider: new RecordingMoveTargetProvider([550]),
@@ -3668,21 +4784,56 @@ public sealed class AutonomousTestWorkerTests
             eventHub.TryPublish(new ProxySessionEvent(
                 "meridian",
                 new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
-
-            await WaitForActionCallCountAsync(actionProvider, 1);
-            Assert.True(actionProvider.ActionContexts[0].StarDockShopperReady);
             await scriptRunner.DockShopperStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-            Assert.False(actionProvider.ActionContexts[0].StarDockSectorHasOwnedFighter);
-            Assert.True(actionProvider.ActionContexts[0].CurrentSectorIsFederationSpace);
-            Assert.Empty(commandSender.Commands);
+            scriptRunner.SetDockShopperRunning(false);
+            await Task.Delay(TimeSpan.FromSeconds(11));
+
+            DateTimeOffset failedPromptAt = DateTimeOffset.UtcNow;
+            GameSituationReport failedPromptSituation = starDockSituation with
+            {
+                CapturedAt = failedPromptAt,
+                CurrentPromptObservedAt = failedPromptAt,
+                Snapshot = starDockSituation.Snapshot! with { ObservedAt = failedPromptAt }
+            };
+            situationProvider.Enqueue(failedPromptSituation);
             eventHub.TryPublish(new ProxySessionEvent(
                 "meridian",
-                new ProxyGameEvent(observedAt.AddSeconds(1), "PresenceHeartbeat")));
+                new ProxyGameEvent(failedPromptAt, "ServerPrompt", PromptSurface: "Command")));
             await WaitForActivityAsync(
                 statusStore,
-                "Dock Shopper is running; waiting for its next observed script prompt");
-            Assert.Empty(scriptRunner.DockShopperInputs);
+                "Dock Shopper stopped before the next menu action; checking its result");
+
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(failedPromptAt.AddMilliseconds(1), "PresenceHeartbeat")));
+            await commandSender.StatusRequestSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            DateTimeOffset verifiedAt = DateTimeOffset.UtcNow;
+            GameSituationReport verifiedSituation = starDockSituation with
+            {
+                CapturedAt = verifiedAt,
+                CurrentPromptObservedAt = verifiedAt,
+                Snapshot = starDockSituation.Snapshot! with { ObservedAt = verifiedAt }
+            };
+            situationProvider.Enqueue(verifiedSituation);
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(verifiedAt, "ServerPrompt", PromptSurface: "Command")));
+            try
+            {
+                await scriptRunner.DockShopperRetried.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (TimeoutException)
+            {
+                AutonomousTestWorkerStatus status = statusStore.GetStatus("meridian");
+                Assert.Fail(
+                    $"The shopper was not retried. Activity={status.Activity}; " +
+                    $"last action={status.LastAction}; rationale={status.LastRationale}; " +
+                    $"starts={scriptRunner.DockShopperStartCount}.");
+            }
+            Assert.Equal(2, scriptRunner.DockShopperStartCount);
+            Assert.Equal(2, scriptRunner.DockShopperStartCount);
         }
         finally
         {
@@ -3768,7 +4919,7 @@ public sealed class AutonomousTestWorkerTests
             CurrentPromptObservedAt = observedAt,
             Snapshot = new GameSnapshot(
                 551,
-                AutonomousTradePolicy.MinimumScannerUpgradeCredits,
+                AutonomousTradePolicy.GetScannerFundingCredits(ScannerPurchaseTarget.Density, 20),
                 300,
                 null,
                 observedAt)
@@ -3806,12 +4957,17 @@ public sealed class AutonomousTestWorkerTests
             eventHub.TryPublish(new ProxySessionEvent(
                 "meridian",
                 new ProxyGameEvent(observedAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
-            await WaitForActivityAsync(statusStore, "Holding");
+            await WaitForActionCallCountAsync(actionProvider, 1);
+            await Task.Delay(100);
 
             Assert.False(actionProvider.ActionContext!.StarDockShopperReady);
             Assert.Equal(TradeProduct.FuelOre, actionProvider.ActionContext.PreferredTradeProduct);
+            // No Fuel Ore trade is known, so the worker explores to find one instead of holding.
+            Assert.True(actionProvider.ActionContext.ExplorationRequired);
             Assert.False(scriptRunner.DockShopperStarted.Task.IsCompleted);
-            Assert.Empty(commandSender.Commands);
+            Assert.DoesNotContain(
+                commandSender.Commands,
+                command => command.Command != GameCommand.MoveToSector);
         }
         finally
         {
@@ -3824,7 +4980,11 @@ public sealed class AutonomousTestWorkerTests
     {
         var eventHub = new ProxyGameEventHub();
         var actionProvider = new SequenceActionProvider(
-            new AutonomousTestActionDecision(AutonomousTestAction.None, "Continue after trade."));
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.MoveToAdjacentSector,
+                "Skip the current trade and move toward the destination.",
+                TargetSector: 3),
+            new AutonomousTestActionDecision(AutonomousTestAction.None, "Wait for the next opportunity."));
         var commandSender = new RecordingCommandSender();
         var statusStore = new AutonomousTestWorkerStatusStore();
         var startingSituation = CreateMovementEligibleSituation();
@@ -3879,9 +5039,12 @@ public sealed class AutonomousTestWorkerTests
             Assert.Equal(
                 new GameCommandRequest(
                     GameCommand.TradeAtCurrentPort,
-                    Product: TradeProduct.Organics),
+                    Product: TradeProduct.Organics)
+                {
+                    AvailableCredits = 1_000
+                },
                 commandSender.Commands.ToArray()[1]);
-            Assert.Equal(0, actionProvider.CallCount);
+            Assert.Equal(1, actionProvider.CallCount);
             await WaitForActivityAsync(statusStore, "Port trade sent; awaiting verification");
 
             eventHub.TryPublish(new ProxySessionEvent(
@@ -3910,10 +5073,190 @@ public sealed class AutonomousTestWorkerTests
             eventHub.TryPublish(new ProxySessionEvent(
                     "meridian",
                     new ProxyGameEvent(promptAt.AddMilliseconds(4), "PresenceHeartbeat", PromptSurface: "Command")));
-            await WaitForActionCallCountAsync(actionProvider, 1);
+            await WaitForActionCallCountAsync(actionProvider, 2);
 
             Assert.Equal(3, commandSender.Commands.Count);
-            Assert.True(actionProvider.ActionContexts.Single().PortTradeAttemptedAtCurrentSector);
+            Assert.True(actionProvider.ActionContexts.Last().PortTradeAttemptedAtCurrentSector);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task RecoversFailedPortTradeWithTheOriginalProductAndCreditContext()
+    {
+        var eventHub = new ProxyGameEventHub();
+        var actionProvider = new SequenceActionProvider(
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.TradeAtCurrentPort,
+                "Attempt the verified port trade."));
+        var commandSender = new RecordingCommandSender
+        {
+            FailCommand = GameCommand.TradeAtCurrentPort
+        };
+        var statusStore = new AutonomousTestWorkerStatusStore();
+        GameSituationReport startingSituation = CreateMovementEligibleSituation();
+        startingSituation = startingSituation with
+        {
+            Snapshot = new GameSnapshot(
+                1,
+                1000,
+                5,
+                null,
+                startingSituation.Snapshot!.ObservedAt)
+            {
+                HoldsEmpty = 20,
+                HoldsTotal = 20,
+                Organics = 0
+            }
+        };
+        using var worker = CreateWorker(
+            eventHub,
+            new RecordingSituationProvider(startingSituation),
+            actionProvider,
+            commandSender,
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            statusStore: statusStore,
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(
+                new AutonomousPortTradeOpportunity(
+                    PartnerSector: 2,
+                    TradeProduct.Organics,
+                    SellingExistingCargo: false)));
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            DateTimeOffset promptAt = DateTimeOffset.UtcNow;
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+            await WaitForCommandCountAsync(commandSender, 1);
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt.AddMilliseconds(2), "ServerPrompt", PromptSurface: "Command")));
+            await WaitForCommandCountAsync(commandSender, 2);
+            await WaitForActivityAsync(
+                statusStore,
+                "Action failed (InvalidOperationException): Simulated port-command interruption.");
+
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(
+                    promptAt.AddMilliseconds(3),
+                    "ServerPrompt",
+                    PromptSurface: "PortTradeQuantity")));
+            await commandSender.PortTradeRecoveryRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Single(
+                commandSender.Commands,
+                command => command.Command == GameCommand.TradeAtCurrentPort);
+            Assert.Equal(TradeProduct.Organics, commandSender.UntrackedRequestedProducts.Single());
+            Assert.False(commandSender.UntrackedSellingExistingCargo.Single());
+            Assert.Equal(1000, commandSender.UntrackedAvailableCredits.Single());
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task RetainsTradeIntentUntilVerificationForALateUntrackedPrompt()
+    {
+        var eventHub = new ProxyGameEventHub();
+        var actionProvider = new SequenceActionProvider(
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.TradeAtCurrentPort,
+                "Attempt the verified port trade."),
+            new AutonomousTestActionDecision(
+                AutonomousTestAction.None,
+                "Wait after the unverified trade."));
+        var commandSender = new RecordingCommandSender();
+        var statusStore = new AutonomousTestWorkerStatusStore();
+        GameSituationReport startingSituation = CreateMovementEligibleSituation();
+        startingSituation = startingSituation with
+        {
+            Snapshot = new GameSnapshot(
+                1,
+                1000,
+                5,
+                null,
+                startingSituation.Snapshot!.ObservedAt)
+            {
+                HoldsEmpty = 20,
+                HoldsTotal = 20,
+                Organics = 0
+            }
+        };
+        var situationProvider = new MutableSituationProvider(startingSituation);
+        using var worker = CreateWorker(
+            eventHub,
+            situationProvider,
+            actionProvider,
+            commandSender,
+            allowGameActions: true,
+            maximumActionsPerSession: AutonomousTestWorker.UnlimitedActionsPerSession,
+            statusStore: statusStore,
+            portTradeOpportunityProvider: new RecordingPortTradeOpportunityProvider(
+                new AutonomousPortTradeOpportunity(
+                    PartnerSector: 2,
+                    TradeProduct.Organics,
+                    SellingExistingCargo: false)));
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            DateTimeOffset promptAt = DateTimeOffset.UtcNow;
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt, "Connected")));
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt.AddMilliseconds(1), "ServerPrompt", PromptSurface: "Command")));
+            await WaitForCommandCountAsync(commandSender, 1);
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(promptAt.AddMilliseconds(2), "ServerPrompt", PromptSurface: "Command")));
+            await WaitForCommandCountAsync(commandSender, 2);
+            await WaitForActivityAsync(statusStore, "Port trade sent; awaiting verification");
+
+            DateTimeOffset noChangeObservedAt = DateTimeOffset.UtcNow;
+            situationProvider.Enqueue(startingSituation with
+            {
+                CapturedAt = noChangeObservedAt,
+                CurrentPromptObservedAt = noChangeObservedAt,
+                Snapshot = new GameSnapshot(1, 1000, 5, null, noChangeObservedAt)
+                {
+                    HoldsEmpty = 20,
+                    HoldsTotal = 20,
+                    Organics = 0
+                }
+            });
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(
+                    promptAt.AddMilliseconds(3),
+                    "ServerPrompt",
+                    PromptSurface: "Command")));
+            await WaitForActionCallCountAsync(actionProvider, 2);
+
+            eventHub.TryPublish(new ProxySessionEvent(
+                "meridian",
+                new ProxyGameEvent(
+                    promptAt.AddMilliseconds(4),
+                    "ServerPrompt",
+                    PromptSurface: "PortTradeQuantity")));
+            await commandSender.PortTradeRecoveryRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(TradeProduct.Organics, commandSender.UntrackedRequestedProducts.Single());
+            Assert.False(commandSender.UntrackedSellingExistingCargo.Single());
+            Assert.Equal(1000, commandSender.UntrackedAvailableCredits.Single());
         }
         finally
         {
@@ -4015,12 +5358,15 @@ public sealed class AutonomousTestWorkerTests
             await WaitForCommandCountAsync(commandSender, 1);
 
             Assert.Equal(
-                new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.FuelOre),
+                new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.FuelOre)
+                {
+                    AvailableCredits = 40_000
+                },
                 commandSender.Commands.Single());
             Assert.Equal(
                 [TradeProduct.FuelOre, TradeProduct.FuelOre],
                 opportunityProvider.PreferredProducts.ToArray());
-            Assert.Equal(0, actionProvider.CallCount);
+            Assert.Equal(1, actionProvider.CallCount);
         }
         finally
         {
@@ -4073,7 +5419,10 @@ public sealed class AutonomousTestWorkerTests
             await WaitForCommandCountAsync(commandSender, 1);
 
             Assert.Equal(
-                new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.Equipment),
+                new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.Equipment)
+                {
+                    AvailableCredits = 40_000
+                },
                 commandSender.Commands.Single());
         }
         finally
@@ -4161,10 +5510,11 @@ public sealed class AutonomousTestWorkerTests
                     GameCommand.TradeAtCurrentPort,
                     Product: TradeProduct.FuelOre)
                 {
-                    SellingExistingCargo = true
+                    SellingExistingCargo = true,
+                    AvailableCredits = 35_927
                 },
                 commandSender.Commands.ToArray()[1]);
-            Assert.Equal(0, actionProvider.CallCount);
+            Assert.Equal(1, actionProvider.CallCount);
             Assert.False(scriptRunner.CimRefreshed.Task.IsCompleted);
         }
         finally
@@ -4231,10 +5581,11 @@ public sealed class AutonomousTestWorkerTests
                     Product: TradeProduct.FuelOre)
                 {
                     SellingExistingCargo = true,
-                    FollowUpBuyProduct = TradeProduct.Organics
+                    FollowUpBuyProduct = TradeProduct.Organics,
+                    AvailableCredits = 33_475
                 },
                 commandSender.Commands.Single());
-            Assert.Equal(0, actionProvider.CallCount);
+            Assert.Equal(1, actionProvider.CallCount);
         }
         finally
         {
@@ -4260,7 +5611,10 @@ public sealed class AutonomousTestWorkerTests
         IAutonomousPortTradeOpportunityProvider? portTradeOpportunityProvider = null,
         IAgentStore? agentStore = null,
         IReactiveEventStore? reactiveEventStore = null,
-        IAutonomousFedSpaceFastStartProvider? fedSpaceFastStartProvider = null) =>
+        IAutonomousFedSpaceFastStartProvider? fedSpaceFastStartProvider = null,
+        IAgentTeamStore? teamStore = null,
+        string? teamId = null,
+        string sessionName = "") =>
         new(
             "meridian",
             modelName,
@@ -4282,7 +5636,38 @@ public sealed class AutonomousTestWorkerTests
             portTradeOpportunityProvider: portTradeOpportunityProvider,
             agentStore: agentStore,
             reactiveEventStore: reactiveEventStore,
-            fedSpaceFastStartProvider: fedSpaceFastStartProvider);
+            fedSpaceFastStartProvider: fedSpaceFastStartProvider,
+            teamStore: teamStore,
+            teamId: teamId,
+            sessionName: sessionName);
+
+    private sealed class RecordingAgentTeamStore(IReadOnlyList<AgentTeamStatus> members)
+        : IAgentTeamStore
+    {
+        public AgentTeamStatus? PublishedStatus { get; private set; }
+
+        public Task InitializeAsync(CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task UpsertStatusAsync(
+            AgentTeamStatus status,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PublishedStatus = status;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<AgentTeamStatus>> GetRecentTeamMembersAsync(
+            string teamId,
+            string excludingAgentId,
+            DateTimeOffset updatedSince,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(members);
+        }
+    }
 
     private sealed class RecordingAgentStore(AgentContainer agent) : IAgentStore
     {
@@ -4368,7 +5753,7 @@ public sealed class AutonomousTestWorkerTests
         return situation with
         {
             Snapshot = new GameSnapshot(
-                1,
+                2,
                 40_000,
                 5,
                 null,
@@ -4386,7 +5771,7 @@ public sealed class AutonomousTestWorkerTests
                 TwxDatabaseAvailable: true,
                 ScriptServiceAvailable: true,
                 SectorCount: 1_000,
-                CurrentSector: 1,
+                CurrentSector: 2,
                 StarDockSector: 2,
                 LastPortCimAt: null,
                 RelevantSectors: [],
@@ -4618,8 +6003,12 @@ public sealed class AutonomousTestWorkerTests
         IAutonomousPortTradePromptRecovery
     {
         public ConcurrentQueue<GameCommandRequest> Commands { get; } = new();
+        public GameCommand? FailCommand { get; init; }
         public ConcurrentQueue<DateTimeOffset> UntrackedPortTradePrompts { get; } = new();
         public ConcurrentQueue<TradeProduct?> UntrackedFollowUpBuyProducts { get; } = new();
+        public ConcurrentQueue<long?> UntrackedAvailableCredits { get; } = new();
+        public ConcurrentQueue<TradeProduct?> UntrackedRequestedProducts { get; } = new();
+        public ConcurrentQueue<bool> UntrackedSellingExistingCargo { get; } = new();
         public TaskCompletionSource Sent { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource StatusRequestSent { get; } =
@@ -4639,6 +6028,11 @@ public sealed class AutonomousTestWorkerTests
             {
                 StatusRequestSent.TrySetResult();
             }
+            if (request.Command == FailCommand)
+            {
+                throw new InvalidOperationException("Simulated port-command interruption.");
+            }
+
             return Task.CompletedTask;
         }
 
@@ -4646,11 +6040,17 @@ public sealed class AutonomousTestWorkerTests
             string agentId,
             DateTimeOffset promptObservedAt,
             TradeProduct? followUpBuyProduct = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            long? availableCredits = null,
+            TradeProduct? requestedProduct = null,
+            bool sellingExistingCargo = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
             UntrackedPortTradePrompts.Enqueue(promptObservedAt);
             UntrackedFollowUpBuyProducts.Enqueue(followUpBuyProduct);
+            UntrackedAvailableCredits.Enqueue(availableCredits);
+            UntrackedRequestedProducts.Enqueue(requestedProduct);
+            UntrackedSellingExistingCargo.Enqueue(sellingExistingCargo);
             if (UntrackedPortTradePrompts.Count == 1)
             {
                 PortTradeRecoveryRequested.TrySetResult();
@@ -4838,6 +6238,7 @@ public sealed class AutonomousTestWorkerTests
     {
         private int _isRunning;
         private int _isDockShopperRunning;
+        private int _dockShopperStartCount;
         private int _cimRefreshCount;
 
         public TaskCompletionSource Started { get; } =
@@ -4846,6 +6247,9 @@ public sealed class AutonomousTestWorkerTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource DockShopperStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource DockShopperRetried { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int DockShopperStartCount => Volatile.Read(ref _dockShopperStartCount);
         public TaskCompletionSource StatusChecked { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource CimRefreshed { get; } =
@@ -4893,6 +6297,10 @@ public sealed class AutonomousTestWorkerTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Volatile.Write(ref _isDockShopperRunning, 1);
+            if (Interlocked.Increment(ref _dockShopperStartCount) > 1)
+            {
+                DockShopperRetried.TrySetResult();
+            }
             DockShopperStarted.TrySetResult();
             return Task.CompletedTask;
         }
@@ -5005,6 +6413,53 @@ public sealed class AutonomousTestWorkerTests
         : IAutonomousGameLoginCredentialProvider
     {
         public AutonomousGameLoginCredentials? GetCredentials(string agentId) => credentials;
+    }
+
+    private sealed class RecordingLoginIdentityProvider : IAutonomousLoginIdentityProvider
+    {
+        public ConcurrentQueue<string> Calls { get; } = new();
+
+        public Task<string> ChooseServerLoginNameAsync(
+            ModelConfiguration configuration,
+            AutonomousLoginIdentityContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Enqueue("login-name");
+            return Task.FromResult("Meridian");
+        }
+
+        public Task<string> ChooseTraderAliasAsync(
+            ModelConfiguration configuration,
+            AutonomousLoginIdentityContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Enqueue("trader-alias");
+            return Task.FromResult("StarMap");
+        }
+
+        public Task<string> ChooseShipNameAsync(
+            ModelConfiguration configuration,
+            AutonomousLoginIdentityContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Enqueue("ship-name");
+            return Task.FromResult("Starward Crown");
+        }
+
+        public Task<string> ChooseHomePlanetNameAsync(
+            ModelConfiguration configuration,
+            AutonomousLoginIdentityContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Enqueue("home-planet-name");
+            return Task.FromResult("New Terra");
+        }
+
+        public Task<string> GenerateGamePasswordAsync(
+            ModelConfiguration configuration,
+            AutonomousLoginIdentityContext context,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult("NovaPass42");
     }
 
     private sealed class RecordingLoginInputSender : IAutonomousGameLoginInputSender

@@ -16,10 +16,14 @@ public sealed class TradeWarsTelnetTelemetryDecoder(
     private const byte TelnetSubnegotiationEnd = 240;
     private static readonly Regex AnsiEscape = new(@"\x1B\[[0-?]*[ -/]*[@-~]", RegexOptions.Compiled);
     private static readonly Regex CitadelCommandPrompt = new(@"Citadel\s+command\s*\[\s*TL\s*=", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex PlanetCommandPrompt = new(@"Planet\s+command\s*\[\s*TL\s*=", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PlanetCommandPrompt = new(@"Planet\s+command\s*(?:\[\s*TL\s*=|\(\s*\?\s*=\s*help\s*\))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex CommandPrompt = new(@"Command\s*\[\s*TL\s*=", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex StopInSectorPrompt = new(
         @"Stop in this sector\s*\(Y,N,E,I,R,S,D,P,\?\)\s*\(\?=Help\)\s*\[N\]\s*\?",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // Shown on entering a sector guarded by another player's fighters ("...destroy the fighters or pay their toll").
+    private static readonly Regex FighterEncounterPrompt = new(
+        @"^\s*Option\?\s*\(A,D,I,R,P?,?S,\?\)\s*:\s*\??\s*$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex AutopilotConfirmationPrompt = new(
         @"Engage\s+the\s+Autopilot\s*\?\s*\(Y/N/Single\s+step/Express\)\s*\[Y\]\s*\??",
@@ -28,8 +32,11 @@ public sealed class TradeWarsTelnetTelemetryDecoder(
         @"Choose\s+NavPoint\s*\(\?=Help\)\s*\[Q\]\s*:",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex MoveSectorPrompt = new(
-        @"Which\s+Sector\s*\[\s*\d+\s*\]\s*\?",
+        @"Which\s+Sector\s*(?:\[\s*\d+\s*\]\s*)?\?",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PortTradeOfferPrompt = new(
+        @"^\s*Your offer\s*\[\s*[\d,]+\s*\]\s*\?\s*$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex PortTradeQuantityPrompt = new(
         @"How many holds of\s+(?:Fuel Ore|Organics|Equipment)\s+do you want to\s+(?:buy|sell)\s+\[[\d,]+\]\s*\?",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -39,7 +46,11 @@ public sealed class TradeWarsTelnetTelemetryDecoder(
     private static readonly Regex PasswordPrompt = new(@"(?:Password\s*[:?]|Enter\s+(?:the\s+)?password\b|Password\s+required\b)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex NewCharacterPrompt = new(@"Would you like to start a new character in this game\s*\?\s*\(Type\s+Y\s+or\s+N\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex TraderAliasPreviewPrompt = new(@"That alias would look like this in the game", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex NameConfirmationPrompt = new(@"\bis what you want\s*\?\s*(?:\(\s*Y\s*/\s*N\s*\))?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex TraderAliasPrompt = new(@"Do you wish to make up a new Alias for your Trader Name", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex TraderAliasChoicePrompt = new(@"Use\s+\(N\)ew Name or\s+\(B\)BS Name", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // Anchored: the echo "What Alias do you want to use? Name" is not a new prompt.
+    private static readonly Regex TraderAliasNamePrompt = new(@"What Alias do you want to use\s*\?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex DailyLogPrompt = new(@"(?:(?:Would you like to|Do you wish to)\s+(?:read|see|view)\s+(?:the\s+)?(?:daily|today'?s?)\s+log|Show\s+(?:the\s+)?(?:daily|today'?s?)\s+log)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ClearAvoidsPrompt = new(@"Do you wish to clear some avoids\s*\?\s*\(Y/N\)\s*\[N\]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ShipNamePrompt = new(@"What do you want to name your ship\s*\?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -69,7 +80,10 @@ public sealed class TradeWarsTelnetTelemetryDecoder(
         "Password",
         "PasswordConfirmation",
         "TraderAlias",
+        "TraderAliasChoice",
+        "TraderAliasName",
         "TraderAliasPreview",
+        "NameConfirmation",
         "ShipName",
         "HomePlanetName",
         "UnsupportedAccountSetup",
@@ -78,8 +92,10 @@ public sealed class TradeWarsTelnetTelemetryDecoder(
         "Command",
         "MoveSector",
         "StopInSector",
+        "FighterEncounter",
         "AutopilotConfirmation",
         "NavPointSelection",
+        "PortTradeOffer",
         "PortTradeQuantity"
     ];
 
@@ -376,6 +392,11 @@ public sealed class TradeWarsTelnetTelemetryDecoder(
             surface = "MoveSector";
             return true;
         }
+        if (PortTradeOfferPrompt.IsMatch(text))
+        {
+            surface = "PortTradeOffer";
+            return true;
+        }
         if (PortTradeQuantityPrompt.IsMatch(text))
         {
             surface = "PortTradeQuantity";
@@ -394,6 +415,11 @@ public sealed class TradeWarsTelnetTelemetryDecoder(
         if (StopInSectorPrompt.IsMatch(text))
         {
             surface = "StopInSector";
+            return true;
+        }
+        if (FighterEncounterPrompt.IsMatch(text))
+        {
+            surface = "FighterEncounter";
             return true;
         }
         if (CommandPrompt.IsMatch(text))
@@ -416,9 +442,24 @@ public sealed class TradeWarsTelnetTelemetryDecoder(
             surface = "NewCharacter";
             return true;
         }
+        if (NameConfirmationPrompt.IsMatch(text))
+        {
+            surface = "NameConfirmation";
+            return true;
+        }
         if (TraderAliasPreviewPrompt.IsMatch(text))
         {
             surface = "TraderAliasPreview";
+            return true;
+        }
+        if (TraderAliasChoicePrompt.IsMatch(text))
+        {
+            surface = "TraderAliasChoice";
+            return true;
+        }
+        if (TraderAliasNamePrompt.IsMatch(text))
+        {
+            surface = "TraderAliasName";
             return true;
         }
         if (TraderAliasPrompt.IsMatch(text))
@@ -438,7 +479,7 @@ public sealed class TradeWarsTelnetTelemetryDecoder(
         }
         if (AccountSetupPrompt.IsMatch(text))
         {
-            surface = "UnsupportedAccountSetup";
+            surface = "NewCharacter";
             return true;
         }
         if (NamePrompt.IsMatch(text))

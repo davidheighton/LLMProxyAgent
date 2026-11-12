@@ -60,6 +60,27 @@ public sealed class GameFileLock : IDisposable
         return fullConfigPath + ".lock";
     }
 
+    public static bool IsLockedByAnotherProcess(string configPath)
+    {
+        string lockFilePath = GetLockFilePath(configPath);
+        if (!File.Exists(lockFilePath))
+            return false;
+
+        try
+        {
+            using var stream = new FileStream(
+                lockFilePath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+    }
+
     private static void WriteMetadata(FileStream stream, string owner, string configPath, string databasePath)
     {
         var process = Process.GetCurrentProcess();

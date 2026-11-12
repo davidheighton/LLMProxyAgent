@@ -371,6 +371,97 @@ resumption are not implemented. The reasoning integration requires a reachable
 Ollama server and the agent's configured model. The dashboard does not connect
 to a game server or issue game commands.
 
+## Learning trajectories and reward
+
+The autonomous Pilot worker records every decision as a trajectory step so runs can be compared,
+scored, and later used for reflection, skill statistics, or fine-tuning.
+
+- **Episodes.** One episode spans one worker run. It ends when the worker stops, or when a new worker
+  run for the same agent supersedes it.
+- **Steps.** Each decision is stored with the synchronized snapshot at decision time, the action,
+  target sector, rationale, active objective, and the ID of the LLM interaction that produced it.
+  `source` records who chose the action: `Pilot`, `Policy` (deterministic rule),
+  `PilotFallbackToPolicy` (Pilot chose `None`), or `PilotOverriddenByPolicy`.
+- **Reward.** A step is closed when the next decision is recorded or the episode ends. Its reward is
+  computed from the newest valid synchronized snapshot (`GameplayRewardCalculator`): change in
+  estimated net worth (credits plus holds, fighters, shields, scanners, and cargo) per 1,000 credits,
+  minus 0.02 per turn used, plus 0.05 for a sector new to the episode, plus 5 for acquiring a
+  scanner, minus 50 for losing the ship to an Escape Pod. Without a newer valid snapshot the reward is
+  marked unverified and excluded from totals. Weights are in `GameplayRewardWeights`; asset values are
+  estimates.
+- **LLM history.** Prompts and replies for every role are written through to SQLite and reloaded on
+  startup. Calls still in progress at shutdown are marked `Interrupted before completion.`
+
+Both are stored in `trajectories.db` beside `agents.db` (override with
+`Learning:TrajectoryDatabasePath`). Loopback-only endpoints expose the data:
+
+```text
+GET /api/learning/episodes?agentId=meridian&limit=50
+GET /api/learning/episodes/{episodeId}/steps
+```
+
+Example analysis queries:
+
+```sql
+-- How often does the Pilot actually choose the action that runs?
+SELECT source, COUNT(*) FROM trajectory_steps GROUP BY source;
+
+-- Average verified reward by action.
+SELECT action, COUNT(*) AS n, AVG(reward_total) AS avg_reward
+FROM trajectory_steps WHERE reward_verified = 1 GROUP BY action ORDER BY avg_reward DESC;
+```
+
+## Episode harness
+
+`LLMSurvivingProxyAgent.Harness` runs repeatable learning episodes. Each episode is a brand-new character in
+its own MTC process, scored automatically from the trajectory data above.
+
+```powershell
+# From the repository root. Builds must be current: build LLMControlCenter first.
+dotnet run --project LLMSurvivingProxyAgent\LLMSurvivingProxyAgent.Harness -- run `
+  --base-profile "LLMControlCenter\games\exiledTWGS  - Game E.json" --episodes 4 --parallel 2 `
+  --pilot-model qwen3:1.7b
+dotnet run --project LLMSurvivingProxyAgent\LLMSurvivingProxyAgent.Harness -- status
+dotnet run --project LLMSurvivingProxyAgent\LLMSurvivingProxyAgent.Harness -- resume
+dotnet run --project LLMSurvivingProxyAgent\LLMSurvivingProxyAgent.Harness -- report --batch <id>
+dotnet run --project LLMSurvivingProxyAgent\LLMSurvivingProxyAgent.Harness -- cleanup
+```
+
+- **Models.** `--pilot-model` defaults to `qwen3:1.7b`. New-character naming always uses the fast reactive model
+  (`Brains:Reactive:Model`, default `qwen3:1.7b`) with thinking off, and only receives the game letter. Model replies
+  are reduced to their leading letters, retried, and replaced by a random callsign or alias-based name if still
+  invalid.
+- **Cleanup.** When an episode finishes (not when paused), the learner is removed from the agent registry and its
+  cloned profile, `.xdb`, and game folder are deleted. Event and debug logs are archived to
+  `%LOCALAPPDATA%\LLMSurvivingProxyAgent\harness\<batch>\<episode>\`. Trajectories, LLM history, reports, and saved
+  login credentials are kept; the characters stay on the server. `--cleanup false` keeps everything, and the
+  `cleanup` command applies the same rules to existing batches.
+
+- **Isolation.** MTC locks each profile, so every episode gets a cloned profile
+  (`<base name> - learner-<batch>-<n>.json`), its own `.xdb` (a copy of the base map by default; `--map empty`
+  starts blank) and game folder. The clone keeps the base "Game X" name, so the game letter is unchanged, and the
+  new agent ID makes MTC generate a new login and character (`--create-account-if-needed`).
+- **Goal.** `FullyUpgradedShip`: Holo Scanner plus maximum holds, fighters, and shields for the current ship class.
+  Milestones are recorded along the way: ReachedStarDock, DensityScanner, FirstProfitableTrade, HoloScanner,
+  MaxHolds, MaxFighters, MaxShields, FullyUpgraded. Milestones use only fresh synchronized snapshots.
+- **Ship limits** come from Mombot's universe catalog `games/<game>/ships.cfg`, copied into each clone. Start
+  Mombot once on the base profile to capture it. Without it, a "max" milestone is awarded only from a fresh Refurb
+  quote that offers zero more units while credits exceed the unit price.
+- **Episode end.** Completed, ShipLost (Escape Pod), PausedOutOfTurns (fewer than 5 turns; resumed after the next
+  `--game-day-reset`, default local midnight), TimedOut (`--wall-clock-minutes`, default 480 per segment), Stopped,
+  or Error (worker fault or blocked login). MTC writes a result JSON and exits with codes 10–15
+  (`EpisodeExitCodes`). The harness kills MTC after the cap plus `--grace-minutes` (default 15) and reconciles the
+  episode status.
+- **Reports.** `reports/harness/<batch>.md` and `.json`: completion and ship-loss rates, milestone funnel with
+  median turns and minutes, net worth per turn, decision sources, verified-step rate, and the characters created
+  (old characters are not removed from the server).
+- **State.** `harness_batches` and `harness_episodes` live in `trajectories.db`, so `resume` works after the
+  harness itself restarts. Stopping the harness with Ctrl+C closes its MTC sessions; killing the harness process
+  does not.
+
+MTC accepts the matching options directly: `--episode-id`, `--episode-goal`, `--episode-wall-clock-minutes`,
+`--episode-minimum-turns`, `--episode-result-path`, `--episode-pilot-model`, and `--exit-on-episode-end`.
+
 ## Run
 
 ```powershell

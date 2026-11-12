@@ -18,6 +18,7 @@ namespace MTC;
 internal sealed record GameAgentBackgroundStatusSnapshot(
     bool DashboardHostAvailable,
     bool AutonomousWorkerRunning,
+    bool LearningModeRunning,
     AutonomousTestWorkerStatus? Worker,
     AgentRuntimeStatus? Runtime);
 
@@ -34,19 +35,128 @@ internal sealed class DashboardHost : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
         WebApplication? application = _application;
         if (application is null)
-            return new GameAgentBackgroundStatusSnapshot(false, false, null, null);
+            return new GameAgentBackgroundStatusSnapshot(false, false, false, null, null);
 
         IServiceProvider services = application.Services;
         AutonomousTestWorkerStatus? workerStatus =
             services.GetRequiredService<AutonomousTestWorkerStatusStore>().GetStatus(agentId);
         AgentRuntimeStatus? runtimeStatus =
             services.GetRequiredService<IAgentRuntime>().GetStatus();
-        bool workerRunning = services.GetRequiredService<IAutonomousTestWorkerController>().IsRunning;
+        bool workerRunning =
+            services.GetService<IAutonomousTestWorkerController>()?.IsRunning == true;
+        bool learningModeRunning =
+            services.GetService<IAgentLearningSessionController>()?.IsRunning == true;
         return new GameAgentBackgroundStatusSnapshot(
             true,
             workerRunning,
+            learningModeRunning,
             workerStatus,
             runtimeStatus);
+    }
+
+    public bool CanControlAgent(string agentId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        IAgentSessionController? sessionController = _application?.Services
+            .GetService<IAgentSessionController>();
+        return sessionController is { IsAvailable: true } &&
+               sessionController.SupportsAgent(agentId) &&
+               _application?.Services.GetService<IAutonomousTestWorkerController>() is not null &&
+               _application?.Services.GetService<IAgentLearningSessionController>() is not null;
+    }
+
+    public async Task<AgentSessionControlStatus> SetAgentRunningAsync(
+        string agentId,
+        bool running,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        WebApplication application = _application
+            ?? throw new InvalidOperationException("The embedded dashboard is not running.");
+        IAgentSessionController sessionController = application.Services
+            .GetService<IAgentSessionController>()
+            ?? throw new InvalidOperationException("Agent session controls are unavailable.");
+        if (!sessionController.IsAvailable || !sessionController.SupportsAgent(agentId))
+        {
+            throw new InvalidOperationException(
+                $"Agent '{agentId}' cannot be controlled by the active MTC session.");
+        }
+
+        AgentSessionControlStatus status = await sessionController
+            .GetStatusAsync(agentId, cancellationToken)
+            .ConfigureAwait(false);
+        if (status.IsAgentRunning != running)
+        {
+            if (running)
+            {
+                await sessionController.StartAgentAsync(agentId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await sessionController.StopAgentAsync(agentId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        status = await sessionController
+            .GetStatusAsync(agentId, cancellationToken)
+            .ConfigureAwait(false);
+        if (status.IsAgentRunning != running)
+        {
+            throw new InvalidOperationException(
+                running
+                    ? "The autonomous agent did not start."
+                    : "The autonomous agent did not stop.");
+        }
+
+        return status;
+    }
+
+    public async Task<AgentSessionControlStatus> SetAgentLearningAsync(
+        string agentId,
+        bool learning,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        WebApplication application = _application
+            ?? throw new InvalidOperationException("The embedded dashboard is not running.");
+        IAgentSessionController sessionController = application.Services
+            .GetService<IAgentSessionController>()
+            ?? throw new InvalidOperationException("Agent session controls are unavailable.");
+        if (!sessionController.IsAvailable || !sessionController.SupportsAgent(agentId))
+        {
+            throw new InvalidOperationException(
+                $"Agent '{agentId}' cannot be controlled by the active MTC session.");
+        }
+
+        AgentSessionControlStatus status = await sessionController
+            .GetStatusAsync(agentId, cancellationToken)
+            .ConfigureAwait(false);
+        if (status.IsLearning != learning)
+        {
+            if (learning)
+            {
+                await sessionController.StartLearningAsync(agentId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await sessionController.StopLearningAsync(agentId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        status = await sessionController
+            .GetStatusAsync(agentId, cancellationToken)
+            .ConfigureAwait(false);
+        if (status.IsLearning != learning)
+        {
+            throw new InvalidOperationException(
+                learning ? "Learn mode did not start." : "Learn mode did not stop.");
+        }
+
+        return status;
     }
 
     public void SetAgentStartupActivity(string agentId, string activity)
@@ -56,6 +166,34 @@ internal sealed class DashboardHost : IAsyncDisposable
         _application?.Services
             .GetRequiredService<AutonomousTestWorkerStatusStore>()
             .SetActivity(agentId, activity);
+    }
+
+    public async Task<string?> GetAgentGameProfileAsync(
+        string agentId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        WebApplication application = _application
+            ?? throw new InvalidOperationException("The embedded dashboard is not running.");
+        var agent = await application.Services.GetRequiredService<IAgentStore>()
+            .GetAgentAsync(agentId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Agent '{agentId}' is not configured.");
+        return agent.Configuration.GetValueOrDefault("Session:GameProfile");
+    }
+
+    public async Task<bool> IsAgentAutoStartEnabledAsync(
+        string agentId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        WebApplication application = _application
+            ?? throw new InvalidOperationException("The embedded dashboard is not running.");
+        var agent = await application.Services.GetRequiredService<IAgentStore>()
+            .GetAgentAsync(agentId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Agent '{agentId}' is not configured.");
+        return AgentSessionStartupSettings.IsAutoStartEnabled(agent);
     }
 
     public async Task WaitForAgentModelAsync(
@@ -191,6 +329,7 @@ internal sealed class DashboardHost : IAsyncDisposable
         Func<Core.ModDatabase?> getSessionDatabase,
         Func<IntegratedGameClientSnapshot> getIntegratedGameClientSnapshot,
         Func<GameScriptInputPrompt?> getCurrentScriptInputPrompt,
+        MtcSessionWindowHost? sessionWindowHost = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
@@ -216,6 +355,11 @@ internal sealed class DashboardHost : IAsyncDisposable
                     builder.Configuration["AutonomousTesting:Enabled"] = "true";
                     builder.Configuration["AutonomousTesting:AutoStart"] = "false";
                     builder.Configuration["AutonomousTesting:AgentId"] = agentId;
+                    builder.Configuration["AutonomousTesting:TeamId"] =
+                        Environment.GetEnvironmentVariable("LLMCONTROL_TEAM_ID") ?? string.Empty;
+                    string sessionName = getCurrentGameName();
+                    builder.Configuration["AutonomousTesting:SessionName"] =
+                        string.IsNullOrWhiteSpace(sessionName) ? agentId : sessionName;
                     builder.Configuration["AutonomousGameplay:Enabled"] = "true";
                     builder.Configuration["AutonomousGameplay:MaximumActionsPerSession"] =
                         AutonomousTestWorker.UnlimitedActionsPerSession.ToString(
@@ -223,11 +367,26 @@ internal sealed class DashboardHost : IAsyncDisposable
                     builder.Configuration["AutonomousGameplay:RequireMovementApproval"] = "false";
                     builder.Configuration[$"GameState:EventLogPaths:{agentId}"] =
                         Path.GetFullPath(eventLogDirectory);
+                    EpisodeCommandLine.ApplyEnvironment(builder.Configuration);
                     builder.WebHost.ConfigureKestrel(server =>
                         server.Listen(IPAddress.Loopback, 0));
                 },
                 configureServices: services =>
                 {
+                    services.AddSingleton<IShipCapacityProvider>(new ShipCatalogCapacityProvider(() =>
+                    {
+                        string gameName = getCurrentGameName();
+                        return string.IsNullOrWhiteSpace(gameName)
+                            ? null
+                            : Path.Combine(AppPaths.TwxproxyGamesDir, gameName, "ships.cfg");
+                    }));
+                    if (EpisodeCommandLine.ReadEnvironment() is { } episodeOptions)
+                    {
+                        services.AddSingleton<IEpisodeCompletionHandler>(serviceProvider =>
+                            new MtcEpisodeCompletionHandler(
+                                episodeOptions,
+                                serviceProvider.GetRequiredService<ITrajectoryStore>()));
+                    }
                     var sectorProvider = new MtcFreshAdjacentSectorProvider(getSessionDatabase);
                     services.AddSingleton<IGameCommandSender>(commandSender);
                     services.AddSingleton<IAutonomousGameLoginInputSender>(commandSender);
@@ -244,21 +403,36 @@ internal sealed class DashboardHost : IAsyncDisposable
                     services.AddSingleton(snapshotProvider);
                     services.AddSingleton<ISynchronizedGameSnapshotProvider>(snapshotProvider);
                     services.AddSingleton<IGameSituationProvider>(snapshotProvider);
+                    services.AddSingleton<GameSituationObservationService>();
+                    services.AddSingleton<IAgentLearningSessionController>(serviceProvider =>
+                        new AgentLearningSessionController(
+                            serviceProvider.GetRequiredService<GameSituationObservationService>(),
+                            serviceProvider.GetRequiredService<
+                                Microsoft.Extensions.Logging.ILogger<AgentLearningSessionController>>(),
+                            TimeSpan.FromSeconds(15)));
                     string loginProfilePath = Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                         "LLMSurvivingProxyAgent",
                         "game-login.json");
                     var loginCredentialProvider = new MtcAutonomousGameLoginCredentialProvider(
                         loginProfilePath,
-                        getCurrentGameName);
+                        getCurrentGameName,
+                        string.Equals(
+                            Environment.GetEnvironmentVariable("LLMCONTROL_CREATE_ACCOUNT_IF_NEEDED"),
+                            "true",
+                            StringComparison.OrdinalIgnoreCase));
                     commandSender.ConfigureScriptPasswordProvider(
                         () => loginCredentialProvider.GetCredentials(agentId)?.Password,
                         provider =>
                         {
-                            Core.ModDatabase database = getSessionDatabase()
-                                ?? throw new InvalidOperationException(
+                            Core.ModDatabase? database = getSessionDatabase();
+                            if (database is null && provider is not null)
+                            {
+                                throw new InvalidOperationException(
                                     "The MTC session database is unavailable for script credentials.");
-                            database.SetScriptPasswordProvider(provider);
+                            }
+
+                            database?.SetScriptPasswordProvider(provider);
                         });
                     services.AddSingleton<IAutonomousGameLoginCredentialProvider>(
                         loginCredentialProvider);
@@ -267,14 +441,20 @@ internal sealed class DashboardHost : IAsyncDisposable
                             agentId,
                             serviceProvider.GetRequiredService<IAgentStore>(),
                             serviceProvider.GetRequiredService<IAutonomousTestWorkerController>(),
+                            serviceProvider.GetRequiredService<IAgentLearningSessionController>(),
                             commandSender,
                             isConnected,
+                            () => getSessionDatabase() is not null,
                             canConnectAsync,
                             configureConnectionAsync,
                             loadConnectionAsync,
                             connectAsync,
                             disconnectAsync,
                             publishCurrentPromptAsync));
+                    services.AddSingleton<IAgentSessionLauncher>(serviceProvider =>
+                        new MtcAgentSessionLauncher(
+                            serviceProvider.GetRequiredService<IAgentStore>(),
+                            sessionWindowHost));
                 },
                 environmentName: Environments.Production);
 

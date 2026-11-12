@@ -13,12 +13,34 @@ public sealed class TradeWarsTcpProxyTests
     [Theory]
     [InlineData("Citadel command [TL=100]", "Citadel")]
     [InlineData("Planet command [TL=100]", "Planet")]
+    [InlineData("To which Sector [2580] ?", "MoveSector")]
+    [InlineData("To which Sector ?", "MoveSector")]
+    [InlineData("Option? (A,D,I,R,P,S,?):? ", "FighterEncounter")]
+    [InlineData("Option? (A,D,I,R,S,?):?", "FighterEncounter")]
     public void ClassifiesPlanetLocationPromptsBeforeTheGenericCommandPrompt(
         string prompt,
         string expectedSurface)
     {
         Assert.True(TradeWarsTelnetTelemetryDecoder.TryGetPromptSurface(prompt, out string surface));
         Assert.Equal(expectedSurface, surface);
+    }
+
+    [Fact]
+    public async Task DecoderEmitsPortOfferAsFreshPromptSurface()
+    {
+        var events = new List<ProxyGameEvent>();
+        var decoder = new TradeWarsTelnetTelemetryDecoder((gameEvent, _) =>
+        {
+            events.Add(gameEvent);
+            return Task.CompletedTask;
+        });
+
+        await decoder.ObserveServerBytesAsync(Encoding.ASCII.GetBytes("Your offer [191] ?"));
+
+        Assert.Contains(
+            events,
+            gameEvent => gameEvent.Kind == "ServerPrompt" &&
+                gameEvent.PromptSurface == "PortTradeOffer");
     }
 
     [Fact]
@@ -221,6 +243,85 @@ public sealed class TradeWarsTcpProxyTests
         finally
         {
             Directory.Delete(eventDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RoutesCommandsToOnlyTheirOwnGameSession()
+    {
+        var gameDUpstreamListener = new TcpListener(IPAddress.Loopback, 0);
+        var gameEUpstreamListener = new TcpListener(IPAddress.Loopback, 0);
+        gameDUpstreamListener.Start();
+        gameEUpstreamListener.Start();
+        var gameDUpstreamPort = ((IPEndPoint)gameDUpstreamListener.LocalEndpoint).Port;
+        var gameEUpstreamPort = ((IPEndPoint)gameEUpstreamListener.LocalEndpoint).Port;
+        int gameDProxyPort = GetAvailablePort();
+        int gameEProxyPort = GetAvailablePort();
+        while (gameEProxyPort == gameDProxyPort)
+        {
+            gameEProxyPort = GetAvailablePort();
+        }
+
+        string gameDEventDirectory = CreateTemporaryDirectory();
+        string gameEEventDirectory = CreateTemporaryDirectory();
+        var commandBroker = new ProxyGameCommandBroker();
+        var proxy = new TradeWarsTcpProxyService(
+            [
+                new GameProxyListenerOptions
+                {
+                    AgentId = "game-d",
+                    ListenAddress = IPAddress.Loopback.ToString(),
+                    ListenPort = gameDProxyPort,
+                    UpstreamHost = IPAddress.Loopback.ToString(),
+                    UpstreamPort = gameDUpstreamPort,
+                    EventLogDirectory = gameDEventDirectory
+                },
+                new GameProxyListenerOptions
+                {
+                    AgentId = "game-e",
+                    ListenAddress = IPAddress.Loopback.ToString(),
+                    ListenPort = gameEProxyPort,
+                    UpstreamHost = IPAddress.Loopback.ToString(),
+                    UpstreamPort = gameEUpstreamPort,
+                    EventLogDirectory = gameEEventDirectory
+                }
+            ],
+            new ProxyGameEventHub(),
+            commandBroker,
+            NullLogger<TradeWarsTcpProxyService>.Instance);
+
+        try
+        {
+            await proxy.StartAsync(CancellationToken.None);
+            using var gameDClient = new TcpClient();
+            using var gameEClient = new TcpClient();
+            await gameDClient.ConnectAsync(IPAddress.Loopback, gameDProxyPort);
+            await gameEClient.ConnectAsync(IPAddress.Loopback, gameEProxyPort);
+            using var gameDUpstream = await gameDUpstreamListener.AcceptTcpClientAsync()
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            using var gameEUpstream = await gameEUpstreamListener.AcceptTcpClientAsync()
+                .WaitAsync(TimeSpan.FromSeconds(5));
+
+            await commandBroker.SendAsync("game-d", GameCommand.RequestShipInformation);
+            await commandBroker.SendAsync("game-e", GameCommand.DisplayCurrentSector);
+
+            var received = new byte[2];
+            await gameDUpstream.GetStream().ReadExactlyAsync(received)
+                .AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(new byte[] { (byte)'I', 13 }, received);
+            await gameEUpstream.GetStream().ReadExactlyAsync(received)
+                .AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(new byte[] { (byte)'D', 13 }, received);
+        }
+        finally
+        {
+            await proxy.StopAsync(CancellationToken.None);
+            gameDUpstreamListener.Stop();
+            gameEUpstreamListener.Stop();
+            Directory.Delete(gameDEventDirectory, recursive: true);
+            Directory.Delete(gameEEventDirectory, recursive: true);
         }
     }
 

@@ -29,14 +29,16 @@ internal sealed class MtcGameCommandSender(
     Func<Task<bool>>? isDockShopperRunning = null,
     Func<string, Task<MtcRpcActionResult>>? stopScriptByName = null,
     Func<IReadOnlyList<MtcServerPrompt>>? getRecentServerLines = null,
-    Func<GameScriptInputPrompt?>? getCurrentScriptInputPrompt = null) :
+    Func<GameScriptInputPrompt?>? getCurrentScriptInputPrompt = null,
+    Action<bool>? setNativeHaggleEnabled = null,
+    Func<GameScriptInputPrompt, string, Task<MtcRpcActionResult>>? submitScriptInput = null) :
     IGameCommandSender,
     IAutonomousGameLoginInputSender,
     IAutonomousGameScriptRunner,
     IAutonomousGameCimRefresher,
     IAutonomousPortTradePromptRecovery
 {
-    private const string WorldTradeScriptReference = "Pack1/1_Trade.ts";
+    private const string WorldTradeScriptReference = WorldTradeScriptStartPolicy.ScriptReference;
     private const string DockShopperScriptReference = "ship-upgrades/ls-dock-shopper-v33.ts";
     private static readonly TimeSpan MaximumPromptAge = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan PortTradeCommandQuietPeriod = TimeSpan.FromSeconds(2);
@@ -51,8 +53,11 @@ internal sealed class MtcGameCommandSender(
     private static readonly Regex PortChoicePrompt = new(
         @"Enter your choice\s*\[T\]\s*\?",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex PortTradeOfferPrompt = new(
+        @"Your offer\s*\[\s*(?<price>[\d,]+)\s*\]\s*\?",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex MoveSectorPrompt = new(
-        @"Which\s+Sector\s*\[\s*\d+\s*\]\s*\?",
+        @"Which\s+Sector\s*(?:\[\s*\d+\s*\]\s*)?\?",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex CommandSectorPrompt = new(
         @"Command\s*\[\s*TL\s*=[^\]]*\]\s*:\s*\[\s*(?<sector>\d+)\s*\]",
@@ -97,10 +102,15 @@ internal sealed class MtcGameCommandSender(
         string currentAgentId,
         DateTimeOffset promptObservedAt,
         TradeProduct? followUpBuyProduct = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        long? availableCredits = null,
+        TradeProduct? requestedProduct = null,
+        bool sellingExistingCargo = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(currentAgentId);
         cancellationToken.ThrowIfCancellationRequested();
+        TWXProxy.Core.GlobalModules.DebugLog(
+            $"[PortTrade] Untracked recovery requestedProduct={requestedProduct?.ToString() ?? "none"} sellingExistingCargo={sellingExistingCargo} followUpBuyProduct={followUpBuyProduct?.ToString() ?? "none"} availableCredits={availableCredits?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}.\n");
 
         if (!string.Equals(currentAgentId, agentId, StringComparison.OrdinalIgnoreCase))
         {
@@ -114,32 +124,59 @@ internal sealed class MtcGameCommandSender(
         }
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        MtcServerPrompt? currentPrompt = GetRecentPromptObservations()
-            .Where(prompt => prompt.Timestamp <= now)
+        MtcServerPrompt[] recentPrompts = GetRecentPromptObservations()
+            .Where(prompt => prompt.Timestamp <= now && !prompt.IsPresenceHeartbeat)
             .OrderByDescending(prompt => prompt.Timestamp)
-            .FirstOrDefault();
+            .ToArray();
+        MtcServerPrompt? currentPrompt = recentPrompts.FirstOrDefault();
         bool isQuantityPrompt = currentPrompt is not null &&
             TryParsePortTradeQuantityPrompt(currentPrompt.Text, out _, out _, out _);
         bool isOfferPrompt = currentPrompt?.Text.StartsWith(
             "Your offer",
             StringComparison.OrdinalIgnoreCase) == true;
+        PortTradeQuoteSelection? recoveredQuoteSelection = null;
+        if (isOfferPrompt && currentPrompt is not null)
+        {
+            MtcServerPrompt? precedingPrompt = recentPrompts
+                .Where(prompt => prompt.Timestamp < currentPrompt.Timestamp)
+                .FirstOrDefault();
+            if (precedingPrompt is not null &&
+                Math.Abs((precedingPrompt.Timestamp - promptObservedAt).TotalSeconds) <=
+                    MaximumPromptAge.TotalSeconds &&
+                TryParsePortTradeQuantityPrompt(
+                    precedingPrompt.Text,
+                    out TradeProduct offeredProduct,
+                    out bool offeredAsSale,
+                    out _))
+            {
+                recoveredQuoteSelection = new PortTradeQuoteSelection(
+                    offeredProduct,
+                    offeredAsSale,
+                    Quantity: null);
+            }
+        }
+
         if (promptObservedAt > now ||
             now - promptObservedAt > MaximumPromptAge ||
             currentPrompt is null ||
             now - currentPrompt.Timestamp > MaximumPromptAge ||
-            isAtCommandPrompt() ||
-            (!isQuantityPrompt && !isOfferPrompt))
+        (isAtCommandPrompt() && !isOfferPrompt) ||
+            (!isQuantityPrompt && !isOfferPrompt) ||
+            (isOfferPrompt && recoveredQuoteSelection is null))
         {
             throw new InvalidOperationException(
-                "MTC could not confirm a fresh port-trade prompt for safe recovery; no response was sent.");
+            "MTC could not correlate a fresh active port-trade prompt to its selected product; no response was sent.");
         }
 
-        await CompletePortTradeAsync(
-            currentPrompt.Timestamp,
-            requestedProduct: null,
-            sellingExistingCargo: false,
-            followUpBuyProduct,
-            cancellationToken).ConfigureAwait(false);
+        await WithNativeHaggleSuppressedAsync(() =>
+            CompletePortTradeAsync(
+                currentPrompt.Timestamp,
+                requestedProduct,
+                sellingExistingCargo,
+                followUpBuyProduct,
+                availableCredits,
+                cancellationToken,
+                recoveredQuoteSelection)).ConfigureAwait(false);
     }
 
     public async Task SendLoginInputAsync(
@@ -252,6 +289,50 @@ internal sealed class MtcGameCommandSender(
             return;
         }
 
+        if (request.Command == GameCommand.ResolveFighterEncounter)
+        {
+            if (request.TargetSector is not null || request.Product is not null)
+            {
+                throw new ArgumentOutOfRangeException(nameof(request));
+            }
+
+            await ResolveFighterEncounterAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (request.Command == GameCommand.ContinuePausePrompt)
+        {
+            if (request.TargetSector is not null || request.Product is not null)
+            {
+                throw new ArgumentOutOfRangeException(nameof(request));
+            }
+
+            EnsureLatestPromptIsPause();
+            MtcRpcActionResult pauseResult = await submitCommand(string.Empty, true)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!pauseResult.Success)
+            {
+                throw new InvalidOperationException($"MTC rejected continuing the pause prompt: {pauseResult.Message}");
+            }
+
+            return;
+        }
+
+        if (request.Command == GameCommand.PlotCourseToSector)
+        {
+            if (request.TargetSector is null ||
+                request.TargetSector.Value is <= 0 or > 65535 ||
+                request.Product is not null)
+            {
+                throw new ArgumentOutOfRangeException(nameof(request));
+            }
+
+            await PlotCourseToSectorAsync(request.TargetSector.Value, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
         if (request.Command == GameCommand.TradeAtCurrentPort)
         {
             if (request.TargetSector is not null || request.Product is not { } product)
@@ -263,6 +344,7 @@ internal sealed class MtcGameCommandSender(
                 product,
                 request.SellingExistingCargo,
                 request.FollowUpBuyProduct,
+                request.AvailableCredits,
                 cancellationToken).ConfigureAwait(false);
             return;
         }
@@ -743,8 +825,12 @@ internal sealed class MtcGameCommandSender(
         TradeProduct requestedProduct,
         bool sellingExistingCargo,
         TradeProduct? followUpBuyProduct,
+        long? availableCredits,
         CancellationToken cancellationToken)
     {
+        TWXProxy.Core.GlobalModules.DebugLog(
+            $"[PortTrade] Starting request product={requestedProduct} sellingExistingCargo={sellingExistingCargo} followUpBuyProduct={followUpBuyProduct?.ToString() ?? "none"} availableCredits={availableCredits?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}.\n");
+
         DateTimeOffset now = DateTimeOffset.UtcNow;
         MtcServerPrompt? latestPrompt = GetRecentPromptObservations()
             .Where(prompt => prompt.Timestamp <= now)
@@ -762,20 +848,56 @@ internal sealed class MtcGameCommandSender(
                 "A port trade requires a fresh TradeWars Command prompt; no trade input was sent.");
         }
 
-        DateTimeOffset portCommandSubmittedAt = DateTimeOffset.UtcNow;
-        await SubmitPortTradeKeyAsync("P", cancellationToken).ConfigureAwait(false);
-        await WaitForPortChoicePromptAsync(
-            portCommandSubmittedAt,
-            cancellationToken).ConfigureAwait(false);
+        await WithNativeHaggleSuppressedAsync(async () =>
+        {
+            DateTimeOffset portCommandSubmittedAt = DateTimeOffset.UtcNow;
+            await SubmitPortTradeKeyAsync("P", cancellationToken).ConfigureAwait(false);
+            await WaitForPortChoicePromptAsync(
+                portCommandSubmittedAt,
+                cancellationToken).ConfigureAwait(false);
 
-        DateTimeOffset tradeSubmittedAt = DateTimeOffset.UtcNow;
-        await SubmitPortTradeKeyAsync("T", cancellationToken).ConfigureAwait(false);
-        await CompletePortTradeAsync(
-            tradeSubmittedAt,
-            requestedProduct,
-            sellingExistingCargo,
-            followUpBuyProduct,
-            cancellationToken).ConfigureAwait(false);
+            DateTimeOffset tradeSubmittedAt = DateTimeOffset.UtcNow;
+            await SubmitPortTradeKeyAsync("T", cancellationToken).ConfigureAwait(false);
+            await CompletePortTradeAsync(
+                tradeSubmittedAt,
+                requestedProduct,
+                sellingExistingCargo,
+                followUpBuyProduct,
+                availableCredits,
+                cancellationToken).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    }
+
+    private async Task WithNativeHaggleSuppressedAsync(Func<Task> tradeAction)
+    {
+        bool wasEnabled = isNativeHaggleEnabled();
+        if (wasEnabled && setNativeHaggleEnabled is null)
+        {
+            throw new InvalidOperationException(
+                "A port trade cannot run while native haggling is enabled without a way to suspend it.");
+        }
+
+        try
+        {
+            if (wasEnabled)
+            {
+                setNativeHaggleEnabled!(false);
+                if (isNativeHaggleEnabled())
+                {
+                    throw new InvalidOperationException(
+                        "A port trade was not started because native haggling could not be disabled.");
+                }
+            }
+
+            await tradeAction().ConfigureAwait(false);
+        }
+        finally
+        {
+            if (wasEnabled && !isNativeHaggleEnabled())
+            {
+                setNativeHaggleEnabled!(true);
+            }
+        }
     }
 
     private async Task WaitForPortChoicePromptAsync(
@@ -936,6 +1058,102 @@ internal sealed class MtcGameCommandSender(
             ? parsedQuantity
             : 0;
         return match.Success && Enum.IsDefined(product) && maximumQuantity >= 0;
+    }
+
+    /// <summary>
+    /// Answers the "Option? (A,D,I,R,P,S,?)" prompt shown on entering a sector guarded by another player's fighters:
+    /// pays a toll when one is offered (cheap, no combat), otherwise retreats to the previous sector. Never attacks.
+    /// A Y/N confirmation after the choice is accepted; the method returns at the next Command prompt.
+    /// </summary>
+    private async Task ResolveFighterEncounterAsync(CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        MtcServerPrompt? latestPrompt = GetRecentPromptObservations()
+            .Where(prompt => prompt.Timestamp <= now)
+            .OrderByDescending(prompt => prompt.Timestamp)
+            .FirstOrDefault();
+        if (latestPrompt is null ||
+            now - latestPrompt.Timestamp > MaximumPromptAge ||
+            !TradeWarsTelnetTelemetryDecoder.TryGetPromptSurface(latestPrompt.Text, out string surface) ||
+            !string.Equals(surface, "FighterEncounter", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "The fighter encounter was not answered because the latest live prompt is not a fresh fighter encounter.");
+        }
+
+        bool tollOffered =
+            latestPrompt.Text.Contains(",P,", StringComparison.OrdinalIgnoreCase) &&
+            (getRecentServerLines?.Invoke() ?? [])
+                .Where(line => line.Timestamp >= latestPrompt.Timestamp.AddSeconds(-10))
+                .Any(line => line.Text.Contains("pay their toll", StringComparison.OrdinalIgnoreCase));
+        string choice = tollOffered ? "P" : "R";
+        TWXProxy.Core.GlobalModules.DebugLog($"[FighterEncounter] toll={tollOffered} choice={choice}.\n");
+
+        DateTimeOffset submittedAt = DateTimeOffset.UtcNow;
+        MtcRpcActionResult result = await submitCommand(choice, false)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.Success)
+        {
+            throw new InvalidOperationException($"MTC rejected the fighter-encounter response: {result.Message}");
+        }
+
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + MovementPromptCompletionTimeout;
+        DateTimeOffset lastPromptAt = submittedAt.AddTicks(-1);
+        int confirmations = 0;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            MtcServerPrompt? prompt = GetRecentPromptObservations()
+                .Where(candidate => candidate.Timestamp >= submittedAt && candidate.Timestamp > lastPromptAt)
+                .OrderBy(candidate => candidate.Timestamp)
+                .FirstOrDefault();
+            if (prompt is null)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            lastPromptAt = prompt.Timestamp;
+            if (TradeWarsTelnetTelemetryDecoder.TryGetPromptSurface(prompt.Text, out string nextSurface) &&
+                string.Equals(nextSurface, "Command", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            // The toll is confirmed with "Do you want to pay it?" (no "(Y/N)" suffix on this server).
+            if ((prompt.Text.Contains("(Y/N)", StringComparison.OrdinalIgnoreCase) ||
+                 prompt.Text.Contains("Do you want to pay it", StringComparison.OrdinalIgnoreCase)) &&
+                confirmations < 2)
+            {
+                confirmations++;
+                MtcRpcActionResult confirm = await submitCommand("Y", false)
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (!confirm.Success)
+                {
+                    throw new InvalidOperationException($"MTC rejected the fighter-encounter confirmation: {confirm.Message}");
+                }
+            }
+        }
+
+        throw new TimeoutException("MTC did not return to the Command prompt after answering the fighter encounter.");
+    }
+
+    /// <summary>A pause only accepts "continue", so Enter is safe there and nowhere else.</summary>
+    private void EnsureLatestPromptIsPause()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        MtcServerPrompt? latestPrompt = GetRecentPromptObservations()
+            .Where(prompt => prompt.Timestamp <= now)
+            .OrderByDescending(prompt => prompt.Timestamp)
+            .FirstOrDefault();
+        if (latestPrompt is null ||
+            !TradeWarsTelnetTelemetryDecoder.TryGetPromptSurface(latestPrompt.Text, out string surface) ||
+            !string.Equals(surface, "Pause", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "The pause was not continued because the latest live prompt is not a pause prompt.");
+        }
     }
 
     private void EnsureCurrentAutopilotConfirmationPrompt()
@@ -1135,6 +1353,90 @@ internal sealed class MtcGameCommandSender(
             $"{action} was interrupted by a {promptSurface} prompt; the movement prompt was handled safely and the action must be verified before retrying.");
     }
 
+    /// <summary>
+    /// Runs the ship computer's course plotter (no turns are used). TWX records the printed path's warps, so the
+    /// worker's shortest-path routing can then reach a sector the character has never charted a route to.
+    /// </summary>
+    private async Task PlotCourseToSectorAsync(int targetSector, CancellationToken cancellationToken)
+    {
+        if (!isAtCommandPrompt())
+        {
+            throw new InvalidOperationException("A course plot requires the TradeWars Command prompt.");
+        }
+
+        await SubmitCoursePlotInputAsync("C", appendEnter: false, "Computer command", cancellationToken)
+            .ConfigureAwait(false);
+        await SubmitCoursePlotInputAsync("F", appendEnter: false, "starting sector", cancellationToken)
+            .ConfigureAwait(false);
+        await SubmitCoursePlotInputAsync(string.Empty, appendEnter: true, "destination sector", cancellationToken)
+            .ConfigureAwait(false);
+        string response = await SubmitCoursePlotInputAsync(
+                targetSector.ToString(CultureInfo.InvariantCulture),
+                appendEnter: true,
+                "Computer command",
+                cancellationToken,
+                "No route within")
+            .ConfigureAwait(false);
+        if (response.Contains("No route within", StringComparison.OrdinalIgnoreCase))
+        {
+            // Decline clearing the avoid list; the computer then returns to its own prompt.
+            await SubmitCoursePlotInputAsync("N", appendEnter: false, "Computer command", cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        TWXProxy.Core.GlobalModules.DebugLog($"[CoursePlot] target={targetSector} result={(response.Contains("No route", StringComparison.OrdinalIgnoreCase) ? "no route" : "plotted")}.\n");
+        DateTimeOffset quitAt = DateTimeOffset.UtcNow;
+        MtcRpcActionResult quitResult = await submitCommand("Q", false)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!quitResult.Success)
+        {
+            throw new InvalidOperationException($"MTC rejected leaving the ship computer: {quitResult.Message}");
+        }
+
+        await WaitForCommandAfterMovementResponseAsync(quitAt, "course plot", cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<string> SubmitCoursePlotInputAsync(
+        string input,
+        bool appendEnter,
+        string expectedText,
+        CancellationToken cancellationToken,
+        string? alternateText = null)
+    {
+        DateTimeOffset submittedAt = DateTimeOffset.UtcNow;
+        MtcRpcActionResult result = await submitCommand(input, appendEnter)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.Success)
+        {
+            throw new InvalidOperationException($"MTC rejected a course-plot input: {result.Message}");
+        }
+
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + MovementPromptCompletionTimeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            IEnumerable<MtcServerPrompt> observed = GetRecentPromptObservations()
+                .Concat(getRecentServerLines?.Invoke() ?? [])
+                .Where(line => line.Timestamp >= submittedAt);
+            foreach (MtcServerPrompt line in observed.OrderBy(line => line.Timestamp))
+            {
+                if (line.Text.Contains(expectedText, StringComparison.OrdinalIgnoreCase) ||
+                    alternateText is not null &&
+                    line.Text.Contains(alternateText, StringComparison.OrdinalIgnoreCase))
+                {
+                    return line.Text;
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException($"MTC did not observe '{expectedText}' during the course plot.");
+    }
+
     private async Task WaitForCommandAfterMovementResponseAsync(
         DateTimeOffset submittedAt,
         string purpose,
@@ -1188,15 +1490,25 @@ internal sealed class MtcGameCommandSender(
         TradeProduct? requestedProduct,
         bool sellingExistingCargo,
         TradeProduct? followUpBuyProduct,
-        CancellationToken cancellationToken)
+        long? availableCredits,
+        CancellationToken cancellationToken,
+        PortTradeQuoteSelection? recoveredQuoteSelection = null)
     {
         DateTimeOffset deadline = DateTimeOffset.UtcNow.AddMinutes(2);
         DateTimeOffset lastHandledPromptAt = submittedAt.AddTicks(-1);
         bool requestedTradeSelected = false;
         bool followUpTradeSelected = false;
-        bool sawQuantityPrompt = false;
+        bool sawQuantityPrompt = recoveredQuoteSelection is not null;
+        bool selectedTradeForQuote = recoveredQuoteSelection is not null;
+        bool selectedTradeIsSale = recoveredQuoteSelection?.SellingExistingCargo ?? false;
+        TradeProduct? selectedTradeProduct = recoveredQuoteSelection?.Product;
+        int? selectedQuantity = recoveredQuoteSelection?.Quantity;
+        long? currentAvailableCredits = availableCredits;
         DateTimeOffset? commandPromptObservedAt = null;
         var handledQuantityPrompts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var answeredQuantityPrompts = new HashSet<(TradeProduct Product, bool IsSale, int Maximum, int Answer)>();
+        var answeredOfferPrices = new HashSet<long>();
+        bool counterOfferSent = false;
 
         while (DateTimeOffset.UtcNow < deadline)
         {
@@ -1207,12 +1519,24 @@ internal sealed class MtcGameCommandSender(
                     "Port trade prompt handling stopped because MTC action approval was disabled.");
             }
 
-            MtcServerPrompt? prompt = GetRecentPromptObservations()
+            MtcServerPrompt[] pendingPrompts = GetRecentPromptObservations()
                 .Where(candidate =>
+                    !candidate.IsPresenceHeartbeat &&
                     candidate.Timestamp >= submittedAt &&
-                    candidate.Timestamp > lastHandledPromptAt)
+                    candidate.Timestamp > lastHandledPromptAt &&
+                    !IsAnsweredPortTradePromptEcho(
+                        candidate.Text,
+                        answeredQuantityPrompts,
+                        answeredOfferPrices))
                 .OrderBy(candidate => candidate.Timestamp)
-                .FirstOrDefault();
+                .ToArray();
+            if (pendingPrompts.Length > 1)
+            {
+                throw new InvalidDataException(
+                    $"MTC observed multiple new port-trade prompts before replying to '{pendingPrompts[0].Text}'. No response was sent because that prompt may no longer be active.");
+            }
+
+            MtcServerPrompt? prompt = pendingPrompts.FirstOrDefault();
             if (prompt is null)
             {
                 if (sawQuantityPrompt &&
@@ -1262,14 +1586,28 @@ internal sealed class MtcGameCommandSender(
 
                 commandPromptObservedAt = null;
                 sawQuantityPrompt = true;
+                counterOfferSent = false;
                 int quantity = 0;
+                // Recovered trades start at the quantity prompt, after the balance line was printed, so look back briefly.
+                int? emptyHolds = offeredAsSale
+                    ? null
+                    : GetLatestEmptyHolds(
+                        submittedAt < prompt.Timestamp.AddSeconds(-30) ? submittedAt : prompt.Timestamp.AddSeconds(-30),
+                        prompt.Timestamp);
+                selectedTradeForQuote = false;
+                selectedTradeProduct = null;
+                selectedQuantity = 0;
                 if (!requestedTradeSelected &&
                     requestedProduct is { } product &&
                     offeredProduct == product &&
                     offeredAsSale == sellingExistingCargo)
                 {
                     requestedTradeSelected = true;
-                    quantity = maximumQuantity;
+                    quantity = GetAutonomousPortTradeQuantity(maximumQuantity, offeredAsSale, emptyHolds);
+                    selectedTradeForQuote = quantity > 0;
+                    selectedTradeIsSale = offeredAsSale;
+                    selectedTradeProduct = offeredProduct;
+                    selectedQuantity = quantity;
                 }
                 // A missing sale prompt in telemetry must not discard the planned follow-up buy.
                 else if (!followUpTradeSelected &&
@@ -1278,9 +1616,20 @@ internal sealed class MtcGameCommandSender(
                          !offeredAsSale)
                 {
                     followUpTradeSelected = true;
-                    quantity = maximumQuantity;
+                    quantity = GetAutonomousPortTradeQuantity(maximumQuantity, offeredAsSale, emptyHolds);
+                    selectedTradeForQuote = quantity > 0;
+                    selectedTradeIsSale = false;
+                    selectedTradeProduct = offeredProduct;
+                    selectedQuantity = quantity;
                 }
 
+                TWXProxy.Core.GlobalModules.DebugLog(
+                    $"[PortTrade] Quantity prompt product={offeredProduct} sale={offeredAsSale} maximum={maximumQuantity} emptyHolds={emptyHolds?.ToString(CultureInfo.InvariantCulture) ?? "unknown"} selected={quantity} selectedProduct={selectedTradeProduct?.ToString() ?? "none"} credits={currentAvailableCredits?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}.\n");
+                answeredQuantityPrompts.Add((
+                    offeredProduct,
+                    offeredAsSale,
+                    maximumQuantity,
+                    quantity));
                 await SubmitPortTradeInputAsync(
                     quantity.ToString(CultureInfo.InvariantCulture),
                     cancellationToken).ConfigureAwait(false);
@@ -1290,12 +1639,91 @@ internal sealed class MtcGameCommandSender(
             if (prompt.Text.StartsWith("Your offer", StringComparison.OrdinalIgnoreCase))
             {
                 commandPromptObservedAt = null;
-                if (!isNativeHaggleEnabled())
+                if (isNativeHaggleEnabled())
                 {
-                    await SubmitPortTradeInputAsync(string.Empty, cancellationToken)
-                        .ConfigureAwait(false);
+                    throw new InvalidOperationException(
+                        "Native haggling became enabled during a port trade; the quote was left unanswered to prevent an unintended offer.");
                 }
 
+                Match offerMatch = PortTradeOfferPrompt.Match(prompt.Text);
+                if (!offerMatch.Success ||
+                    !long.TryParse(
+                        offerMatch.Groups["price"].Value,
+                        NumberStyles.AllowThousands,
+                        CultureInfo.InvariantCulture,
+                        out long quotedPrice) ||
+                    quotedPrice <= 0)
+                {
+                    throw new InvalidDataException(
+                        $"MTC could not safely accept the port quote: '{prompt.Text}'. No response was sent.");
+                }
+
+                if (!selectedTradeForQuote)
+                {
+                    throw new InvalidDataException(
+                        "MTC could not correlate the port quote to a selected product and quantity; no response was sent.");
+                }
+
+                bool quoteAffordable = selectedTradeIsSale ||
+                    currentAvailableCredits is { } credits && quotedPrice <= credits;
+                string quoteReason = selectedTradeIsSale
+                        ? "selected sale"
+                        : currentAvailableCredits is not { } available
+                            ? "verified credit balance unavailable"
+                            : quotedPrice > available
+                                ? "quote exceeds verified credits"
+                                : "quote is affordable";
+                TWXProxy.Core.GlobalModules.DebugLog(
+                    $"[PortTrade] Quote product={selectedTradeProduct?.ToString() ?? "none"} quantity={selectedQuantity?.ToString(CultureInfo.InvariantCulture) ?? "unknown"} amount={quotedPrice} credits={currentAvailableCredits?.ToString(CultureInfo.InvariantCulture) ?? "unknown"} sale={selectedTradeIsSale} accept={quoteAffordable} reason={quoteReason}.\n");
+                // A quote slightly above the balance is usually haggled down: counter once with every verified credit
+                // instead of cancelling with 0. A second unaffordable quote in the same dialog is declined.
+                if (!quoteAffordable &&
+                    !counterOfferSent &&
+                    currentAvailableCredits is { } counterCredits &&
+                    counterCredits > 0 &&
+                    counterCredits * 100 >= quotedPrice * MinimumCounterOfferPercent)
+                {
+                    counterOfferSent = true;
+                    TWXProxy.Core.GlobalModules.DebugLog(
+                        $"[PortTrade] Counter-offer product={selectedTradeProduct?.ToString() ?? "none"} quote={quotedPrice} offer={counterCredits}.\n");
+                    answeredOfferPrices.Add(counterCredits);
+                    await SubmitPortTradeInputAsync(
+                            counterCredits.ToString(CultureInfo.InvariantCulture),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    currentAvailableCredits = 0;
+                    continue;
+                }
+
+                if (!quoteAffordable)
+                {
+                    answeredOfferPrices.Add(0);
+                    await SubmitPortTradeInputAsync("0", cancellationToken).ConfigureAwait(false);
+                    selectedTradeForQuote = false;
+                    selectedTradeProduct = null;
+                    selectedQuantity = null;
+                    continue;
+                }
+
+                answeredOfferPrices.Add(quotedPrice);
+                await SubmitPortTradeInputAsync(
+                        quotedPrice.ToString(CultureInfo.InvariantCulture),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (selectedTradeIsSale)
+                {
+                    currentAvailableCredits = currentAvailableCredits is { } saleCredits
+                        ? checked(saleCredits + quotedPrice)
+                        : quotedPrice;
+                }
+                else if (currentAvailableCredits is { } purchaseCredits)
+                {
+                    currentAvailableCredits = purchaseCredits - quotedPrice;
+                }
+
+                selectedTradeForQuote = false;
+                selectedTradeProduct = null;
+                selectedQuantity = null;
                 continue;
             }
 
@@ -1313,6 +1741,51 @@ internal sealed class MtcGameCommandSender(
             "MTC did not observe the TradeWars Command prompt after the port trade transaction.");
     }
 
+    private static bool IsAnsweredPortTradePromptEcho(
+        string prompt,
+        HashSet<(TradeProduct Product, bool IsSale, int Maximum, int Answer)> answeredQuantityPrompts,
+        HashSet<long> answeredOfferPrices)
+    {
+        Match quantityMatch = PortTradeQuantityPrompt.Match(prompt);
+        if (quantityMatch.Success &&
+            TryParsePortTradeQuantityPrompt(
+                prompt,
+                out TradeProduct product,
+                out bool isSale,
+                out int maximum))
+        {
+            string answerText = prompt[quantityMatch.Length..].Trim();
+            if (int.TryParse(
+                    answerText.Replace(",", string.Empty, StringComparison.Ordinal),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int answer) &&
+                answeredQuantityPrompts.Contains((product, isSale, maximum, answer)))
+            {
+                return true;
+            }
+        }
+
+        Match offerMatch = PortTradeOfferPrompt.Match(prompt);
+        if (!offerMatch.Success)
+        {
+            return false;
+        }
+
+        string submittedOfferText = prompt[offerMatch.Length..].Trim();
+        return long.TryParse(
+                submittedOfferText.Replace(",", string.Empty, StringComparison.Ordinal),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out long submittedOffer) &&
+            answeredOfferPrices.Contains(submittedOffer);
+    }
+
+    private sealed record PortTradeQuoteSelection(
+        TradeProduct Product,
+        bool SellingExistingCargo,
+        int? Quantity);
+
     private async Task SubmitPortTradeInputAsync(
         string input,
         CancellationToken cancellationToken)
@@ -1325,6 +1798,61 @@ internal sealed class MtcGameCommandSender(
             throw new InvalidOperationException(
                 $"MTC rejected a bounded port-trade response: {result.Message}");
         }
+    }
+
+    private const int MinimumCounterOfferPercent = 90;
+
+    internal static int GetAutonomousPortTradeQuantity(int maximumQuantity)
+    {
+        if (maximumQuantity < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumQuantity));
+        }
+
+        return maximumQuantity;
+    }
+
+    /// <summary>
+    /// For purchases limited by credits or port stock (the server's default is below the empty holds), buy ~8% fewer
+    /// units: the default is computed at the port's listed price, and the negotiated quote is often slightly higher,
+    /// which made the full default unaffordable and the purchase was declined.
+    /// </summary>
+    internal static int GetAutonomousPortTradeQuantity(int maximumQuantity, bool isSale, int? emptyHolds)
+    {
+        int quantity = GetAutonomousPortTradeQuantity(maximumQuantity);
+        if (isSale || quantity <= 1 || emptyHolds is not { } holds || quantity >= holds)
+        {
+            return quantity;
+        }
+
+        int margin = Math.Max(1, (int)Math.Ceiling(quantity * 0.08));
+        return Math.Max(1, quantity - margin);
+    }
+
+    private static readonly Regex PortTradeBalanceLine = new(
+        @"You have\s+(?<credits>[\d,]+)\s+credits and\s+(?<holds>[\d,]+)\s+empty cargo holds",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private int? GetLatestEmptyHolds(DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        IReadOnlyList<MtcServerPrompt> lines = getRecentServerLines?.Invoke() ?? [];
+        for (int index = lines.Count - 1; index >= 0; index--)
+        {
+            MtcServerPrompt line = lines[index];
+            if (line.Timestamp < notBefore || line.Timestamp > notAfter)
+            {
+                continue;
+            }
+
+            Match match = PortTradeBalanceLine.Match(line.Text);
+            if (match.Success &&
+                int.TryParse(match.Groups["holds"].Value, NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out int holds))
+            {
+                return holds;
+            }
+        }
+
+        return null;
     }
 
     public async Task StartWorldTradeModeAsync(
@@ -1475,8 +2003,24 @@ internal sealed class MtcGameCommandSender(
             throw new InvalidOperationException(
                 "The Dock Shopper is not running; no menu input was sent.");
         }
+        GameScriptInputPrompt? prompt = getCurrentScriptInputPrompt?.Invoke();
+        if (prompt is null ||
+            !prompt.SingleKey ||
+            !Path.GetFileName(prompt.ScriptName).Equals(
+                "ls-dock-shopper-v33.ts",
+                StringComparison.OrdinalIgnoreCase) ||
+            !ScriptInputPromptPolicy.IsSafeResponse(prompt, input.ToString()))
+        {
+            throw new InvalidOperationException(
+                "The Dock Shopper has no current prompt that permits this input.");
+        }
+        if (submitScriptInput is null)
+        {
+            throw new InvalidOperationException(
+                "MTC is not configured to deliver input directly to the waiting Dock Shopper script.");
+        }
 
-        MtcRpcActionResult result = await submitCommand(input.ToString(), false)
+        MtcRpcActionResult result = await submitScriptInput(prompt, input.ToString())
             .WaitAsync(cancellationToken)
             .ConfigureAwait(false);
         if (!result.Success)
@@ -1546,7 +2090,13 @@ internal sealed class MtcGameCommandSender(
                 "The prompt's approved script is not running; no response was sent.");
         }
 
-        MtcRpcActionResult result = await submitCommand(response, !prompt.SingleKey)
+        if (submitScriptInput is null)
+        {
+            throw new InvalidOperationException(
+                "MTC is not configured to deliver input directly to the waiting approved script.");
+        }
+
+        MtcRpcActionResult result = await submitScriptInput(prompt, response)
             .WaitAsync(cancellationToken)
             .ConfigureAwait(false);
         if (!result.Success)

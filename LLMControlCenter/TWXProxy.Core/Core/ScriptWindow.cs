@@ -416,6 +416,39 @@ namespace TWXProxy.Core
             return _menuStack.Any(m => m.Name.Equals(menuName, StringComparison.OrdinalIgnoreCase));
         }
 
+        public bool TryHandleMenuOption(object script, string menuName, string optionName)
+        {
+            if (_menuStack.Count == 0 ||
+                string.IsNullOrWhiteSpace(menuName) ||
+                string.IsNullOrWhiteSpace(optionName))
+            {
+                return false;
+            }
+
+            MenuItem currentMenu = _menuStack.Peek();
+            if (!ReferenceEquals(currentMenu.Script, script) ||
+                !currentMenu.Name.Equals(menuName, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            MenuItem? option = _menuItems.FirstOrDefault(item =>
+                ReferenceEquals(item.Script, script) &&
+                item.Parent.Equals(currentMenu.Name, StringComparison.OrdinalIgnoreCase) &&
+                item.Name.Equals(optionName, StringComparison.OrdinalIgnoreCase));
+            if (option is null ||
+                option.Hotkey == '\0' ||
+                char.ToUpperInvariant(option.Hotkey) is 'Q' or '?' or '+')
+            {
+                return false;
+            }
+
+            int matchingHotkeyCount = _menuItems.Count(item =>
+                item.Parent.Equals(currentMenu.Name, StringComparison.OrdinalIgnoreCase) &&
+                char.ToUpperInvariant(item.Hotkey) == char.ToUpperInvariant(option.Hotkey));
+            return matchingHotkeyCount == 1 && HandleMenuInput(option.Hotkey);
+        }
+
         public bool HasSuspendedMenu => _suspendedMenuStack is { Count: > 0 };
 
         public void SuspendMenuForInput(bool clearDisplay = true)

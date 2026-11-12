@@ -7,8 +7,10 @@ internal sealed class EmbeddedMtcAgentSessionController(
     string agentId,
     IAgentStore agentStore,
     IAutonomousTestWorkerController workerController,
+    IAgentLearningSessionController learningController,
     MtcGameCommandSender commandSender,
     Func<bool> isConnected,
+    Func<bool> hasSessionDatabase,
     Func<Task<bool>> canConnectAsync,
     Func<Task> configureConnectionAsync,
     Func<Task<bool>> loadConnectionAsync,
@@ -33,6 +35,7 @@ internal sealed class EmbeddedMtcAgentSessionController(
         return new AgentSessionControlStatus(
             connected,
             workerController.IsRunning,
+            learningController.IsRunning,
             connected || await canConnectAsync().ConfigureAwait(false));
     }
 
@@ -115,7 +118,7 @@ internal sealed class EmbeddedMtcAgentSessionController(
         await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (workerController.IsRunning)
+            if (workerController.IsRunning && !learningController.IsRunning)
             {
                 return;
             }
@@ -124,15 +127,27 @@ internal sealed class EmbeddedMtcAgentSessionController(
                 throw new InvalidOperationException(
                     "Connect the MTC game terminal before starting Meridian.");
             }
+            if (!hasSessionDatabase())
+            {
+                throw new InvalidOperationException(
+                    "The MTC game database is not open. Check whether another MTC process is using this game profile.");
+            }
+
+            await learningController.StopAsync(cancellationToken).ConfigureAwait(false);
 
             var agent = await agentStore.GetAgentAsync(agentId, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException($"Agent '{agentId}' is not configured.");
             ArgumentException.ThrowIfNullOrWhiteSpace(agent.PreferredModel);
 
-            commandSender.SetCommandsApproved(true);
-            commandSender.SetLoginInputApproved(true);
+            if (workerController.IsRunning)
+            {
+                return;
+            }
+
             try
             {
+                commandSender.SetCommandsApproved(true);
+                commandSender.SetLoginInputApproved(true);
                 await workerController.StartAsync(agent.PreferredModel, cancellationToken)
                     .ConfigureAwait(false);
                 await commandSender.RefreshShipInformationIfAtCommandPromptAsync(
@@ -170,6 +185,51 @@ internal sealed class EmbeddedMtcAgentSessionController(
         }
     }
 
+    public async Task StartLearningAsync(
+        string requestedAgentId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateAgent(requestedAgentId);
+        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (learningController.IsRunning)
+            {
+                return;
+            }
+            if (!isConnected())
+            {
+                throw new InvalidOperationException(
+                    "Connect the MTC game terminal before starting Learn mode.");
+            }
+
+            await StopAgentCoreAsync(cancellationToken).ConfigureAwait(false);
+            await learningController.StartAsync(agentId, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            commandSender.SetCommandsApproved(false);
+            commandSender.SetLoginInputApproved(false);
+            _lifecycle.Release();
+        }
+    }
+
+    public async Task StopLearningAsync(
+        string requestedAgentId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateAgent(requestedAgentId);
+        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await learningController.StopAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lifecycle.Release();
+        }
+    }
+
     public async Task RefreshCimAsync(
         string requestedAgentId,
         CancellationToken cancellationToken = default)
@@ -183,10 +243,10 @@ internal sealed class EmbeddedMtcAgentSessionController(
                 throw new InvalidOperationException(
                     "Connect the MTC game terminal before refreshing CIM.");
             }
-            if (workerController.IsRunning)
+            if (workerController.IsRunning || learningController.IsRunning)
             {
                 throw new InvalidOperationException(
-                    "Stop Meridian before refreshing CIM to prevent concurrent game input.");
+                    "Stop Meridian or Learn mode before refreshing CIM to prevent concurrent game activity.");
             }
 
             commandSender.SetCommandsApproved(true);
@@ -210,7 +270,14 @@ internal sealed class EmbeddedMtcAgentSessionController(
     {
         commandSender.SetCommandsApproved(false);
         commandSender.SetLoginInputApproved(false);
-        await workerController.StopAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await workerController.StopAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await learningController.StopAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private void ValidateAgent(string requestedAgentId)

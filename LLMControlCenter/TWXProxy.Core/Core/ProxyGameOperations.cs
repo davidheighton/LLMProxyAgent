@@ -106,6 +106,70 @@ public static class ProxyGameOperations
         interpreter.Load(scriptPath.Trim(), false);
     }
 
+    public static bool TryHandleScriptMenuOption(
+        ModInterpreter? interpreter,
+        string scriptReference,
+        string menuName,
+        string optionName)
+    {
+        if (interpreter == null ||
+            string.IsNullOrWhiteSpace(scriptReference) ||
+            GlobalModules.TWXMenu is not MenuManager menuManager)
+        {
+            return false;
+        }
+
+        Script? script = FindRunningScript(interpreter, scriptReference);
+        return script is not null &&
+               menuManager.TryHandleMenuOption(script, menuName, optionName);
+    }
+
+    public static bool TrySetScriptVariable(
+        ModInterpreter? interpreter,
+        string scriptReference,
+        string variableName,
+        string value)
+    {
+        if (interpreter == null ||
+            string.IsNullOrWhiteSpace(scriptReference) ||
+            string.IsNullOrWhiteSpace(variableName))
+        {
+            return false;
+        }
+
+        Script? script = FindRunningScript(interpreter, scriptReference);
+        return script is not null && script.SetScriptVarIgnoreCase(variableName, value);
+    }
+
+    private static Script? FindRunningScript(
+        ModInterpreter interpreter,
+        string scriptReference)
+    {
+        for (int i = 0; i < interpreter.Count; i++)
+        {
+            Script? script = interpreter.GetScript(i);
+            if (script == null)
+                continue;
+
+            string runningReference =
+                script.Compiler?.ScriptFile ?? script.LoadEventName ?? script.ScriptName;
+            bool matchesProgramDir = ModInterpreter.ScriptReferencesMatch(
+                runningReference,
+                scriptReference,
+                interpreter.ProgramDir,
+                interpreter.ScriptDirectory);
+            bool matchesScriptDir = ModInterpreter.ScriptReferencesMatch(
+                runningReference,
+                scriptReference,
+                interpreter.ScriptDirectory,
+                interpreter.ScriptDirectory);
+            if (matchesProgramDir || matchesScriptDir)
+                return script;
+        }
+
+        return null;
+    }
+
     public static bool StopScriptById(ModInterpreter? interpreter, int scriptId)
     {
         if (interpreter == null)

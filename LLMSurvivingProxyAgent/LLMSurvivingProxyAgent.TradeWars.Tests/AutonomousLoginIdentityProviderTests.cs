@@ -13,8 +13,10 @@ public sealed class AutonomousLoginIdentityProviderTests
     {
         var handler = new RecordingHttpHandler(
         [
-            """{"message":{"content":"{\"value\":\"Meridian8\"}"}}""",
-            """{"message":{"content":"{\"value\":\"StarMap42\"}"}}""",
+            """{"message":{"content":"{\"value\":\"Meridian\"}"}}""",
+            """{"message":{"content":"{\"value\":\"StarMap\"}"}}""",
+            """{"message":{"content":"{\"value\":\"Starward Crown\"}"}}""",
+            """{"message":{"content":"{\"value\":\"New Terra\"}"}}""",
             """{"message":{"content":"{\"value\":\"NovaPass42\"}"}}"""
         ]);
         using var client = new HttpClient(handler);
@@ -32,20 +34,29 @@ public sealed class AutonomousLoginIdentityProviderTests
             "StarMap42");
 
         Assert.Equal(
-            "Meridian8",
+            "Meridian",
             await provider.ChooseServerLoginNameAsync(configuration, context));
         Assert.Equal(
-            "StarMap42",
+            "StarMap",
             await provider.ChooseTraderAliasAsync(configuration, context));
+        Assert.Equal(
+            "Starward Crown",
+            await provider.ChooseShipNameAsync(configuration, context));
+        Assert.Equal(
+            "New Terra",
+            await provider.ChooseHomePlanetNameAsync(configuration, context));
         Assert.Equal(
             "NovaPass42",
             await provider.GenerateGamePasswordAsync(configuration, context));
 
-        Assert.Equal(3, handler.RequestBodies.Count);
+        Assert.Equal(5, handler.RequestBodies.Count);
         foreach (var requestBody in handler.RequestBodies)
         {
             using var request = JsonDocument.Parse(requestBody);
             Assert.Equal("qwen3:8b", request.RootElement.GetProperty("model").GetString());
+            Assert.False(request.RootElement.GetProperty("think").GetBoolean());
+            Assert.Equal(1.0, request.RootElement.GetProperty("options").GetProperty("temperature").GetDouble());
+            Assert.True(request.RootElement.GetProperty("options").TryGetProperty("seed", out _));
             Assert.Equal("object", request.RootElement.GetProperty("format").GetProperty("type").GetString());
             Assert.False(request.RootElement.GetProperty("format").GetProperty("additionalProperties").GetBoolean());
             Assert.Equal(
@@ -57,9 +68,11 @@ public sealed class AutonomousLoginIdentityProviderTests
             Assert.Contains("TradeWars 2002", requestBody, StringComparison.Ordinal);
             Assert.Contains("192.168.4.75", requestBody, StringComparison.Ordinal);
         }
-        Assert.Contains("fresh password", handler.RequestBodies[2], StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Meridian8", handler.RequestBodies[2], StringComparison.Ordinal);
-        Assert.Contains("StarMap42", handler.RequestBodies[2], StringComparison.Ordinal);
+        Assert.Contains("memorable", handler.RequestBodies[2], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not a random string", handler.RequestBodies[3], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("fresh password", handler.RequestBodies[4], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Meridian8", handler.RequestBodies[4], StringComparison.Ordinal);
+        Assert.Contains("StarMap42", handler.RequestBodies[4], StringComparison.Ordinal);
         Assert.All(handler.RequestUris, uri =>
             Assert.Equal("http://127.0.0.1:11434/api/chat", uri!.ToString()));
     }

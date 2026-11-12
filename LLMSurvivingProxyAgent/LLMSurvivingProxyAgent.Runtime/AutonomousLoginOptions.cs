@@ -14,6 +14,8 @@ public sealed class AutonomousLoginGameProfile
 {
     public string GameLetter { get; set; } = string.Empty;
     public string TraderAlias { get; set; } = string.Empty;
+    public string ShipName { get; set; } = string.Empty;
+    public string HomePlanetName { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public bool AllowNewCharacterCreation { get; set; }
 }

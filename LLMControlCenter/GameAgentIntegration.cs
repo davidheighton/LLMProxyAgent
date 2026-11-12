@@ -22,6 +22,91 @@ public partial class MainWindow
     private volatile bool _sensitiveTerminalInputInProgress;
     private volatile bool _sensitiveOutputRedactionRequired;
 
+    private bool IsLearnModeActive() =>
+        _dashboardHost.GetAgentMonitorSnapshot(DefaultAgentId).LearningModeRunning;
+
+    private async Task OnAgentPauseToggleRequestedAsync()
+    {
+        if (_agentPauseControlBusy)
+            return;
+
+        if (!_dashboardHost.CanControlAgent(DefaultAgentId))
+        {
+            await ShowMessageAsync(
+                "Agent control",
+                "Autonomous agent controls are unavailable. Open the dashboard and connect the game session first.");
+            return;
+        }
+
+        bool isRunning = _dashboardHost
+            .GetAgentMonitorSnapshot(DefaultAgentId)
+            .AutonomousWorkerRunning;
+        bool shouldRun = !isRunning;
+        _agentPauseControlBusy = true;
+        UpdateTerminalLiveSelector();
+        try
+        {
+            await _dashboardHost.SetAgentRunningAsync(DefaultAgentId, shouldRun);
+            _agentPausedByUser = !shouldRun;
+            _parser.Feed(
+                $"\x1b[1;36m[Autonomous agent {(shouldRun ? "resumed" : "paused")}]\x1b[0m\r\n");
+            _buffer.Dirty = true;
+        }
+        catch (Exception ex)
+        {
+            Core.GlobalModules.DebugLog(
+                $"[MTC.AgentControl] {(shouldRun ? "Resume" : "Pause")} failed: {ex}\n");
+            await ShowMessageAsync(
+                "Agent control",
+                $"Could not {(shouldRun ? "resume" : "pause")} the autonomous agent:\n{ex.Message}");
+        }
+        finally
+        {
+            _agentPauseControlBusy = false;
+            UpdateTerminalLiveSelector();
+        }
+    }
+
+    private async Task OnAgentLearnToggleRequestedAsync()
+    {
+        if (_agentLearnControlBusy)
+            return;
+
+        if (!_dashboardHost.CanControlAgent(DefaultAgentId))
+        {
+            await ShowMessageAsync(
+                "Learn mode",
+                "Learn mode is unavailable. Open the dashboard and connect the game session first.");
+            return;
+        }
+
+        bool shouldLearn = !_dashboardHost
+            .GetAgentMonitorSnapshot(DefaultAgentId)
+            .LearningModeRunning;
+        _agentLearnControlBusy = true;
+        UpdateTerminalLiveSelector();
+        try
+        {
+            await _dashboardHost.SetAgentLearningAsync(DefaultAgentId, shouldLearn);
+            _parser.Feed(
+                $"\x1b[1;36m[Learn mode {(shouldLearn ? "started" : "stopped")}]\x1b[0m\r\n");
+            _buffer.Dirty = true;
+        }
+        catch (Exception ex)
+        {
+            Core.GlobalModules.DebugLog(
+                $"[MTC.AgentLearn] {(shouldLearn ? "Start" : "Stop")} failed: {ex}\n");
+            await ShowMessageAsync(
+                "Learn mode",
+                $"Could not {(shouldLearn ? "start" : "stop")} Learn mode:\n{ex.Message}");
+        }
+        finally
+        {
+            _agentLearnControlBusy = false;
+            UpdateTerminalLiveSelector();
+        }
+    }
+
     private void OpenGameAgentWindow()
     {
         try
@@ -80,6 +165,9 @@ public partial class MainWindow
             string input = (command ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(input))
                 return Task.FromResult(MtcRpcActionResult.Fail("Mombot command is required."));
+            if (IsLearnModeActive())
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "Game-agent commands are disabled while Learn mode is observing human gameplay."));
 
             MTC.mombot.mombotStatusSnapshot snapshot = _mombot.GetStatusSnapshot();
             if (!snapshot.Enabled)

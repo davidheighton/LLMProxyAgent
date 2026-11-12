@@ -53,7 +53,7 @@ internal static class GameAgentToolRegistry
     private static readonly IReadOnlyDictionary<string, string> ApprovedScripts =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Pack1/1_Trade.ts"] = "Pack1/1_Trade.ts",
+            ["trading-cashing/2-worldtrade.ts"] = "trading-cashing/2-worldtrade.ts",
             ["ship-upgrades/ls-dock-shopper-v33.ts"] = "ship-upgrades/ls-dock-shopper-v33.ts",
         };
 
@@ -134,7 +134,7 @@ internal static class GameAgentToolRegistry
             new()
             {
                 Name = "run_script",
-                Description = "Arguments: {\"script\":\"Pack1/1_Trade.ts\"} or {\"script\":\"ship-upgrades/ls-dock-shopper-v33.ts\"}. Start only one reviewed script when the user explicitly requests an action and the live prompt is compatible.",
+                Description = "Arguments: {\"script\":\"trading-cashing/2-worldtrade.ts\"} or {\"script\":\"ship-upgrades/ls-dock-shopper-v33.ts\"}. Start only one reviewed script when the user explicitly requests an action and the live prompt is compatible.",
                 CanExecuteGameCommand = true,
                 RequiresApproval = false,
             },

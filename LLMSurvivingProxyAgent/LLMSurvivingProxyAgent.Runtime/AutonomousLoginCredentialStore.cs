@@ -30,6 +30,20 @@ public sealed class AutonomousLoginCredentialStore(string profilePath)
             },
             cancellationToken);
 
+    public Task SaveCharacterNamesAsync(
+        string gameProfile,
+        string shipName,
+        string homePlanetName,
+        CancellationToken cancellationToken = default) =>
+        UpdateProfileAsync(
+            login =>
+            {
+                var profile = GetGameProfile(login, gameProfile);
+                profile["ShipName"] = shipName;
+                profile["HomePlanetName"] = homePlanetName;
+            },
+            cancellationToken);
+
     public Task SaveGameCredentialsAsync(
         string gameProfile,
         string traderAlias,

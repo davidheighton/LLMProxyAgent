@@ -44,7 +44,13 @@ public partial class MainWindow : Window
         bool AllowSeparatedByGates);
 
     private const string BaseWindowTitle = "LLM Control Center";
-    private const string DefaultAgentId = "meridian";
+    private static string DefaultAgentId =>
+        Environment.GetEnvironmentVariable("LLMCONTROL_AGENT_ID") ?? "meridian";
+    private static bool IsDockedSessionWindow =>
+        string.Equals(
+            Environment.GetEnvironmentVariable("LLMCONTROL_DOCKED_SESSION"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
     private const int MaxCommEntries = 500;
     private const double ClassicCommWindowDefaultHeight = 140;
     private const double DeckCommWindowDefaultHeight = 150;
@@ -122,15 +128,28 @@ public partial class MainWindow : Window
     {
         Dashboard,
         AgentTerminal,
+        DockedMtcSession,
     }
 
-    private WorkspaceView _activeWorkspaceView = WorkspaceView.Dashboard;
+    private WorkspaceView _activeWorkspaceView =
+        IsDockedSessionWindow ? WorkspaceView.AgentTerminal : WorkspaceView.Dashboard;
     private Control? _dashboardPage;
     private Control? _agentTerminalPage;
     private readonly Grid _workspacePageHost = new();
     private readonly Dictionary<string, Button> _workspaceNavigationButtons = new(StringComparer.OrdinalIgnoreCase);
+    private readonly StackPanel _dockedSessionNavigation = new() { Spacing = 3 };
     private string _activeWorkspaceNavigationId = "fleet";
     private readonly Border _statusBar = new();
+    private readonly Border _agentDashboardFooter = new();
+    private readonly StackPanel _agentDashboardFooterTabs = new()
+    {
+        Orientation = Orientation.Horizontal,
+        Spacing = 5,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+    private readonly TextBlock _agentDashboardFooterTitle = new();
+    private readonly TextBlock _agentDashboardFooterDetails = new();
+    private readonly TextBlock _agentDashboardFooterTelemetry = new();
     private readonly Border _menuBarHost = new();
     private StackPanel? _sessionMenuBarTools;
     private readonly Border _menuFontSizeFrame = new();
@@ -187,6 +206,8 @@ public partial class MainWindow : Window
     private readonly Button _statusBotButton = new();
     private readonly Button _statusMapButton = new();
     private readonly Button _statusHaggleButton = new() { Content = "HAGGLE" };
+    private readonly Button _statusAgentPauseButton = new() { Content = "PAUSE" };
+    private readonly Button _statusAgentLearnButton = new() { Content = "LEARN" };
     private readonly Button _statusLivePausedButton = new() { Content = "LIVE" };
     private readonly Button _statusRedAlertButton = new() { Content = "RED ALERT" };
     private readonly Border _statusMacrosFrame = new();
@@ -195,6 +216,8 @@ public partial class MainWindow : Window
     private readonly Border _statusBotFrame = new();
     private readonly Border _statusMapFrame = new();
     private readonly Border _statusHaggleFrame = new();
+    private readonly Border _statusAgentPauseFrame = new();
+    private readonly Border _statusAgentLearnFrame = new();
     private readonly Border _statusLivePausedFrame = new();
     private readonly Border _statusRedAlertFrame = new();
     private readonly object _pausedTerminalSync = new();
@@ -209,6 +232,11 @@ public partial class MainWindow : Window
     private int _displayDrainScheduled;
     private string _statusBarLayoutSignature = string.Empty;
     private bool _statusMacrosHovered;
+    private bool _statusAgentPauseHovered;
+    private bool _statusAgentLearnHovered;
+    private bool _agentPauseControlBusy;
+    private bool _agentLearnControlBusy;
+    private bool _agentPausedByUser;
     private int _sessionLogDrainScheduled;
     private int _infoPanelsRefreshPostScheduled;
     private int _onlineAutoRefreshRunning;
@@ -217,6 +245,7 @@ public partial class MainWindow : Window
     private long _lastGameTrafficTicks;
     private long _lastOnlineRefreshTicks;
     private DispatcherTimer? _infoPanelsRefreshTimer;
+    private DispatcherTimer? _agentDashboardFooterTimer;
     private DispatcherTimer? _currentGameConfigSaveTimer;
     private bool _currentGameConfigSaveRunning;
     private bool _currentGameConfigSaveAgain;

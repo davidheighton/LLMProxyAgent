@@ -31,8 +31,8 @@
     </article>
     <article class="metric-card">
         <span class="eyebrow">AGENT</span>
-        <strong class="metric-value @(AgentRunning ? "metric-value-safe" : "text-secondary")">@(AgentRunning ? "Running" : "Stopped")</strong>
-        <span class="metric-caption">@_workerStatus.Activity</span>
+        <strong class="metric-value @(AgentActive ? "metric-value-safe" : "text-secondary")">@AgentModeLabel</strong>
+        <span class="metric-caption">@AgentActivityDescription</span>
     </article>
     <article class="metric-card">
         <span class="eyebrow">LAST HEARTBEAT</span>
@@ -346,7 +346,7 @@ else
     public string AgentId { get; set; } = string.Empty;
 
     private AgentContainer? _agent;
-    private AgentSessionControlStatus _sessionControlStatus = new(false, false, false);
+    private AgentSessionControlStatus _sessionControlStatus = new(false, false, false, false);
     private AutonomousTestWorkerStatus _workerStatus =
         new("meridian", false, "Offline", DateTimeOffset.MinValue, null, null, null);
     private AgentRuntimeStatus _runtimeStatus = new(false, 0, 0, null, null);
@@ -417,7 +417,9 @@ else
                 return $"Pilot request telemetry shows {requestCount} request(s), but no prompt trace is present in this role history. The in-memory trace store may have been cleared or not attached to the active provider.";
             }
 
-            return !AgentRunning
+            return _sessionControlStatus.IsLearning
+                ? "Learn mode is recording changing trusted snapshots; Pilot decisions and game commands are disabled."
+                : !AgentRunning
                 ? "No Pilot LLM calls are recorded, and the autonomous worker is not running. Start the agent from Runtime & controls to enable Pilot decisions."
                 : $"No Pilot LLM call has been recorded yet. Pilot is invoked only for a fresh eligible game/script prompt; current worker activity: {_workerStatus.Activity}.";
         }
@@ -454,6 +456,13 @@ else
     private bool AgentRunning => HasMtcSessionControl
         ? _sessionControlStatus.IsAgentRunning
         : _workerStatus.IsConnected;
+    private bool AgentActive => AgentRunning || _sessionControlStatus.IsLearning;
+    private string AgentModeLabel => _sessionControlStatus.IsLearning
+        ? "Learn mode"
+        : AgentRunning ? "Running" : "Stopped";
+    private string AgentActivityDescription => _sessionControlStatus.IsLearning
+        ? "Observing human gameplay; no game commands are issued"
+        : _workerStatus.Activity;
     private string ConnectionDescription => HasMtcSessionControl
         ? "MTC terminal session"
         : "Autonomous worker session";
@@ -606,7 +615,11 @@ else
         }
         else
         {
-            _sessionControlStatus = new AgentSessionControlStatus(_workerStatus.IsConnected, false, false);
+            _sessionControlStatus = new AgentSessionControlStatus(
+                _workerStatus.IsConnected,
+                false,
+                false,
+                false);
         }
     }
 

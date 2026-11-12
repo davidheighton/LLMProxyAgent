@@ -19,12 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\artifacts\trade-wars-v1.13.3.seedpkg"
-          Link="testdata\trade-wars-v1.13.3.seedpkg"
-          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\artifacts\trade-wars-v1.13.3.seedpkg" Link="testdata\trade-wars-v1.13.3.seedpkg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\LLMControlCenter\TWXProxy.Core\TWXProxy.csproj" />
     <ProjectReference Include="..\LLMSurvivingProxyAgent.CorpusBuilder\LLMSurvivingProxyAgent.CorpusBuilder.csproj" />
     <ProjectReference Include="..\LLMSurvivingProxyAgent.TradeWars\LLMSurvivingProxyAgent.TradeWars.csproj" />
     <ProjectReference Include="..\LLMSurvivingProxyAgent.Agent\LLMSurvivingProxyAgent.Agent.csproj" />
@@ -35,6 +34,7 @@
     <ProjectReference Include="..\LLMSurvivingProxyAgent.Models\LLMSurvivingProxyAgent.Models.csproj" />
     <ProjectReference Include="..\LLMSurvivingProxyAgent.Reactive\LLMSurvivingProxyAgent.Reactive.csproj" />
     <ProjectReference Include="..\LLMSurvivingProxyAgent.Runtime\LLMSurvivingProxyAgent.Runtime.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Harness\LLMSurvivingProxyAgent.Harness.csproj" />
   </ItemGroup>
 
 </Project>

@@ -4,6 +4,7 @@
   <Project Path="LLMSurvivingProxyAgent.CorpusBuilder/LLMSurvivingProxyAgent.CorpusBuilder.csproj" />
   <Project Path="LLMSurvivingProxyAgent.Dashboard/LLMSurvivingProxyAgent.Dashboard.csproj" />
   <Project Path="LLMSurvivingProxyAgent.Goals/LLMSurvivingProxyAgent.Goals.csproj" />
+  <Project Path="LLMSurvivingProxyAgent.Harness/LLMSurvivingProxyAgent.Harness.csproj" />
   <Project Path="LLMSurvivingProxyAgent.Knowledge/LLMSurvivingProxyAgent.Knowledge.csproj" />
   <Project Path="LLMSurvivingProxyAgent.Macros/LLMSurvivingProxyAgent.Macros.csproj" />
   <Project Path="LLMSurvivingProxyAgent.Models/LLMSurvivingProxyAgent.Models.csproj" />

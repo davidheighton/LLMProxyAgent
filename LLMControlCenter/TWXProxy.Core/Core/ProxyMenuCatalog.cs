@@ -2,12 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 
 namespace TWXProxy.Core;
 
 public sealed record QuickLoadEntry(string GroupName, string DisplayName, string RelativePath);
 
 public sealed record QuickLoadGroup(string Name, IReadOnlyList<QuickLoadEntry> Entries);
+
+public sealed record ScriptMenuMetadata(string? DisplayName, bool IsNonPreferredVariant);
 
 public static class ProxyMenuCatalog
 {
@@ -18,6 +21,7 @@ public static class ProxyMenuCatalog
         ".",
         "..",
         "include",
+        "includes",
         "mombot",
         "mombot3",
         "mombot4p",
@@ -33,7 +37,10 @@ public static class ProxyMenuCatalog
 
         var configSections = TwxpConfigStore.LoadSections(programDir);
         var quickLoadMap = ReadQuickLoadSection(configSections);
+        IReadOnlyDictionary<string, ScriptMenuMetadata> scriptMetadata =
+            ReadScriptMenuMetadata(scriptsRoot);
         var groups = new SortedDictionary<string, List<QuickLoadEntry>>(StringComparer.OrdinalIgnoreCase);
+        var addedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (string file in Directory.EnumerateFiles(scriptsRoot))
         {
@@ -42,7 +49,7 @@ public static class ProxyMenuCatalog
                 continue;
 
             string groupName = ResolveVirtualQuickGroup(fileName, quickLoadMap);
-            AddQuickEntry(groups, groupName, fileName, fileName);
+            AddQuickEntry(groups, groupName, fileName, fileName, scriptMetadata, addedPaths);
         }
 
         foreach (string directory in Directory.EnumerateDirectories(scriptsRoot))
@@ -58,7 +65,7 @@ public static class ProxyMenuCatalog
                     continue;
 
                 string relativePath = directoryName + "/" + fileName;
-                AddQuickEntry(groups, directoryName, fileName, relativePath);
+                AddQuickEntry(groups, directoryName, fileName, relativePath, scriptMetadata, addedPaths);
             }
         }
 
@@ -69,6 +76,15 @@ public static class ProxyMenuCatalog
                     .OrderBy(entry => entry.DisplayName, StringComparer.OrdinalIgnoreCase)
                     .ToArray()))
             .ToArray();
+    }
+
+    public static IReadOnlyDictionary<string, ScriptMenuMetadata> ReadScriptMenuMetadata(
+        string? scriptsRoot)
+    {
+        if (string.IsNullOrWhiteSpace(scriptsRoot))
+            return new Dictionary<string, ScriptMenuMetadata>(StringComparer.OrdinalIgnoreCase);
+
+        return ReadQuickLoadScriptMetadata(Path.GetFullPath(scriptsRoot));
     }
 
     public static IReadOnlyList<BotConfig> LoadBotConfigs(string? programDir, string? scriptDirectory, bool includeNative = false)
@@ -185,15 +201,96 @@ public static class ProxyMenuCatalog
         IDictionary<string, List<QuickLoadEntry>> groups,
         string groupName,
         string displayName,
-        string relativePath)
+        string relativePath,
+        IReadOnlyDictionary<string, ScriptMenuMetadata> scriptMetadata,
+        ISet<string> addedPaths)
     {
+        string normalizedPath = relativePath.Replace('\\', '/');
+        if (!addedPaths.Add(normalizedPath))
+            return;
+
+        if (scriptMetadata.TryGetValue(normalizedPath, out ScriptMenuMetadata? metadata))
+        {
+            if (metadata.IsNonPreferredVariant)
+                return;
+
+            if (!string.IsNullOrWhiteSpace(metadata.DisplayName))
+                displayName = metadata.DisplayName;
+        }
+
         if (!groups.TryGetValue(groupName, out List<QuickLoadEntry>? entries))
         {
             entries = new List<QuickLoadEntry>();
             groups[groupName] = entries;
         }
 
-        entries.Add(new QuickLoadEntry(groupName, displayName, relativePath.Replace('\\', '/')));
+        entries.Add(new QuickLoadEntry(groupName, displayName, normalizedPath));
+    }
+
+    private static Dictionary<string, ScriptMenuMetadata> ReadQuickLoadScriptMetadata(string scriptsRoot)
+    {
+        string catalogPath = Path.Combine(scriptsRoot, "catalog.json");
+        var metadata = new Dictionary<string, ScriptMenuMetadata>(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(catalogPath))
+            return metadata;
+
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(catalogPath));
+        JsonElement root = document.RootElement;
+        if (!root.TryGetProperty("library", out JsonElement library) ||
+            library.ValueKind != JsonValueKind.String ||
+            !string.Equals(library.GetString(), "LLMProxyScripts", StringComparison.Ordinal))
+        {
+            return metadata;
+        }
+
+        if (!root.TryGetProperty("entries", out JsonElement entries) ||
+            entries.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException(
+                $"Script catalog '{catalogPath}' must contain an entries array.");
+        }
+
+        foreach (JsonElement entry in entries.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object ||
+                !entry.TryGetProperty("file", out JsonElement file) ||
+                file.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(file.GetString()))
+            {
+                throw new InvalidDataException(
+                    $"Script catalog '{catalogPath}' contains an entry without a file path.");
+            }
+
+            string relativePath = file.GetString()!.Replace('\\', '/');
+            if (relativePath.StartsWith("/", StringComparison.Ordinal) ||
+                relativePath.Split('/').Any(segment => segment is "." or ".."))
+            {
+                throw new InvalidDataException(
+                    $"Script catalog '{catalogPath}' contains an invalid relative path '{relativePath}'.");
+            }
+
+            bool hasVariantGroup =
+                entry.TryGetProperty("variant_group", out JsonElement variantGroup) &&
+                variantGroup.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(variantGroup.GetString());
+            bool isNonPreferredVariant =
+                hasVariantGroup &&
+                entry.TryGetProperty("preferred_variant", out JsonElement preferredVariant) &&
+                preferredVariant.ValueKind == JsonValueKind.False;
+            string? displayName = hasVariantGroup
+                ? variantGroup.GetString()
+                : null;
+
+            if (!metadata.TryAdd(
+                    relativePath,
+                    new ScriptMenuMetadata(displayName, isNonPreferredVariant)))
+            {
+                throw new InvalidDataException(
+                    $"Script catalog '{catalogPath}' contains duplicate path '{relativePath}'.");
+            }
+        }
+
+        return metadata;
     }
 
     private static string ResolveVirtualQuickGroup(string fileName, IReadOnlyDictionary<string, string> quickLoadMap)

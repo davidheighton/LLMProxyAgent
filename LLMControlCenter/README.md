@@ -36,6 +36,11 @@ The shared runtime boundary keeps each subsystem's source of truth clear:
   through the TWX prompt observer and validated against visible choices,
   numeric bounds, and the still-current prompt; arbitrary script variables and
   unreviewed catalog entries are not writable or executable by the model.
+- Learn mode is an observe-only session for human gameplay. It records
+  authenticated, synchronized game snapshots to the agent's experience store
+  when the game state changes (sampled every 15 seconds), while autonomous
+  gameplay and agent command/script tools are disabled. It records experience
+  evidence; it does not train or update the model weights.
 
 The standalone web dashboard is retained as a development and migration
 surface. It cannot start a second game proxy, autonomous gameplay worker, or
@@ -75,7 +80,10 @@ when a provider does not return usage metadata; the UI does not estimate them.
 
 Autonomous play uses fresh sector and warp data, checks adjacent ports from the
 live database (including CIM-imported port classes) for compatible trades, and
-routes to a nearby seller when the current port is a buyer. It avoids redundant
+routes to a nearby seller when the current port is a buyer. Before scanner
+ownership, the Pilot receives the verified scanner funding target and shortfall;
+the worker enforces a current-port trade or the exact verified seller route
+before accepting another movement recommendation. It avoids redundant
 sector-display input when fresh warp data is already available. Movement and
 commands remain subject to the active session's approval settings. At
 StarDock, the agent preserves full Fuel Ore holds and uses the fixed Dock
@@ -85,7 +93,9 @@ the scanner purchase flow can proceed without a sector fighter. World Trade
 starts only after a fresh ship snapshot verifies scanner ownership. A planned
 World Trade route is executed through verified adjacent hops, and the fixed
 World Trade script starts automatically at StarDock when its prerequisites are
-confirmed.
+confirmed. MTC's JSON-RPC script-loading boundary enforces the same StarDock,
+scanner-ownership, and fresh-status prerequisites for World Trade script
+references, so generic script requests cannot bypass the worker's checks.
 
 Autonomous Strategic Review runs on a 20-minute background interval, with a
 15-minute minimum between event-triggered reviews. Completing an objective can

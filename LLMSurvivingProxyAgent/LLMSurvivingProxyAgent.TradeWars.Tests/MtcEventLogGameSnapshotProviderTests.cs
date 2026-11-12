@@ -131,8 +131,11 @@ public sealed class EventLogGameSnapshotProviderTests
         }
     }
 
-    [Fact]
-    public async Task IdentifiesDensityScannerFromFreshShipStatus()
+    [Theory]
+    [InlineData("Dens")]
+    [InlineData("Density")]
+    [InlineData("Density Scanner")]
+    public async Task IdentifiesDensityScannerFromFreshShipStatus(string scannerType)
     {
         var directory = CreateEventLogDirectory();
         try
@@ -151,7 +154,7 @@ public sealed class EventLogGameSnapshotProviderTests
                     300,
                     "Merchant Cruiser",
                     "Meridian",
-                    scannerType: "Density"));
+                    scannerType: scannerType));
             var provider = CreateProvider(directory);
 
             GameSnapshot? snapshot = await provider.CaptureSynchronizedSnapshotAsync("meridian");
@@ -166,8 +169,12 @@ public sealed class EventLogGameSnapshotProviderTests
         }
     }
 
-    [Fact]
-    public async Task MergesQuickStatusScannerObservationIntoFreshShipSnapshot()
+    [Theory]
+    [InlineData("None", false)]
+    [InlineData("Dens", true)]
+    public async Task MergesQuickStatusScannerObservationIntoFreshShipSnapshot(
+        string scannerType,
+        bool densityScannerInstalled)
     {
         var directory = CreateEventLogDirectory();
         try
@@ -192,7 +199,7 @@ public sealed class EventLogGameSnapshotProviderTests
                     36_017,
                     65_520,
                     30,
-                    scannerType: "None"));
+                    scannerType: scannerType));
             var provider = CreateProvider(directory);
 
             GameSituationReport situation = await provider.CaptureSituationAsync("meridian");
@@ -205,7 +212,7 @@ public sealed class EventLogGameSnapshotProviderTests
             Assert.Equal("Seeschlange Merchant Cruiser", situation.Snapshot.Ship?.ShipType);
             Assert.Equal(30, situation.Snapshot.Ship?.Fighters);
             Assert.False(situation.Snapshot.HoloScannerInstalled);
-            Assert.False(situation.Snapshot.DensityScannerInstalled);
+            Assert.Equal(densityScannerInstalled, situation.Snapshot.DensityScannerInstalled);
             Assert.Equal(observedAt, situation.Snapshot.ObservedAt);
         }
         finally

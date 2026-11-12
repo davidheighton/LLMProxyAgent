@@ -2,9 +2,36 @@ namespace LLMSurvivingProxyAgent.Core;
 
 public static class AutonomousTradePolicy
 {
-    public const int MinimumScannerUpgradeCredits = 20_000;
+    public const int DensityScannerPurchaseCost = 2_000;
+    public const int MinimumPostDensityScannerTradeReserveCredits = 500;
+    public const int MinimumDensityScannerUpgradeCredits =
+        DensityScannerPurchaseCost + MinimumPostDensityScannerTradeReserveCredits;
+    public const int MinimumHoloScannerUpgradeCredits = 25_000;
+    public const int MinimumScannerUpgradeCredits = MinimumDensityScannerUpgradeCredits;
     public const int MinimumWorldTradeUpgradeCredits = 1_000_000;
     public const int RefurbCreditReserve = 500_000;
+
+    /// <summary>Below this balance the agent trades Fuel Ore, the cheapest cargo, to rebuild credits.</summary>
+    public const int LowCreditFuelOreThreshold = 500;
+
+    /// <summary>World Trade buys a full hold at every port pair; with less it docks without trading or overbids.</summary>
+    public const int MinimumWorldTradeStartCredits = 1_500;
+
+    public static int GetMinimumScannerUpgradeCredits(ScannerPurchaseTarget? target) =>
+        target == ScannerPurchaseTarget.Holo
+            ? MinimumHoloScannerUpgradeCredits
+            : MinimumDensityScannerUpgradeCredits;
+
+    /// <summary>Budget per cargo hold for the Fuel Ore the Dock Shopper requires (observed ~14-22 credits/unit).</summary>
+    public const int DockShopperFuelOreCreditsPerHold = 25;
+
+    /// <summary>
+    /// Credits needed before collecting the Dock Shopper's Fuel Ore: the scanner bar plus the ore itself, so the scanner
+    /// is still bought with the post-purchase trading reserve intact. Starting at the bare bar left the ore purchase
+    /// below it, and bypassing the bar left the agent with ~12 credits that nothing (World Trade included) could use.
+    /// </summary>
+    public static int GetScannerFundingCredits(ScannerPurchaseTarget? target, int? holdsTotal) =>
+        GetMinimumScannerUpgradeCredits(target) + Math.Max(0, holdsTotal ?? 0) * DockShopperFuelOreCreditsPerHold;
 }
 
 public enum AutonomousTestAction
@@ -123,6 +150,7 @@ public sealed record AutonomousTestActionDecision(
 {
     public string CitedKnowledgeNodeId { get; init; } = string.Empty;
     public string ScriptInputResponse { get; init; } = string.Empty;
+    public string? InteractionId { get; init; }
 }
 
 public sealed record AutonomousTestActionContext(
@@ -130,6 +158,8 @@ public sealed record AutonomousTestActionContext(
     IReadOnlyList<int> AvailableAdjacentSectors)
 {
     public string AgentId { get; init; } = string.Empty;
+    public string TeamId { get; init; } = string.Empty;
+    public IReadOnlyList<AgentTeamStatus> TeamMembers { get; init; } = [];
     public bool GameActionsEnabled { get; init; }
     public AutonomousActionObjective? ActiveObjective { get; init; }
     public int? StarDockSector { get; init; }
@@ -150,10 +180,13 @@ public sealed record AutonomousTestActionContext(
     public bool StarDockFighterDeploymentAvailable { get; init; }
     public StarDockShopperStage StarDockShopperStage { get; init; }
     public ScannerPurchaseTarget? ScannerTarget { get; init; }
+    public long? ScannerFundingTargetCredits { get; init; }
+    public long? ScannerFundingShortfallCredits { get; init; }
     public TradeProduct? PreferredTradeProduct { get; init; }
     public IReadOnlyList<ReactivePilotSignal> RecentReactiveSignals { get; init; } = [];
     public IReadOnlyList<AdjacentSectorKnowledge> AdjacentSectorKnowledge { get; init; } = [];
     public IReadOnlyList<AutonomousActionKnowledgeItem> RelevantKnowledge { get; init; } = [];
+    public bool ExplorationRequired { get; init; }
 }
 
 public sealed record AutonomousActionObjective(
@@ -214,7 +247,10 @@ public enum GameCommand
     DeclineAutopilotEngagement,
     ExitNavPointSelection,
     DeployOneFighterAtCurrentSector,
-    TradeAtCurrentPort
+    TradeAtCurrentPort,
+    PlotCourseToSector,
+    ContinuePausePrompt,
+    ResolveFighterEncounter
 }
 
 public sealed record GameCommandRequest(
@@ -224,6 +260,7 @@ public sealed record GameCommandRequest(
 {
     public bool SellingExistingCargo { get; init; }
     public TradeProduct? FollowUpBuyProduct { get; init; }
+    public long? AvailableCredits { get; init; }
     public int? ExpectedShipFighterCount { get; init; }
     public bool? CurrentSectorIsFederationSpace { get; init; }
 }
@@ -252,7 +289,10 @@ public interface IAutonomousPortTradePromptRecovery
         string agentId,
         DateTimeOffset promptObservedAt,
         TradeProduct? followUpBuyProduct = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        long? availableCredits = null,
+        TradeProduct? requestedProduct = null,
+        bool sellingExistingCargo = false);
 }
 
 public interface IAutonomousGameWorldProvider
@@ -422,6 +462,16 @@ public interface IAutonomousLoginIdentityProvider
         CancellationToken cancellationToken = default);
 
     Task<string> ChooseTraderAliasAsync(
+        ModelConfiguration configuration,
+        AutonomousLoginIdentityContext context,
+        CancellationToken cancellationToken = default);
+
+    Task<string> ChooseShipNameAsync(
+        ModelConfiguration configuration,
+        AutonomousLoginIdentityContext context,
+        CancellationToken cancellationToken = default);
+
+    Task<string> ChooseHomePlanetNameAsync(
         ModelConfiguration configuration,
         AutonomousLoginIdentityContext context,
         CancellationToken cancellationToken = default);

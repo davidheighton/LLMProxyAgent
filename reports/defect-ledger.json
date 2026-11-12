@@ -1,7 +1,7 @@
 {
   "campaign": "TradeWars autonomous reliability improvement",
   "iteration_limit": 20,
-  "updated_through_iteration": 30,
+  "updated_through_iteration": 40,
   "defects": [
     {
       "id": "DEFECT-0001",
@@ -635,8 +635,8 @@
       "title": "LLM prompt and response history is lost when MTC stops",
       "description": "The archived game event stream does not include LLM prompts or final responses, and the in-memory interaction history was unavailable after MTC stopped, preventing post-run analysis of the empty Pilot response.",
       "first_discovered_iteration": 18,
-      "last_seen_iteration": 24,
-      "status": "INVESTIGATING",
+      "last_seen_iteration": 40,
+      "status": "FIXED",
       "severity": "MEDIUM",
       "root_cause": "Interaction history is retained in process memory and no per-run durable export was captured before shutdown.",
       "affected_components": [
@@ -644,11 +644,18 @@
         "Agent Monitor history/export workflow",
         "reliability campaign evidence collection"
       ],
-      "fixes_applied": [],
+      "fixes_applied": [
+        "Uncounted follow-up after iteration 40: SqliteLlmInteractionHistoryStore writes every Pilot, Strategic, and Reflex prompt/reply through to trajectories.db and reloads recent history on startup; in-progress calls found at startup are marked interrupted. Pilot decisions are also linked by interaction ID to persisted trajectory steps. Covered by LearningTrajectoryTests; not yet live-validated."
+      ],
       "validation_results": [
         "Confirmed the five archived event files contain game events but no durable LLM prompt/reply transcript.",
         "Uncounted attempt 24-01 captured 74 accessible Pilot interaction-card summaries before restart, but those summaries did not expose prompt bodies or model responses.",
-        "A future live run must export prompts and final responses before MTC stops."
+        "A future live run must export prompts and final responses before MTC stops.",
+        "Iteration 32's copied debug log contained 294 Reflex processing entries and no Pilot or Strategic entries; the event archive has no durable prompt/reply transcript, so absence of trace entries cannot distinguish untriggered lanes from missing history.",
+        "Iteration 34's persisted debug log contained 328 Reflex entries and no Pilot or Strategic entries. The in-memory role history was not archived, so lane invocation remains ambiguous.",
+        "Iteration 35's persisted debug log contained 12 Reflex entries and no Pilot or Strategic entries. The in-memory role history was not archived, so lane invocation remains ambiguous.",
+        "Iteration 36's persisted debug log contained 14 Reflex entries and no Pilot or Strategic entries. The in-memory role history was not archived, so lane invocation remains ambiguous.",
+        "Iteration 40's HTTP-fetched dashboard markup included 0 decisions and generic unhandled/reconnect text, but no interactive browser confirmed that the reconnect state was visibly active. The game connection remained active. The persisted debug log contained 54 Reflex entries and no Pilot or Strategic entries; the event archive contains game events, not LLM prompt/reply history, so lane invocation and dashboard telemetry remain ambiguous."
       ],
       "regression_count": 0,
       "related_defects": [
@@ -794,12 +801,12 @@
     {
       "id": "DEFECT-0026",
       "title": "Stale trading objective caused scannerless route oscillation",
-      "description": "While the ship lacked a Density or Holo Scanner, stale/funding trade objectives have repeatedly competed with scanner-first routing. Earlier movement oscillated between sectors 933 and 556; iterations 28 and 29 showed movement between StarDock sector 551 and known high-risk sector 99. Iteration 31 moved from 551 to known sector 172 and returned to 551 after the Pilot incorrectly described its Fuel Ore-selling port as a place to sell cargo. No trade or scanner purchase was verified.",
+      "description": "While the ship lacked a Density or Holo Scanner, stale/funding trade objectives have repeatedly competed with scanner-first routing. Earlier movement oscillated between sectors 933 and 556; iterations 28 and 29 showed movement between StarDock sector 551 and known high-risk sector 99. Iteration 31 moved 551→172→551 after the Pilot misread the port profile. Iterations 32 and 34 again moved through sectors 172, 206, and 805 without a verified trade or scanner purchase; the exact opportunity and hold-guard inputs were not retained.",
       "first_discovered_iteration": 24,
-      "last_seen_iteration": 31,
+      "last_seen_iteration": 35,
       "status": "REGRESSED",
       "severity": "HIGH",
-      "root_cause": "Persistent map exploration alone is insufficient to make a scannerless route useful or safe, and the Pilot may misread a port's buy/sell profile as a compatible trade. Iteration 31 showed a known safe sector can still create an unproductive 551-to-172-to-551 loop when no verified trade opportunity exists. Earlier live runs also confirmed dangerous movement through sector 99.",
+      "root_cause": "Persistent map exploration alone is insufficient to make a scannerless route useful or safe, and the Pilot may misread a port's buy/sell profile as a compatible trade. Iterations 31, 32, and 34 show repeated unproductive routes after reaching or approaching StarDock. Iterations 32 and 34 also exposed separate port-recovery defects that explain declined quotes but do not explain the route oscillation. The exact opportunity and hold-guard state during the departures were not captured.",
       "affected_components": [
         "AutonomousTestWorker scanner-acquisition objective selection",
         "Verified shortest-hop StarDock movement policy",
@@ -812,8 +819,9 @@
         "Before sending a movement command, block scannerless entry outside sectors 1-10 and StarDock unless the target is recorded as explored.",
         "Block scannerless entry into sector 99 regardless of its persistent Explored flag.",
         "Filter scannerless adjacent movement candidates to sectors 1-10, StarDock, or already-explored sectors before building the Pilot context; suppress remote port-trade opportunities whose next hop is unsafe, while retaining the final execution guard.",
-        "At StarDock, hold when the scanner is absent, the Dock Shopper is not ready, the ship has at most 1 credit and no cargo, and no verified compatible trade opportunity exists; do not act on a model-invented trade rationale.",
-        "Accept a single-commodity complementary port profile and search for fresh directed trade pairs up to three hops apart outside FedSpace, while retaining scannerless movement guards."
+        "At StarDock, hold when the scanner is absent, the Dock Shopper is not ready, the ship has no cargo, and no verified compatible trade opportunity exists, regardless of the current credit balance; do not act on a model-invented trade rationale.",
+        "Accept a single-commodity complementary port profile and search for fresh directed trade pairs up to three hops apart outside FedSpace, while retaining scannerless movement guards.",
+        "Use the full prompted quantity for the selected, verified product and reject scannerless pair plans whose route to the seller or buyer crosses any uncharted or otherwise disallowed sector."
       ],
       "validation_results": [
         "Added RoutesScannerlessShipTowardStarDockDespiteStaleTradingObjective regression coverage.",
@@ -826,9 +834,15 @@
         "Iteration 29: after a successful port/warp CIM refresh, the live monitor recorded sectors 551, 99, and 551. Meridian was stopped immediately after the high-risk sector appeared. Added an unconditional scannerless sector-99 block and a regression test; all 67 AutonomousTestWorkerTests passed. The MTC Release build succeeded and was subsequently live-restarted.",
         "Iteration 30: the rebuilt runtime selected a scanner-funding target and recorded movement through sector 206, then failed on an echoed MoveSector prompt. Added a sender regression fix and harness coverage. In a separate uncounted restart, the Pilot proposed unexplored sector 172 without a verified scanner; the worker blocked movement and the ship remained at StarDock 551. A subsequent source repair filters unsafe scannerless routes before Pilot selection; all 68 AutonomousTestWorkerTests passed.",
         "Iteration 31: the published runtime moved 551 to 172 and back to 551 without trading; the Pilot misread the known sector's Fuel Ore-selling port. A later CIM refresh completed, but the read-only Pair Port Trade plan still reported no complementary pair. Added a StarDock hold for the verified no-funds/no-cargo/no-scanner state. All 69 AutonomousTestWorkerTests passed; the published runtime then recorded a hold at StarDock 551. Scanner purchase and WorldTrade remain outstanding.",
-        "Uncounted source/test follow-up: the macro rejected a valid one-product profile and the general runtime provider searched only direct seller-to-buyer warps. Updated both; all 16 MacroExecutionTests passed and the MTC RPC safety harness passed, including a fresh three-hop non-FedSpace pair. The active MTC still has the old loaded code, so live funding behavior and scanner acquisition remain unverified."
+        "Pre-cycle-32 safety follow-up: widened the StarDock no-progress hold so any credit balance is held when there is no scanner, no cargo, no ready Dock Shopper, and no verified funding trade. The regression test now exercises 500 credits and passes. The fix is source-tested only; do not treat it as live-validated.",
+        "Uncounted source/test follow-up: the macro rejected a valid one-product profile and the general runtime provider searched only direct seller-to-buyer warps. Updated both; all 16 MacroExecutionTests passed and the MTC RPC safety harness passed, including a fresh three-hop non-FedSpace pair. The changes were not loaded into the live MTC, so live funding behavior and scanner acquisition remain unverified.",
+        "Source follow-up after the operator reported turns/movement with no earnings and credits reduced to 1: scannerless multi-hop trade plans could traverse unexplored sectors. Routes were filtered against scannerless movement policy. MacroExecutionTests passed 16/16; all 138 MTC RPC safety/dashboard checks passed; Release win-x64 build passed with 0 warnings and 0 errors. No MTC process was running; output was built to a session directory, not deployed. No gameplay progress was claimed.",
+        "Iteration 32 completed the full 900-second window and recorded 159 sector changes, including repeated 172↔206 movement, but no verified transaction, cargo, credits, scanner, or WorldTrade progress. The exact route opportunity and guard state were not retained; do not attribute the loop to a specific provider result.",
+        "Iteration 34 recorded 168 sector transitions among 172, 206, and 805 with no scanner, trade, or WorldTrade progress. The run again confirms the route-loop symptom but does not identify the opportunity or hold decision that caused it.",
+        "Source review after iteration 32 found that any non-null current or remote portTradeOpportunity suppresses the StarDock hold. The run did not retain the opportunity payload, so this is not confirmed as the reason for the observed departure; capture that state before changing route arbitration.",
+        "The post-run recovery repair passes verified synchronized credits through untracked trade recovery. Its focused tests pass, but the live runtime has not yet loaded the repair."
       ],
-      "regression_count": 3,
+      "regression_count": 4,
       "related_defects": [
         "DEFECT-0025"
       ],
@@ -837,7 +851,10 @@
         "The planner now hides unsafe scannerless routes from the Pilot as well as blocking execution. A live StarDock hold was observed for the one-credit/no-cargo state, but keep the broader defect REGRESSED until scanner acquisition succeeds and sector 99 is verified blocked.",
         "Correlate the funding objective, selected adjacent target, MTC command submission/acknowledgment, and resulting sector snapshot before changing route arbitration.",
         "Do not treat an explored sector as a trade opportunity; require provider-verified port compatibility and adequate ship state before leaving StarDock.",
-        "The one-product and three-hop source fixes are not runtime-validated. MTC auto-starts Meridian after restart, so verify and stop the worker safely before replacing the running process or attempting a live check."
+        "The one-product and three-hop source fixes are not runtime-validated. MTC auto-starts Meridian after restart, so verify and stop the worker safely before replacing the running process or attempting a live check.",
+        "The 500-credit StarDock hold test passes in source, but the runtime has not been restarted with this build. Confirm a fresh game snapshot and verified trade opportunity before enabling any game action.",
+        "Port prompts expose a maximum quantity, not proof of affordability or profit. Use verified credits during untracked recovery and verify a scannerless route end to end before buying cargo; live stock, cash, and a positive sell-side credit delta still require post-trade verification.",
+        "Iteration 32's and 34's lack of a current/remote opportunity record prevents confirming why the StarDock hold did not activate. Capture current sector, TradeSector, RouteSector, product, opportunity freshness, and hold decision inputs before changing route arbitration."
       ]
     },
     {
@@ -944,28 +961,66 @@
     {
       "id": "DEFECT-0029",
       "title": "Repeated Fuel Ore haggles do not produce a verified trade",
+      "description": "The autonomous agent repeatedly selected port products but did not complete a verifiable trade. Iteration 35 verified one full-hold Fuel Ore purchase, but its next sale quote remained unanswered; iteration 36 left two purchase quotes unresolved; iteration 37 selected 20 Fuel Ore holds three times but left affordable 153-, 215-, and 153-credit quotes unanswered. Iteration 38 verified nine transactions and positive earnings, but one interrupted Organics purchase lost its selected product and credit context and was declined with 0. Iteration 39 made verified trades but a later delayed recovery again lost the selected product and credits, declined a 209-credit quote, and submitted 0 at a later quantity prompt. Iteration 40 live-validated recovery context retention with an accepted Fuel Ore sale and fresh cargo/credit verification.",
       "first_discovered_iteration": 26,
-      "last_seen_iteration": 27,
-      "status": "INVESTIGATING",
+      "last_seen_iteration": 40,
+      "status": "VALIDATED",
       "severity": "MEDIUM",
-      "root_cause": "Unconfirmed. The logs show repeated no-transaction outcomes but do not establish whether repeated port prompts, native haggle recovery, or Pilot re-selection caused the retries.",
+      "root_cause": "The original 5-second quantity-to-offer correlation window was too short and was widened to 45 seconds. Iteration 37 exposed a second prompt-ordering defect: confirmed presence heartbeats were promoted to new actionable prompt timestamps. Filtering those copies enabled live trades in iteration 38. The worker then stored the active selected opportunity before SendAsync, but cleared it as soon as the sender returned rather than retaining it until fresh ship-snapshot verification. A delayed untracked prompt therefore still lacked the original selected product and synchronized credits and could submit 0.",
       "affected_components": [
         "AutonomousTestWorker port-trade selection and verification",
+        "AutonomousTestWorker active trade-attempt recovery context",
+        "IAutonomousPortTradePromptRecovery contract",
         "MtcGameCommandSender.CompletePortTradeAsync",
+        "MTC server-prompt heartbeat normalization",
         "MTC native port-haggle handling"
       ],
-      "fixes_applied": [],
+      "fixes_applied": [
+        "Use the full prompted hold capacity for the selected, verified product instead of limiting buys to one unit.",
+        "Pass the fresh synchronized credit balance into the sender and decline purchase quotes that are not affordable.",
+        "Fail closed when multiple port-trade prompts arrive before a response, and stop if native haggling becomes enabled during the trade.",
+        "Propagate a valid synchronized credit balance into untracked port-trade recovery and accept quotes that exactly equal the available balance.",
+        "Correlate an untracked active quote with its fresh preceding quantity prompt and preserve the selected product/sale context.",
+        "Leave an uncorrelated quote unanswered instead of sending 0, and schedule fresh ship-snapshot verification after a recovered opportunity.",
+        "Classify `Your offer [amount] ?` as a distinct prompt surface.",
+        "Allow a fresh correlated offer to be handled despite a stale Command-prompt indicator.",
+        "Extend quantity-to-offer correlation to the 45-second fresh-prompt limit without relaxing the offer, freshness, affordability, approval, or native-haggle checks.",
+        "Exclude presence-heartbeat copies from actionable trade-prompt recovery and pending-prompt sequencing; correlate only against actual server prompt text.",
+        "Store the active selected trade and starting snapshot before awaiting the sender, then pass the original product, sale/buy intent, follow-up product, and credits through untracked recovery.",
+        "Retain the active trade context after SendAsync returns until a fresh snapshot verifies the transaction or the bounded recovery-context age expires."
+      ],
       "validation_results": [
         "Iteration 26 recorded nine no-transaction Fuel Ore haggle outcomes at sector 172; each retained 17 credits and 20 empty holds.",
         "Iteration 27's 12-hold Fuel Ore quote was 58 credits against 55 available, so no purchase was verified. A later quantity prompt stalled; prompt-timestamp recovery was repaired under DEFECT-0016, but a completed trade is still unverified.",
-        "No completed port transaction, scanner purchase, or WorldTrade start was verified."
+        "No completed port transaction, scanner purchase, or WorldTrade start was verified.",
+        "Iteration 32 recorded three trade attempts and no transaction; the live window ended with 500 credits and 20 empty holds. Source tracing found untracked recovery always passed null credits to quote affordability.",
+        "After iteration 32, the worker and MTC recovery interfaces were updated to propagate the fresh balance. All 71 AutonomousTestWorkerTests passed and the MTC RPC safety/dashboard harness passed 149 checks, including a maximum-quantity purchase at an exact-balance quote. The fix had not yet been deployed for live validation.",
+        "Iteration 33's available handoff records a 161-credit Fuel Ore quote answered with 0; raw logs and duration were unavailable.",
+        "Iteration 34's timestamped debug log confirmed three recovery quotes: 107 and 191 against 500 credits were declined because selection was lost; 140 was declined with credits unknown. Credits remained 500 and all holds remained empty.",
+        "Added sender harness coverage for accepting a correlated affordable quote and refusing an unmatched quote without input; all 151 MTC safety/dashboard checks passed. Added worker coverage for fresh-snapshot verification; all 274 TradeWars tests passed. Release build passed with 0 warnings and 0 errors. The repairs required live validation in iteration 35.",
+        "Iteration 35 accepted a 191-credit recovered quote against 500 credits. A fresh snapshot verified 20 Fuel Ore and 309 credits, and the ship moved to sector 290. A subsequent sale quote of 876 credits remained unanswered at shutdown.",
+        "After iteration 35, added quote-prompt classification and a regression harness case where the command-prompt indicator is stale. The full TradeWars suite passed 276/276, the MTC harness passed 151 checks, and the Release build passed with 0 warnings and 0 errors. This source fix still requires live validation.",
+        "The first two iteration-35 recovery attempts did not produce a recorded quote decision. The available logs do not identify their failure branch; keep this defect open until a sale and positive earnings are verified.",
+        "Iteration 36 began with 309 credits and 20 empty holds, moved from sector 290 to 805, and made two 20-hold Fuel Ore purchase attempts. Neither offer was accepted or verified; no earnings, scanner purchase, or WorldTrade start occurred.",
+        "Iteration 36's first recovery began 8.145 seconds after the quantity prompt, beyond the 5-second correlation limit. Extended the limit to 45 seconds and added a 35-second correlation regression case.",
+        "The MTC RPC safety/dashboard harness passed 151 checks and the Release build passed with 0 warnings and 0 errors. These source changes were built after iteration 36 and still need live validation.",
+        "Iteration 37 began in sector 805 with 309 credits and 20 empty holds. Three 20-hold Fuel Ore offers (153, 215, and 153 credits) were affordable but unanswered; no cargo or credit delta, scanner purchase, or WorldTrade start was verified.",
+        "Iteration 37's event archive shows a confirmed presence heartbeat repeating the PortTradeOffer surface after the actual quote. Heartbeat copies could be mistaken for actionable prompts and interfere with quote correlation.",
+        "After iteration 37, filtered heartbeat copies from trade recovery and pending-prompt handling. The MTC safety/dashboard harness passed 151 checks and the Release build passed with 0 warnings and 0 errors; iteration 38 must live-validate the fix.",
+        "Iteration 38 live-validated heartbeat filtering: nine transactions raised credits from 309 to 4,072 and the ship reached StarDock with 20 Fuel Ore. One Organics purchase still lost its selected product and 1,010-credit balance during untracked recovery and submitted 0.",
+        "After iteration 38, the worker persisted the selected opportunity and starting snapshot before SendAsync, and recovery passed the original product, sale/buy intent, follow-up product, and credits. The worker test class passed 72/72, the MTC harness passed 152 checks, and the Release build passed with 0 warnings and 0 errors. Full-suite status was 275/276 due to a temporary SQLite file-lock cleanup failure; the isolated failing test passed.",
+        "Iteration 39 verified a 20-unit Fuel Ore purchase and sale, but a later delayed recovery lost context after SendAsync returned, declined a 209-credit quote, and sent 0 at a later Organics quantity prompt. The active context is now retained until verification or bounded expiry. The delayed-prompt regression and all 73 AutonomousTestWorkerTests passed; the full TradeWars suite passed 277/277; the MTC harness passed 152 checks; and the Release build had 0 warnings and 0 errors.",
+        "Iteration 40 live-validated the repair. At StarDock the delayed untracked sale recovery preserved FuelOre, sellingExistingCargo=true, and the 5,555-credit starting balance; it accepted a 966-credit sale. A fresh snapshot then showed credits=6,521, 20 empty holds, and sector 551. The 15-minute window remained connected and ended within 0.019 seconds of target. No scanner purchase or WorldTrade start occurred; those remain separate objectives."
       ],
       "regression_count": 0,
       "related_defects": [
         "DEFECT-0023"
       ],
       "notes": [
-        "Trace the prompt and input sequence for one failed transaction. Do not infer that a port trade succeeded from the action decision or return to Command."
+        "Iteration 34 traced the selection loss through the recovery quote decision; instrument the direct abort branch if the live repair still hands off unexpectedly.",
+        "Require a live sale or other positive earnings and a fresh snapshot that verifies cargo and credit deltas before this defect can be marked VALIDATED.",
+        "The second iteration-36 recovery attempt remained unresolved despite being within the widened correlation interval; retain branch-level tracing and verify the next live attempt.",
+        "Iteration 38 live-validated heartbeat filtering but exposed a separate trade-intent handoff failure. Iteration 39 showed that pre-send context alone is insufficient if it is cleared before a fresh snapshot verifies the transaction. Iteration 40 live-validated retaining context through verification and a completed profitable sale. Scanner acquisition and WorldTrade are not covered by this defect and remain unverified."
       ]
     },
     {
@@ -998,6 +1053,94 @@
       "notes": [
         "A valid Pilot response validates the model/schema contract only; do not treat it as proof of command execution or gameplay progress."
       ]
+    },
+    {
+      "id": "DEFECT-0032",
+      "title": "Scanner-first StarDock visit purchased 22 cargo holds instead of a scanner",
+      "description": "Archived telemetry confirms that the ship bought 22 cargo holds at sector 1 during the scanner-acquisition phase. The ship's credits fell from 36,919 to 22,466 while total holds rose from 18 to 40; no Density or Holo Scanner was acquired. This older transaction does not establish the cause of the later one-credit state.",
+      "first_discovered_iteration": 31,
+      "last_seen_iteration": 31,
+      "status": "INVESTIGATING",
+      "severity": "HIGH",
+      "root_cause": "The spending transaction is confirmed, but the decision-level cause is not: durable Pilot/Strategic prompt and response records do not show why Cargo Holds were selected instead of the scanner objective or which component initiated the purchase.",
+      "affected_components": [
+        "StarDock hardware purchase selection",
+        "Autonomous purchase authorization and budget gate",
+        "Prompt and decision telemetry"
+      ],
+      "fixes_applied": [],
+      "validation_results": [
+        "The event log records an 18-hold, 36,919-credit baseline, a Cargo Holds prompt with quantity 22, and a subsequent status with 40 holds and 22,466 credits.",
+        "The 14,453-credit decrease matches the interval containing the 22-hold purchase; no scanner is recorded in the resulting ship status.",
+        "Archived records do not contain the separate later one-credit episode's transaction history, so this event cannot be claimed as its cause."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": [
+        "During the scanner-first objective, authorize only a Density Scanner purchase by default. Do not buy Cargo Holds or other upgrades unless explicitly approved and budget-checked.",
+        "After every purchase or trade, require a fresh ship status and compare credits, cargo, holds, and scanner ownership before continuing."
+      ]
+    },
+    {
+      "id": "DEFECT-0033",
+      "title": "WorldTrade script path duplicates the category directory",
+      "description": "When the configured TWX scripts directory already ended in trading-cashing, loading the approved reference trading-cashing/2-worldtrade.ts appended the category twice and failed with DirectoryNotFoundException.",
+      "first_discovered_iteration": 40,
+      "last_seen_iteration": 40,
+      "status": "VALIDATED",
+      "severity": "HIGH",
+      "root_cause": "WorldTrade path resolution assumed the configured scripts directory was always the scripts root and did not account for it already being the trading-cashing category directory.",
+      "affected_components": [
+        "MTC WorldTrade script path resolution",
+        "TWX script loading"
+      ],
+      "fixes_applied": [
+        "Resolve the approved WorldTrade reference to an existing absolute path, supporting both the scripts root and the trading-cashing category directory."
+      ],
+      "validation_results": [
+        "MTC RPC safety harness passed regression checks for both configured-directory forms.",
+        "Release solution build completed with 0 warnings and 0 errors.",
+        "After restart, the live log showed script ID 2-WORLDTRADE.TS, the WORLDTRADE menu, and automatic selection of GO! without the duplicate-path compile error.",
+        "No completed trade or positive credit delta was observed; WorldTrade earnings remain unverified."
+      ],
+      "regression_count": 0,
+      "related_defects": [],
+      "notes": [
+        "This was an uncounted follow-up after iteration 40, not a completed 15-minute campaign iteration.",
+        "The live log ended with the script paused at Command after GO!; successful trading is not established by script loading alone."
+      ]
+    },
+    {
+      "id": "DEFECT-0034",
+      "title": "WorldTrade can issue Holo-only and saved extra commands with a Density Scanner",
+      "description": "The WorldTrade script loads saved Move~ScanHolo and Move~ExtraSend preferences. Standard holo-scan mode can send `sh` when sector data looks unusual, and the saved f1*ct extra-send macro emits additional keys. With a Density-only scanner, these commands can desynchronize prompts and leave subsequent keys entering the wrong menu.",
+      "first_discovered_iteration": 40,
+      "last_seen_iteration": 40,
+      "status": "FIXED",
+      "severity": "HIGH",
+      "root_cause": "The script trusted persisted navigation settings and did not enforce scanner-compatible scan and movement-command settings before constructing its menu and starting the routine.",
+      "affected_components": [
+        "WorldTrade TWX script configuration",
+        "Density-only scanner compatibility",
+        "Terminal prompt and menu synchronization"
+      ],
+      "fixes_applied": [
+        "Force Move~ScanHolo to 0 and Move~ExtraSend to an empty string after loading saved preferences and before building the WorldTrade menu.",
+        "Keep the changes in the active script instance only; do not overwrite the user's saved navigation preferences."
+      ],
+      "validation_results": [
+        "MTC RPC safety and dashboard regression harness passed, including the Density-only scanner policy check.",
+        "Release solution build completed with 0 warnings and 0 errors.",
+        "The TWX script was not restarted after this source change; actual command sequencing and trading remain pending live verification."
+      ],
+      "regression_count": 0,
+      "related_defects": [
+        "DEFECT-0018"
+      ],
+      "notes": [
+        "This was an uncounted follow-up after iteration 40, not a completed 15-minute campaign iteration.",
+        "Verify that a Density-only WorldTrade run emits no holo-scan or extra-send commands before claiming the defect validated."
+      ]
     }
   ],
   "known_patterns": [
@@ -1011,10 +1154,10 @@
     },
     {
       "name": "Scannerless stale-objective movement oscillation",
-      "frequency": 3,
+      "frequency": 4,
       "first_seen_iteration": 24,
-      "last_seen_iteration": 30,
-      "severity_trend": "HIGH; iteration 29 again recorded sector transitions 551 to 99 to 551. Iteration 30's rebuilt runtime selected a scanner-funding route and moved through sector 206, but failed before a trade. An uncounted follow-up safely blocked an unexplored-sector move to 172 without a scanner; the sector-99 guard remains unverified live.",
+      "last_seen_iteration": 34,
+      "severity_trend": "HIGH; iteration 29 again recorded sector transitions 551 to 99 to 551. Iteration 30 moved through sector 206, and iteration 34 again oscillated among 172, 206, and 805 without trade or scanner progress; the exact hold inputs remain unobserved.",
       "recommended_long_term_fix": "Keep scanner acquisition deterministic, preserve bounded FedSpace survey/trade phases, and do not treat persistent exploration flags as a scanner substitute for known high-risk sectors."
     },
     {
@@ -1043,11 +1186,11 @@
     },
     {
       "name": "Repeated no-transaction port haggle",
-      "frequency": 2,
+      "frequency": 6,
       "first_seen_iteration": 26,
-      "last_seen_iteration": 27,
-      "severity_trend": "MEDIUM; nine no-transaction outcomes persisted from iteration 26, and iteration 27's 12-hold quote exceeded available credits; no transaction was verified",
-      "recommended_long_term_fix": "Trace one full port prompt and input sequence, then prevent repeated attempts without a new verified opportunity or state change."
+      "last_seen_iteration": 35,
+      "severity_trend": "HIGH; iterations 32-35 again showed incomplete transactions. Iteration 35 verified one recovered 20-unit purchase after three attempts, but the next 876-credit sale quote remained unanswered.",
+      "recommended_long_term_fix": "Classify trade quote prompts, preserve correlated product/quantity context through recovery, and require a fresh cargo/credit snapshot after every recovered transaction."
     },
     {
       "name": "Ollama inference timeout",
@@ -1200,6 +1343,14 @@
       "last_seen_iteration": 18,
       "severity_trend": "HIGH; WorldTrade-related inputs observed without verified script completion or positive credit delta.",
       "recommended_long_term_fix": "Require active-ship Density or Holo Scanner ownership and confirm fresh credits/holds after the WorldTrade routine."
+    },
+    {
+      "name": "Unapproved StarDock hardware purchase consumed scanner funds",
+      "frequency": 1,
+      "first_seen_iteration": 31,
+      "last_seen_iteration": 31,
+      "severity_trend": "HIGH; archived telemetry confirms 14,453 credits spent on 22 Cargo Holds while the scanner objective remained unmet. This is not proven to be the later one-credit loss.",
+      "recommended_long_term_fix": "During scanner-first operation, whitelist the Density Scanner by default; require an explicit objective and affordability check before any other hardware purchase, then verify the fresh post-purchase status."
     },
     {
       "name": "LLM interaction history is unavailable after shutdown",

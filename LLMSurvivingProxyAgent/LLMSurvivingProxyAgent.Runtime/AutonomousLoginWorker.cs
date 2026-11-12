@@ -246,13 +246,12 @@ public sealed class AutonomousLoginWorker(
     {
         if (string.IsNullOrWhiteSpace(loginOptions.LoginName))
         {
-            var loginName = ValidateGeneratedValue(
+            var loginName = ValidateGeneratedName(
                 await identityProvider.ChooseServerLoginNameAsync(
                     modelConfiguration,
                     CreateIdentityContext(),
                     cancellationToken).ConfigureAwait(false),
                 "server login name",
-                minimumLength: 3,
                 maximumLength: 20);
             await credentialStore.SaveLoginNameAsync(loginName, cancellationToken).ConfigureAwait(false);
             loginOptions.LoginName = loginName;
@@ -284,13 +283,12 @@ public sealed class AutonomousLoginWorker(
     {
         for (var attempt = 0; attempt < MaximumIdentityAttempts; attempt++)
         {
-            var alias = ValidateGeneratedValue(
+            var alias = ValidateGeneratedName(
                 await identityProvider.ChooseTraderAliasAsync(
                     modelConfiguration,
                     CreateIdentityContext(),
                     cancellationToken).ConfigureAwait(false),
                 "trader alias",
-                minimumLength: 3,
                 maximumLength: 20);
             var isUnique = !string.Equals(alias, loginOptions.LoginName, StringComparison.OrdinalIgnoreCase) &&
                            !loginOptions.Games.Any(profile =>
@@ -329,7 +327,43 @@ public sealed class AutonomousLoginWorker(
             gameProfile.Password = password;
         }
 
-        sequence.SetNewCharacterCredentials(gameProfile.TraderAlias, gameProfile.Password);
+        string shipName = string.IsNullOrWhiteSpace(gameProfile.ShipName)
+            ? ValidateGeneratedName(
+                await identityProvider.ChooseShipNameAsync(
+                    modelConfiguration,
+                    CreateIdentityContext(),
+                    cancellationToken).ConfigureAwait(false),
+                "ship name",
+                maximumLength: 30,
+                allowSpaces: true)
+            : gameProfile.ShipName;
+        string homePlanetName = string.IsNullOrWhiteSpace(gameProfile.HomePlanetName)
+            ? ValidateGeneratedName(
+                await identityProvider.ChooseHomePlanetNameAsync(
+                    modelConfiguration,
+                    CreateIdentityContext(),
+                    cancellationToken).ConfigureAwait(false),
+                "home planet name",
+                maximumLength: 30,
+                allowSpaces: true)
+            : gameProfile.HomePlanetName;
+        if (string.IsNullOrWhiteSpace(gameProfile.ShipName) ||
+            string.IsNullOrWhiteSpace(gameProfile.HomePlanetName))
+        {
+            await credentialStore.SaveCharacterNamesAsync(
+                selectedGame,
+                shipName,
+                homePlanetName,
+                cancellationToken).ConfigureAwait(false);
+            gameProfile.ShipName = shipName;
+            gameProfile.HomePlanetName = homePlanetName;
+        }
+
+        sequence.SetNewCharacterCredentials(
+            gameProfile.TraderAlias,
+            gameProfile.Password,
+            shipName,
+            homePlanetName);
     }
 
     private async Task<string> GenerateUniqueGamePasswordAsync(
@@ -384,6 +418,27 @@ public sealed class AutonomousLoginWorker(
         {
             throw new InvalidDataException(
                 $"The model generated an invalid {valueName}; it must be {minimumLength}-{maximumLength} ASCII letters or digits.");
+        }
+
+        return value;
+    }
+
+    private static string ValidateGeneratedName(
+        string value,
+        string valueName,
+        int maximumLength,
+        bool allowSpaces = false)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Length < 3 ||
+            value.Length > maximumLength ||
+            value != value.Trim() ||
+            value.Any(character =>
+                !char.IsAsciiLetter(character) && (!allowSpaces || character != ' ')))
+        {
+            string allowedCharacters = allowSpaces ? "ASCII letters and spaces" : "ASCII letters";
+            throw new InvalidDataException(
+                $"The model generated an invalid {valueName}; it must be 3-{maximumLength} {allowedCharacters}.");
         }
 
         return value;

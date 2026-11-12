@@ -1,0 +1,766 @@
+------------------------------------------------------------------------
+Dny's little macro tutorial for Tradewars 2002.
+Singularity (Dnyarri), June 2006
+------------------------------------------------------------------------
+
+Mmmmkay. So you're probably newish or rusty to the game and looking to 
+get better. Everyone talks about scripts. Scripts this, scripts that. It 
+seems that scripts drive the game. But they don't. Macros do. Even the
+best scripts in the game can be royally hosed by a simple macro if you
+know how. Infact the most advanced scripts use macros in creative ways 
+to get the highest levels of speed possible.
+
+So what is a macro? The word "macro" means "large." But what it means
+to the online world is a set of pre-written commands sent all at once
+in a one large burst. They've been around for atleast 20 years, ever
+since bandwidth was limited and people needed to navigate the first
+remote shell and telnet systems. They became so useful that most term
+programs started offering them. You can go back to the old days of
+Telemate in the early 90s and see macro this and macro that. They've
+been useful for ages, and in TW2002 they are backbone of modern play.
+
+In order to run a macro you need a helper, term program or proxy program.
+Attac, Swath, TWX Proxy... the more modern of the current helpers, all
+offer macro capabilities. Zoc, the most commonly used term program in
+the TW2002 world offers macro capacity that puts any others to shame.
+
+This tutorial will focus on some ways to write macros. Consult your user
+manual for your helper or term prog to find out how to execute them. We
+will use the standard notation of ^M to represent the enter key. While
+TWX uses the * (asterisk) in it's scripting and burst functions, it's
+easier to stick with the one that works in the most apps. Depending on
+your helper you may have the ability to record keystrokes and convert 
+them into a macro. Swath offers this feature and I find myself using it
+all the time to make macros for later use.
+
+The basic macros are just key strings. For instance if you're in a game
+and want to lay a fig in a sector without any.
+
+f1^Mcd
+
+Fighters, 1, Enter. Corp. Defensive.
+
+Simple and effective. That's exactly what you'd type to drop a fig as
+you go. Assign this to a key or a button or whatever you have available
+and it gets much easier to grid (drop figs everywhere you go) since all
+you have to do is push a button.
+
+Now this has some problems. For instance this command string does not 
+work at every prompt, won't work under certain conditions and could even
+put you into some danger in others. We'll go into that later on, but for
+now you need to the basics.
+
+m1234^Mf1^Mcdh11^Mch21^Mc
+
+Move to sector 1234. Drop a corp fighter. Drop a corp armid. Drop limpet.
+See how easy that is? We could go on and on about simple command strings.
+
+ay5000^M
+
+Attack, first target with 5000 figs. A very simple attack macro. It has 
+some problems that will become appearant quickly if you use it very often
+but it's a simple enough attack macro to write even as a new player.
+
+m1234^Myy
+
+A simple twarp macro. Something this basic can save your life a lot. If
+you're a fedsafe commissioned player you can set this to sector 1 or 
+stardock. If you're not you can set it to a scrub (a place to shake off
+enemy limpets) or safe sector. Suddenly even under attack you can twarp off,
+provided you're not held in an IG, not photoned and have the turns.
+
+Hopefully you're beginning to see how a little preparation with macros can
+make a huge difference in your game's play. Get some basic macros setup as
+hotkeys and you have an entire arsenal of tools at your disposal.
+
+
+Aborting displays...
+
+Look at your CN9 setting. To do this... from either the command or citadel
+prompt type "cn"
+(1) ANSI graphics            - On
+(2) Animation display        - Off
+(3) Page on messages         - Off
+(4) Sub-space radio channel  - xxxx
+(5) Federation comm-link     - On
+(6) Receive private hails    - Yes
+(7) Silence ALL messages     - No
+(8) Change Password
+(9) Abort display on keys    - SPACE
+(A) Message Display Mode     - Compact
+(B) Screen Pauses            - No
+(C) Online Auto Flee         - Off
+
+9 here is set to "SPACE" ... There are 2 settings. SPACE and ALL KEYS.
+A "display" is anything that the game would normally send to you. Display
+sector after moving, when docking, even when looking at the figlist. All
+of these things are "displays." Sometimes you want them displayed, others
+you want them aborted. Aborting a display speeds it up. If you're colonizing
+or moving product from planet to planet the displays will really slow you
+down. While it's unlikely (altho it does happen occasionally) that colonizing
+will become such a race, there's no reason to spend more time than you have
+to. Moving product however is a different story. It's quite common to move
+product under fire, with enemies beating to get their planets back. Taking
+an extra few minutes to do this means spending time you simply do not have.
+
+The way to abort a display is based on the setting above. If you set it
+"ALL KEYS" many scripts won't work right. This is because they use macros
+themselves and catch the output. We'll talk about that later. But if you
+abort the display that output won't show up and your script may stall.
+
+Set to "SPACE" makes all spaces abort display. This is very useful as it
+allows you to specifically control what displays will show up and which ones
+won't.
+
+Sector move with abort displays:
+m 1234 ^M f 1 ^M c d h 1 1 ^M c h 2 1 ^M c
+
+You don't put spaces in between sector numbers, that will mess things up.
+You also don't put one between the ^ and the M as that's considered a
+single key (translates into an enter key, remember?). Everywhere else you
+can put a space and abort the display. There are some places where 2 spaces
+actually speed things up (and some where it adds extra lines, so it ends
+up slowing it down)... but for now 1 space works well enough. As you get
+more comfortable with macros you can test both variations and find the one
+that works best for your particular macro.
+
+You can use this all over the place and turn large streams of text into
+tiny little prompts or lines.
+
+
+The attack macro...
+
+A good attack macro is a work of art. But to understand why you need to 
+consider attack orders and what happens at every prompt.
+
+ay5000^M
+
+Now what happens if there's no enemy there? The attack replies with:
+"There is nothing here to attack."
+
+The Y brings up the set navpoint prompt. 5000 does nothing on that prompt
+and enter brings you back to the command prompt. That's great isn't it?
+But... uhm. What if you do:
+
+a y 4000 ^M
+
+Attack. Again with the "no one to attack" thing. Navpoint. 4000... which
+IS something at that prompt. Suddenly your attack macro does something
+wrong. Infact in this case the 4 takes you to program the 4th nav. The 0
+clears the navpoint, the enter sets that and now you're stuck at the nav
+set. (Again note the spaces, this will abort the navset display so you
+don't see all your navpoints every time it executes.)
+
+As you can clearly see this macro fails miserably. If someone warps out 
+and back in with an attack macro you find yourself stuck at a prompt... 
+and dead in space (probably quite literally). 
+
+So how do fix it?
+
+Well macros can be more than just the basic string of text. You can actually
+shove as many keys as you want there. As long as they don't effect the prompt
+or bring up any others... you won't see them. This is called "buffering" or
+using "dead keys." You can send an entire alphabet if you want, on some 
+prompts it will end up doing absolutely nothing.
+
+a y q 4000 ^M 
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : A
+<Attack>
+Attack Enemy's BattleShip (25,000-80,000) (Y/N) [N]? Yes
+Combat scanners show enemy shields at 100%
+How many fighters do you wish to use (0 to 5,000) [0]?
+- - - - - 
+
+At this prompt the q will do absolutely nothing. Q simply isn't a valid 
+option at this prompt, so the game ignores it. However...
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : Y
+<Set NavPoint>
+
+NavPoint Settings (?=Help) [Q] : Q
+- - - - - 
+
+Now you're out of the navpoint settings atleast. The 4000 won't mess them
+up. Unfortunately... if you type 4000 and hit enter you've told the game to
+warp you to sector 4000. That's a bit of a problem as you're now being asked
+about what warp option you want to use.
+
+
+Z buffering...
+
+The Z command is perhaps one of the most useful commands in the game. Not
+because the instructions are so dang useful, but because it only accepts 3
+answers. Yes, No and enter (which means No). This means you can type in any
+amount of numbers you want at that prompt and it won't do anything at all.
+This is awesome for buffering stuff like fig waves.
+
+a y q z 4000 ^M 
+
+Attack, first target. Q if at the nav point, Z, 4000 and enter all looks like
+this.
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : A
+<Attack>
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? : Y
+<Set NavPoint>
+
+NavPoint Settings (?=Help) [Q] : Q
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? : Z
+Do you want instructions (Y/N) [N]? No
+- - - - - 
+
+Granted several prompts came up, but displays were aborted so it's nice and
+fast. If there's nobody in sector it won't send you warping out of control.
+If there is someone to attack it will attack the first target.
+
+Sounds good doesn't it?
+
+Well. Sadly in the world of violence things are never as simple as they seem.
+
+What if it's a Federal? (Zyrain for instance). You definately don't want to 
+attack Captain Z. Fortunately the game requires that you verify this before
+you do. So something like...
+
+a y n q z 4000 ^M 
+
+Starts the attack if it's there. Again the n, q and z will do absolutely nada
+at the attack prompt. If, however you're looking at cappy Z the extra N will
+abort the attack. The Q will head to the quit menu, where the Z and the 4000
+will do nothing and the extra enter will say "No" to the quit.
+
+But then there's the evil little beacon. Beacons come first in the attack order.
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : A
+<Attack>
+
+Destroy the Marker Beacon here? Yes
+You launch a fighter which quickly destroys the Beacon (and itself)
+
+Attack Player1's Barge (24,996-300) (Y/N) [N]? No
+Attack Player2's Cruiser (24,996-10,000) (Y/N) [N]? No
+Attack Player3's BattleShip (24,996-80,000) (Y/N) [N]?
+- - - - - 
+
+Now you're stuck at a prompt. Again if you're under fire... this will
+get you killed. You need to quickly abort these kind of prompts and follow
+up with another attack, or atleast get passed the beacon.
+
+The old rule was to use "ayy" instead of just ay. This works well because it
+blasts the beacon and continues the attack, but it isn't federal safe and
+will get you popped quickly at dock or terra.  
+
+However there's one more nifty trick, too. You can attack anyone you want
+and the game will abort the attack if you can't follow thru with it. So...
+
+a y n y q z 4000 ^M 
+
+will quickly say yes to Player3's battleship. If you can't attack them because
+they're corp or fedsafe in fedspace then the attack will simply fail. If
+there aren't enough players in the sector for this then it will all buffer
+out like before.
+
+...
+
+This is just the beginning of attack macros. I've seen ones that can land you
+safely on a planet (and not mess up if one isn't there). Ones that cut down
+on the amount of prompts. Ones that can do some pretty wild things. I encourage
+you to study the game prompts and make your own. At some point the best 
+things are those you find yourself.
+
+
+Z buffering part 2
+The Z buffering trick, ie putting commands within the Z command to make them
+safe on the command prompt, is one of the most useful tricks you can learn.
+Some examples follow.
+
+Killing figs...
+Sometimes a sector has enemy figs. Some times it does not. What if you want
+to hit sectors at random and don't know if it has an enemy fighter or not ahead
+of time. How can you solve this?
+
+m 1234 ^m Z A 99999 ^M 
+
+If there's a fig, the enemy fig prompt will not be effected by you hitting Z.
+If you're at the command prompt however all you get is...
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : Z
+Do you want instructions (Y/N) [N]? No
+- - - - - 
+
+Not a big deal, is it? Infact if you study some of the most commonly used
+scripts (like gridding scripts) you will see exactly this. CK surround comes
+to mind, it uses z buffering quite a bit.
+
+Lawnmowing ...
+Mines. Cannon blasts. Figs. In that order. You need to be able to deal with
+them all.
+
+m 1234 ^M z a 99999 ^m z a 99999 ^m z a 99999 ^m 
+
+Repeats the attack 3 times. Sends up to 3 waves of figs, deals with cannons
+(because enter works there too) and also deals with mines if they come up,
+enter works there as well (try it. Hit enter on an enemy mine prompt).
+
+Simple and effective. But... if there are a lot of enemy figs there and that
+doesn't get you past them you have to get off that prompt in a hurry.
+
+Default commands ...
+Every command (except a few that are worth finding) have a default if you
+hit the enter key. Usually it's the safest. Jettison says no. Detting a 
+planet is no. Instructions are no. Quit is no. Beacon is no. Lots of things
+are no. And "no" is a very useful default for us as macro writers.
+
+- - - - - 
+You have to destroy the fighters to remain in this sector.
+
+Your fighters: 25,000 vs. theirs: 1
+Option? (A,D,I,R,?):? A
+- - - - - 
+
+The command to retreat is the most obvious to get you out of a situation
+you can't mow thru. At the command prompt...
+
+Do you wish to launch a Marker Beacon here? (Y/N) [N]
+
+If you hit enter, it says no.
+
+So...
+
+m 1234 ^M z a 99999 ^m z a 99999 ^m z a 99999 ^m R ^M
+
+Is a basic, and fairly useful, lawnmowing macro. Yea there are some faster
+ways to do this that you may find later on (again, discovery is what makes
+this fun) but this can be used to build your own lawnmower or deal with
+just about any sector issue. It moves, attacks, clears several prompts and
+even retreats if there are too many figs to kill. Infact if done right
+something like this can even be fast enough to avoid a photon shot at you.
+
+Here we have combined z buffering, default commands and space aborts to make
+a macro that is fast and safe. 
+
+
+It gets even more complex too. Have you ever tried to lay a mine when someone
+else already had one?
+
+Macro: 
+h 2 2 ^M c
+
+- - - - - 
+ Handle which mine type, 1 Armid or 2 Limpet ? :2
+
+<Drop/Take Limpet Mines>
+These mines are not under your control.
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? : 2
+<Move>
+Warping to Sector 2
+
+That Warp Lane is not adjacent.
+Do you want to engage the TransWarp drive?
+- - - - - 
+
+Uh oh. That's not the right prompt to be at is it? That's very bad if you
+suddenly respond with afew extra enters along the way. You go warping off
+to sector 1 or 2, hitting anything along the way. Quick way to get killed.
+
+So you need a way to buffer the 2 so that if this prompt comes up, you
+don't stick the number at the wrong prompt. See where I'm going with this?
+The z-buffer trick works here too, as the Z command does nothing at:
+"How many Limpet mines do you want defending this sector?"
+
+Could you do?
+h 2 z 2 ^M c
+
+That's close. But not quite. This puts you at the computer prompt, which
+certaintly isn't where you want to be at the wrong time.
+
+h 2 z 2 ^M z c ^M
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : H
+<Mine Control>
+
+ Handle which mine type, 1 Armid or 2 Limpet ? :2
+
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? : Z
+Do you want instructions (Y/N) [N]? No
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? : Z
+Do you want instructions (Y/N) [N]? No
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? :
+- - - - - 
+
+Of course you get a few extra lines on the screen, but you're still at
+the command prompt and ready to send another batch of commands. You survive.
+
+This applies to laying figs too. Naturally when you move into a sector
+you kill those figs. But if you photon in as you go you'll end up under
+those figs... and trying to lay more on top of them will send you warping
+without a buffered macro. Also happens if you plock and pdrop onto a sector
+after an enemy drops a fig, you'll be in sector underneath an enemy's figs
+and faced with a problem of:
+
+Macro:
+f 1 ^M c d
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : F
+<Drop/Take Fighters>
+
+These fighters are not under your control.
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? : 1
+<Move>
+Warping to Sector 1
+
+That Warp Lane is not adjacent.
+Do you want to engage the TransWarp drive?
+- - - - - 
+
+Bad bad bad. You're at the wrong prompt.
+
+Macro:
+f z 1 ^M z c d ^M
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : F
+<Drop/Take Fighters>
+
+These fighters are not under your control.
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? : Z
+Do you want instructions (Y/N) [N]? No
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? : Z
+Do you want instructions (Y/N) [N]? No
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? :
+- - - - - 
+
+Afew extra lines. But you're still at the right prompt. And if there
+are no figs in the sector the extra Z's do nothing.
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : F
+<Drop/Take Fighters>
+
+How many fighters do you want defending this sector?  1
+Should these be (C)orporate fighters or (P)ersonal fighters? C
+Should they be (D)efensive, (O)ffensive or Charge a (T)oll ? D
+Done. You have 9,996 fighter(s) in close support.
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? :
+<Re-Display>
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? :
+- - - - - 
+
+This command buffering is one of the most powerful macro tricks you can
+mater. There are dozens of commands you can buffer on. Some more effective
+in some situations, but now you know to look for them... and the best tricks
+are those you find yourself.
+
+
+Prompt synching...
+
+One of the biggest problems with doing macros is making sure they get sent
+at the right prompt. We've already seen how bad sending data at the wrong
+prompt can be. Most prompts let you hit "q" to leave them. That comes in 
+handy. You can, infact, hit a bunch of q's right in a row and leave all the
+way out to the command prompt and to the quit prompt.
+
+Macro:
+q q q q z n 
+
+A useful macro for quitting. If at the end of the macro you're not at the
+quit prompt, the z n does the usual z trick. If not, then the z does nothing
+at the quit prompt and the n answers it no.
+
+You can change this up some too:
+q q q q z r ^M
+
+Since enter defaults to no on all of these 3 prompts you can use it to
+clear the prompt. This will quit you to the command prompt or retreat you
+from a fig or planet attack prompt.
+
+So:
+q q q q z r ^M l 99 ^M
+
+Quits or lifts from a planet, lands on planet 99. You can spice this up
+some too:
+
+q q q q z r 0 ^M z 0 ^M z 0 ^M
+
+Now it quits from a planet. It quits off an attack. Sends 0 to the command
+prompt which does nothing and buffers another 2 incase you're actually at
+a port waiting. Not too shabby!
+
+Now later on we'll talk about a small scripting solution, but something this
+simple can be so amazingly flexible that even the best scripts written won't
+replace it.
+
+
+Planet landing...
+
+Macro:
+l 99 ^M
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : L
+<Preparing ship to land on planet surface>
+
+Land on which planet <Q to abort> ? 99
+That planet is not in this sector.
+
+Land on which planet <Q to abort> ?
+- - - - - 
+
+That's with a planet scanner. Again you're stuck at a bad prompt.
+
+Update:
+l 99 ^M ^M
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : L
+<Preparing ship to land on planet surface>
+
+Land on which planet <Q to abort> ? 99
+That planet is not in this sector.
+
+Land on which planet <Q to abort> ?
+Invalid registry number, landing aborted.
+- - - - - 
+
+Better atleast. But what if there are no planets at all in the sector?
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : L
+<Preparing ship to land on planet surface>
+
+Command [TL=00:00:00]:[xxxx] (?=Help)? : 99
+<Move>
+
+Do you want to engage the TransWarp drive? No
+
+Computed.
+
+The shortest path (xx hops, yy turns) from sector xxxx to sector 99 is:
+(course plotted here)
+
+Engage the Autopilot? (Y/N/Single step/Express) [Y] N
+- - - - - 
+
+That's not so good. You're stuck at the wrong prompt. And one more enter 
+will send you warping out of control in a very bad way.
+
+Simple solution:
+l 99 ^M n n ^M
+
+Now this is a problem if sector 99 is adjacent. There's another solution 
+using the backspace key, but it's more complex. I'll let you explore and 
+find that one on your own. Still the above works well enough that you won't
+go warping across the universe. If the adj bug is a worry you can set that
+sector as an avoid as part of the macro. Again if you type in the n key it
+simply brings you to the navpoint settings:
+
+- - - - - 
+Command [TL=00:00:00]:[xxxx] (?=Help)? : N
+<Set Course to NavPoint>
+
+Choose NavPoint (?=Help) [Q] :
+- - - - - 
+
+The enter key does absolutely nothing here except clear the prompt. So you
+can do as many as you want, n n n n n ^M, and still only see one navpoint
+prompt and clear it with a single q or enter.
+
+
+Resource mover macros...
+
+Macro:
+l 98 ^M t n t 1 ^M q l 99 ^M t n l 1 ^M
+
+Works great if planet 98 and 99 are there. But what if they aren't? Based on
+what you've learned so far... do you think that any of those keys are good to
+send at the command prompt? Of course not.
+
+Take a second and go to the planet prompt. Hit the J key. Nothing, right?
+
+Now try it at the command prompt.
+"Are you sure you want to jettison all cargo? (Y/N)"
+
+Could this be used make a buffer on the command prompt while allowing planet
+commands to be sent without any worry? You betcha!
+
+Macro:
+q q q z n l 98 ^M n n ^M j t n j t 1 ^M q q z n l 99 ^M n n ^M j t n j l 1 ^M
+
+Big. But let's study it...
+Quit to command prompt. Land on 98. If it's not there, clear the landing 
+prompt completely. If we're at the planet take fuel, if not buffer on 2 
+jettison prompts. Quit back to command prompt. Try to land on 99, if not then
+clear the landing prompt. If we're at the planet prompt then leave ore and sit
+at the planet until the next loop begins.
+
+I hope now you can see the beginning of some serious power. Most scripts have
+to go to extreme lengths to ensure that planets don't suddenly warp off, or if
+it happens they simply let you warp out and die. Most scripts really don't 
+concern themselves with the safety of the user while providing the speed of a
+macro. But using a macro like the above you can easily do both and build a 
+better resource mover to boot!
+
+You'd be amazed what a little forethought and creativity can accomplish here!
+It's possible to make just about any macro safe and effective.
+
+
+Some basic TWX scripting using macros...
+
+We talked about checking for prompts. You can easily make prompt specific
+macros in TWX by using the CURRENTLINE feature.
+
+- - - - - 
+getWord CURRENTLINE $prompt 1
+if ($prompt = "Command")
+     send " dz n "
+elseif ($prompt = "Citadel")
+     send " s*  "
+else
+     clientMessage "Cannot display sector from this prompt"
+end
+halt
+- - - - - 
+
+This gets the first word from the CURRENTLINE that twx is processing. If 
+it's Command, ie the command prompt, then sends d followed by z n to make
+sure you don't hang on a mine prompt. If you're at the Citadel prompt it 
+sends S,  followed by an enter key to clear any mine prompts. As a reminder,
+TWX uses the asterisk, *, instead of ^M to mean the enter key.
+
+- - - - - 
+getWord CURRENTLINE $prompt 1
+if ($prompt = "Command")
+     send " dz n "
+     waitFor "<Re-Display>"
+     waitFor "Sector  :"
+     getWord CURRENTLINE $current_sector 3
+elseif ($prompt = "Citadel")
+     send " s*  "
+     waitFor "<Scan Sector>"
+     waitFor "Sector  :"
+     getWord CURRENTLINE $current_sector 3
+
+else
+     clientMessage "Cannot display sector from this prompt"
+     halt
+end
+- - - - - 
+
+Now does even more. It not only sends the scan, but after the scan macro has
+been sent it waits for the text to return. It uses the scan or display message
+to make sure it's not catching any previous scans still in the buffer and 
+then waits for "Sector  :" before getting that line as the CURRENTLINE. This
+is, of course, the sector number from a scan and is an easy way to grab the
+current  sector you're in. It's nothing more than a little prompt detection,
+a simple macro and a little text parsing.
+
+- - - - - 
+send "* "
+waitFor "(?="
+getWord CURRENTLINE $prompt 1
+if ($prompt <> "Command") AND ($prompt <> "Citadel")
+     clientMessage "Cannot run from this prompt"
+     halt
+end
+send " c;q "
+waitFor "Max Figs Per Attack:"
+getWord CURRENTLINE $maxfigs 5
+- - - - - 
+
+This one is a bit different. Can you guess what it does?
+
+All CURRENTLINE operations get whatever is currently at the cursor when things
+are being processed. If you don't use a waitFor to synch it then it will simply
+pull from whatever is currently in the buffer. This could be anything, and will
+mess things up. Here we use an approach that doesn't depend on you currently
+being at the prompt... you could be in the middle of a text operation and it
+would still wait for the prompt to arrive. If that prompt isn't the command or
+the  citadel prompt then it exits. Otherwise it sends a macro, c;q.
+
+- - - - - 
+Citadel command (?=help) C
+<Computer>
+<Computer activated>
+Computer command [TL=00:00:00]:[xxxx] (?=Help)? ;
+
+                                    Pulsar
+
+     Basic Hold Cost:    7,000   Initial Holds:     12 Maximum Shields:   400
+     Main Drive Cost:    9,000    Max Fighters: 25,000  Offensive Odds: 1.7:1
+       Computer Cost:  164,000  Turns Per Warp:      3  Defensive Odds: 1.3:1
+      Ship Hull Cost:   28,000        Mine Max:      5      Beacon Max:     5
+      Ship Base Cost:  208,000     Genesis Max:      0 Long Range Scan:   Yes
+ Max Figs Per Attack:     5000 TransWarp Drive:    Yes  Planet Scanner:   Yes
+       Maximum Holds:       60 Transport Range:      3 Photon Missiles:   Yes
+
+Computer command [TL=00:00:00]:[xxxx] (?=Help)? Q
+<Computer deactivated>
+- - - - - 
+
+THis is the example of what c;q looks like. It's the stats for the ship you're
+currently in. By waiting for the phrase "Max Figs per Attack:" then grabbing the
+5th word I am getting the figwave for this ship. This the number of figs it can
+launch at a time. I can use this to parse any information about this ship. I can
+get offensive odds, defensive odds, max holds, anything about that ship's 
+capacity.
+
+- - - - - 
+send "* "
+waitFor "(?="
+getWord CURRENTLINE $prompt 1
+if ($prompt <> "Citadel")
+     clientMessage "Must run from the Citadel prompt!"
+     halt
+end
+send " c;q "
+waitFor "Max Figs Per Attack:"
+getWord CURRENTLINE $maxfigs 5
+send " q dm n t * "
+waitFor "Planet #"
+getWord CURRENTLINE $currentplanet 2
+stripText $currentplanet "#"
+send " q a y n y q z " & $maxfigs & " * l " & $currentplanet & " * n n * j m n j t * "
+send " q a y n y q z " & $maxfigs & " * l " & $currentplanet & " * n n * j m n j t * "
+send " q a y n y q z " & $maxfigs & " * l " & $currentplanet & " * n n * j m n j t * "
+send " j c * "
+- - - - - 
+
+This is a combination of things we've seen so far. It's a basic citadel killer 
+(citkilla). Like all attack scripts it can get you killed, but this one tries
+really hard not to. It gets your current prompt, gets your max fig wave, gets
+your planet number then sends a burst of attacks. It's just a bunch of macros
+with some text parsing thrown around to glue it all together.
+
+................
+
+Anyway. That's about as far as I want to go with scripting examples. They can get
+complicated in a hurry and would quickly fall outside of the scope of this text.
+
+But hopefully all of this can teach you how to not only write macros, but write
+flexible and safe macros that work when you need them to. Armed with some patient
+study of the various prompts you'll find an amazing number of ways to make things
+work. And once you're armed with these new tools you'll be that much closer to
+galactic domination! Muhahaha!!
+
+I have recently uploaded my dock survival toolkit, a set of scripted macros for
+use at stardock, to grimy trader at http://www.grimytrader.com  ... If you're
+looking for more macro examples this is a great place to start.

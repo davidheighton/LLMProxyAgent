@@ -526,6 +526,40 @@ small {
     color: var(--cc-text);
 }
 
+.agent-session-tabs {
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    padding: 0.55rem clamp(1rem, 2vw, 2rem) 0;
+    border-bottom: 1px solid var(--cc-border);
+    background: var(--cc-shell);
+}
+
+.agent-session-tab {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    color: var(--cc-muted);
+    font-size: 0.78rem;
+}
+
+.agent-session-tab small {
+    color: var(--cc-muted);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+}
+
+.agent-session-tab:hover,
+.agent-session-tab.selected {
+    border-color: var(--cc-border);
+    border-bottom-color: var(--cc-green);
+    color: var(--cc-text);
+}
+
 .settings-form {
     display: grid;
     gap: 0.9rem;

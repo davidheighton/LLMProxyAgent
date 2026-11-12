@@ -90,7 +90,11 @@ public partial class MainWindow
         ApplySessionLogSettings(gameConfig);
 
         // Open / create the session database using sectors from the game config.
-        OpenSessionDatabase(gameName, gameConfig.Sectors, useSharedProxyDatabase: true);
+        if (!OpenSessionDatabase(gameName, gameConfig.Sectors, useSharedProxyDatabase: true))
+        {
+            throw new InvalidOperationException(
+                $"The session database for '{gameName}' could not be opened. Check whether another MTC process is using this game profile.");
+        }
 
         // Resolve the effective script directory from the MTC-wide preference first,
         // then fall back to older per-game state only when no app-level setting exists.

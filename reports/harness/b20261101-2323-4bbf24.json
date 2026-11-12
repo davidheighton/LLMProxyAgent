@@ -1,0 +1,99 @@
+{
+  "batchId": "b20261101-2323-4bbf24",
+  "generatedAt": "2026-11-02T06:28:53.6461833+00:00",
+  "baseProfile": "exiledTWGS  - Game E.json",
+  "goal": "FullyUpgradedShip",
+  "parallel": 1,
+  "wallClockMinutes": 10,
+  "episodes": 1,
+  "stateCounts": {
+    "Error": 1
+  },
+  "completionRate": 0,
+  "shipLossRate": 0,
+  "medianNetWorthPerTurn": null,
+  "meanReward": 0,
+  "decisionSources": {
+    "Policy": 0,
+    "Pilot": 0,
+    "PilotFallbackToPolicy": 0,
+    "PilotOverriddenByPolicy": 0
+  },
+  "verifiedStepRate": null,
+  "funnel": [
+    {
+      "milestone": "ReachedStarDock",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "DensityScanner",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "FirstProfitableTrade",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "HoloScanner",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxHolds",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxFighters",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxShields",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "FullyUpgraded",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    }
+  ],
+  "rows": [
+    {
+      "episodeId": "b20261101-2323-4bbf24-01",
+      "agentId": "learner-4bbf24-01",
+      "profileFileName": "exiledTWGS  - Game E - learner-4bbf24-01.json",
+      "state": "Error",
+      "segments": 1,
+      "steps": 0,
+      "milestones": 0,
+      "totalReward": 0,
+      "netWorthDelta": null,
+      "turnsUsed": null,
+      "netWorthPerTurn": null,
+      "pilotShare": null,
+      "shipLost": false,
+      "endReason": "MTC exited with code -1."
+    }
+  ]
+}

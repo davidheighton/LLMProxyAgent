@@ -30,10 +30,24 @@ public sealed class AutonomousTestWorker(
     IAgentStore? agentStore = null,
     AutonomousActionWatchdog? actionWatchdog = null,
     IReactiveEventStore? reactiveEventStore = null,
-    IAutonomousFedSpaceFastStartProvider? fedSpaceFastStartProvider = null) : BackgroundService
+    IAutonomousFedSpaceFastStartProvider? fedSpaceFastStartProvider = null,
+    IAgentTeamStore? teamStore = null,
+    string? teamId = null,
+    string sessionName = "",
+    IAutonomousLoginIdentityProvider? loginIdentityProvider = null,
+    AutonomousLoginCredentialStore? loginCredentialStore = null,
+    ITrajectoryRecorder? trajectoryRecorder = null,
+    EpisodeSupervisor? episodeSupervisor = null,
+    IEpisodeCompletionHandler? episodeCompletionHandler = null,
+    string? identityModelName = null) : BackgroundService
 {
     public const int UnlimitedActionsPerSession = 0;
     private const int KnownHighRiskSector = 99;
+    private static readonly TimeSpan StuckScriptPauseDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan HeartbeatEpisodeCheckInterval = TimeSpan.FromSeconds(30);
+    private DateTimeOffset _lastHeartbeatEpisodeCheckAt = DateTimeOffset.MinValue;
+    // Enough turns for a warp; matches the episode pause threshold.
+    private const int MinimumExplorationTurns = EpisodeOptions.DefaultMinimumTurns;
 
     private readonly AutonomousActionWatchdog _actionWatchdog =
         actionWatchdog ?? new AutonomousActionWatchdog();
@@ -44,22 +58,88 @@ public sealed class AutonomousTestWorker(
     private static readonly TimeSpan CimRefreshRetryInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan MovementVerificationGracePeriod = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan DockShopperStartupGracePeriod = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan PortTradeRecoveryContextMaximumAge = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan PendingMoveDecisionMaximumAge = TimeSpan.FromMinutes(2);
+    private const int MaximumLoginIdentityAttempts = 3;
     private string _pilotModelName = modelName;
+    private string? _identityModelName = identityModelName;
+    private int? _lastKnownStarDockSector;
+    private volatile bool _episodeEnded;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await ExecuteCoreAsync(stoppingToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            episodeSupervisor is not null &&
+            !_episodeEnded &&
+            !(exception is OperationCanceledException && stoppingToken.IsCancellationRequested))
+        {
+            logger.LogError(exception, "The autonomous worker faulted during managed episode for agent {AgentId}.", agentId);
+            await EndManagedEpisodeAsync(
+                    agentId,
+                    EpisodeStatus.Error,
+                    $"Worker faulted: {exception.GetType().Name}: {exception.Message}",
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private async Task ExecuteCoreAsync(CancellationToken stoppingToken)
     {
         if (maximumActionsPerSession < UnlimitedActionsPerSession)
         {
             throw new InvalidOperationException(
                 "Maximum autonomous actions per session must be zero (unlimited) or positive.");
         }
+        if (trajectoryRecorder is not null && episodeSupervisor is null)
+        {
+            await trajectoryRecorder.EndEpisodeAsync(
+                    agentId,
+                    EpisodeStatus.Stopped,
+                    "Superseded by a new worker run",
+                    stoppingToken)
+                .ConfigureAwait(false);
+        }
 
-        if (agentStore is not null &&
-            await agentStore.GetAgentAsync(agentId, stoppingToken).ConfigureAwait(false) is { } agent &&
-            agent.Configuration.TryGetValue("Brains:Pilot:Model", out string? configuredPilotModel) &&
+        AgentContainer? storedAgent = agentStore is null
+            ? null
+            : await agentStore.GetAgentAsync(agentId, stoppingToken).ConfigureAwait(false);
+        if (storedAgent is not null &&
+            storedAgent.Configuration.TryGetValue("Brains:Pilot:Model", out string? configuredPilotModel) &&
             !string.IsNullOrWhiteSpace(configuredPilotModel))
         {
             _pilotModelName = configuredPilotModel.Trim();
+        }
+        if (storedAgent is not null &&
+            storedAgent.Configuration.TryGetValue("Brains:Reactive:Model", out string? configuredReactiveModel) &&
+            !string.IsNullOrWhiteSpace(configuredReactiveModel))
+        {
+            _identityModelName = configuredReactiveModel.Trim();
+        }
+        if (episodeSupervisor is not null)
+        {
+            if (trajectoryRecorder is null)
+            {
+                throw new InvalidOperationException("A managed episode requires a trajectory recorder.");
+            }
+
+            TrajectoryEpisode? episode = await trajectoryRecorder.BeginEpisodeAsync(
+                agentId,
+                _pilotModelName,
+                episodeSupervisor.Options.EpisodeId,
+                episodeSupervisor.Options.Goal,
+                stoppingToken).ConfigureAwait(false);
+            episodeSupervisor.MarkSegmentStarted();
+            logger.LogInformation(
+                "Managed episode {EpisodeId} segment {Segment} started for agent {AgentId} with goal {Goal}.",
+                episodeSupervisor.Options.EpisodeId,
+                episode?.Segment,
+                agentId,
+                episodeSupervisor.Options.Goal);
         }
         statusStore?.SetModelConfiguration(
             agentId,
@@ -71,15 +151,23 @@ public sealed class AutonomousTestWorker(
 
         var promptsHandled = 0;
         DateTimeOffset? lastCommandPromptAt = null;
+        DateTimeOffset? lastFighterEncounterPromptAt = null;
         DateTimeOffset? lastObservedPromptAt = null;
         DateTimeOffset? pendingCommandPromptAt = null;
         DateTimeOffset? lastLoginPromptAt = null;
+        DateTimeOffset? lastLoginInputAt = null;
         string? lastLoginPromptSurface = null;
-        bool portTradeRecoveryAttempted = false;
+        string? lastPortTradeRecoveryPromptSurface = null;
         var connectionInitialized = false;
         var sessionState = new AutonomousTestSessionState();
         AutonomousGameLoginCredentials? loginCredentials =
             loginCredentialProvider?.GetCredentials(agentId);
+        if (loginCredentials is { AllowNewCharacterCreation: true })
+        {
+            loginCredentials = await EnsureNewCharacterIdentityAsync(
+                loginCredentials,
+                stoppingToken).ConfigureAwait(false);
+        }
         if (loginCredentials is not null && loginInputSender is null)
         {
             throw new InvalidOperationException(
@@ -90,8 +178,13 @@ public sealed class AutonomousTestWorker(
         var loginFailed = false;
         var unclassifiedLoginPromptLogged = false;
         var stalePromptRecoveryPending = false;
-        await foreach (var sessionEvent in eventHub.ReadAllAsync(stoppingToken))
+        await foreach (var sessionEvent in eventHub.ReadAllAsync(agentId, stoppingToken))
         {
+            if (_episodeEnded)
+            {
+                return;
+            }
+
             if (!string.Equals(sessionEvent.AgentId, agentId, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -107,8 +200,9 @@ public sealed class AutonomousTestWorker(
                     lastObservedPromptAt = null;
                     pendingCommandPromptAt = null;
                     lastLoginPromptAt = null;
+                    lastLoginInputAt = null;
                     lastLoginPromptSurface = null;
-                    portTradeRecoveryAttempted = false;
+                    lastPortTradeRecoveryPromptSurface = null;
                     sessionState.Reset();
                     loginSession = CreateLoginSession(loginCredentials);
                     loginFailed = false;
@@ -116,7 +210,7 @@ public sealed class AutonomousTestWorker(
                 }
 
                 connectionInitialized = true;
-                portTradeRecoveryAttempted = false;
+                lastPortTradeRecoveryPromptSurface = null;
                 statusStore?.MarkConnected(agentId);
                 actionObjectiveProvider?.RequestStrategicReview(
                     agentId,
@@ -131,8 +225,9 @@ public sealed class AutonomousTestWorker(
                 lastObservedPromptAt = null;
                 pendingCommandPromptAt = null;
                 lastLoginPromptAt = null;
+                lastLoginInputAt = null;
                 lastLoginPromptSurface = null;
-                portTradeRecoveryAttempted = false;
+                lastPortTradeRecoveryPromptSurface = null;
                 sessionState.Reset();
                 loginSession = CreateLoginSession(loginCredentials);
                 loginFailed = false;
@@ -147,6 +242,18 @@ public sealed class AutonomousTestWorker(
             if (sessionEvent.Event.Kind == "PresenceHeartbeat")
             {
                 statusStore?.MarkHeartbeat(agentId);
+                // Decisions stop while a script (World Trade, Dock Shopper) runs, and the episode cap is otherwise only
+                // checked when a decision is recorded; check it on the heartbeat so the episode still ends on time.
+                if (episodeSupervisor is not null &&
+                    !_episodeEnded &&
+                    DateTimeOffset.UtcNow - _lastHeartbeatEpisodeCheckAt >= HeartbeatEpisodeCheckInterval)
+                {
+                    _lastHeartbeatEpisodeCheckAt = DateTimeOffset.UtcNow;
+                    if (await EvaluateEpisodeOnHeartbeatAsync(agentId, stoppingToken).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                }
                 TimeSpan heartbeatAge = DateTimeOffset.UtcNow - sessionEvent.Event.Timestamp;
                 DateTimeOffset? heartbeatPromptAt = GetHeartbeatPromptObservedAt(sessionEvent.Event);
                 bool heartbeatConfirmsCurrentPrompt =
@@ -303,7 +410,10 @@ public sealed class AutonomousTestWorker(
                         StringComparison.OrdinalIgnoreCase) &&
                     lastLoginPromptAt is { } previousPromptAt &&
                     sessionEvent.Event.Timestamp >= previousPromptAt &&
-                    sessionEvent.Event.Timestamp - previousPromptAt <= TimeSpan.FromSeconds(1))
+                    sessionEvent.Event.Timestamp - previousPromptAt <= TimeSpan.FromSeconds(1) &&
+                    // The server re-asks for a rejected alias immediately; that re-prompt is not a duplicate observation.
+                    !(string.Equals(promptSurface, "TraderAliasName", StringComparison.OrdinalIgnoreCase) &&
+                      lastLoginInputAt is { } inputAt && inputAt >= previousPromptAt))
                 {
                     continue;
                 }
@@ -325,10 +435,24 @@ public sealed class AutonomousTestWorker(
                         logger.LogWarning(
                             "Autonomous login for agent {AgentId} stopped after safely declining new-character creation.",
                             agentId);
+                        if (episodeSupervisor is not null)
+                        {
+                            await EndManagedEpisodeAsync(
+                                    agentId,
+                                    EpisodeStatus.Error,
+                                    "Login blocked: existing character not recognized; declined new-character creation.",
+                                    stoppingToken)
+                                .ConfigureAwait(false);
+                            return;
+                        }
                         continue;
                     }
                     if (loginResult != AutonomousExistingAccountLoginResult.Authenticated)
                     {
+                        if (loginResult == AutonomousExistingAccountLoginResult.InputSent)
+                        {
+                            lastLoginInputAt = DateTimeOffset.UtcNow;
+                        }
                         if (loginResult == AutonomousExistingAccountLoginResult.Ignored &&
                             !hasClassifiedPromptSurface &&
                             !unclassifiedLoginPromptLogged)
@@ -364,21 +488,80 @@ public sealed class AutonomousTestWorker(
                         exception,
                         "Autonomous login stopped for agent {AgentId}; no account-creation or unsupported input was sent.",
                         agentId);
+                    if (episodeSupervisor is not null)
+                    {
+                        await EndManagedEpisodeAsync(
+                                agentId,
+                                EpisodeStatus.Error,
+                                $"Login blocked: {exception.Message}",
+                                stoppingToken)
+                            .ConfigureAwait(false);
+                        return;
+                    }
                     continue;
                 }
             }
 
-            if (string.Equals(promptSurface, "PortTradeQuantity", StringComparison.OrdinalIgnoreCase))
+            // A running reviewed script (World Trade, Dock Shopper) owns these dialogs; answering them here offered 0 for
+            // every World Trade purchase and stopped its autopilot moves part-way, stalling the script.
+            if (IsScriptOwnedPromptSurface(promptSurface) &&
+                await IsReviewedScriptRunningAsync(agentId, stoppingToken).ConfigureAwait(false))
+            {
+                statusStore?.SetActivity(agentId, $"Left the {promptSurface} prompt to the running script");
+                continue;
+            }
+
+            if (string.Equals(promptSurface, "FighterEncounter", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!allowGameActions)
+                {
+                    statusStore?.SetActivity(agentId, "Hostile fighters encountered; game actions are not approved");
+                    continue;
+                }
+                if (lastFighterEncounterPromptAt == sessionEvent.Event.Timestamp)
+                {
+                    continue;
+                }
+
+                lastFighterEncounterPromptAt = sessionEvent.Event.Timestamp;
+                sessionState.LastFighterEncounterAt = DateTimeOffset.UtcNow;
+                try
+                {
+                    await commandSender.SendAsync(
+                        agentId,
+                        new GameCommandRequest(GameCommand.ResolveFighterEncounter),
+                        stoppingToken).ConfigureAwait(false);
+                    statusStore?.SetActivity(
+                        agentId,
+                        "Fighter encounter resolved: paid the toll if one was offered, otherwise retreated (never attacks)");
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    statusStore?.SetActivity(agentId, $"Fighter encounter response failed: {exception.Message}");
+                    logger.LogError(exception, "Could not answer a fighter encounter for agent {AgentId}.", agentId);
+                }
+                continue;
+            }
+
+            if (string.Equals(promptSurface, "PortTradeQuantity", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(promptSurface, "PortTradeOffer", StringComparison.OrdinalIgnoreCase))
             {
                 if (sessionState.PendingPortTrade is not null ||
-                    portTradeRecoveryAttempted ||
+                    string.Equals(
+                        lastPortTradeRecoveryPromptSurface,
+                        promptSurface,
+                        StringComparison.OrdinalIgnoreCase) ||
                     lastCommandPromptAt is { } handledCommandAt &&
                     sessionEvent.Event.Timestamp <= handledCommandAt)
                 {
                     continue;
                 }
 
-                portTradeRecoveryAttempted = true;
+                lastPortTradeRecoveryPromptSurface = promptSurface;
                 if (commandSender is not IAutonomousPortTradePromptRecovery portTradeRecovery)
                 {
                     statusStore?.SetActivity(
@@ -393,43 +576,97 @@ public sealed class AutonomousTestWorker(
                 try
                 {
                     TradeProduct? followUpBuyProduct = null;
-                    if (portTradeOpportunityProvider is not null)
+                    long? recoveryAvailableCredits = null;
+                    GameSnapshot? recoveryStartingSnapshot = null;
+                    int? recoveryTradeSector = null;
+                    AutonomousPortTradeOpportunity? recoveryOpportunity = null;
+                    GameSituationReport recoverySituation =
+                        await situationProvider.CaptureSituationAsync(agentId, stoppingToken)
+                            .ConfigureAwait(false);
+                    if (recoverySituation.Snapshot is { } recoverySnapshot &&
+                        GameSnapshotValidation.IsValid(recoverySnapshot))
                     {
-                        GameSituationReport recoverySituation =
-                            await situationProvider.CaptureSituationAsync(agentId, stoppingToken)
-                                .ConfigureAwait(false);
-                        if (recoverySituation.Snapshot is { } recoverySnapshot &&
-                            GameSnapshotValidation.IsValid(recoverySnapshot) &&
-                            recoverySnapshot.CurrentSector is { } recoverySector)
+                        recoveryAvailableCredits = recoverySnapshot.SynchronizedCredits;
+                        recoveryStartingSnapshot = recoverySnapshot;
+                        recoveryTradeSector = recoverySnapshot.CurrentSector;
+                    }
+
+                    DateTimeOffset recoveryNow = DateTimeOffset.UtcNow;
+                    if (sessionState.ActivePortTradeAttempt is { } activeTradeAttempt &&
+                        recoveryNow >= activeTradeAttempt.StartedAt &&
+                        recoveryNow - activeTradeAttempt.StartedAt <= PortTradeRecoveryContextMaximumAge &&
+                        (recoveryTradeSector is null || recoveryTradeSector == activeTradeAttempt.Sector))
+                    {
+                        recoveryOpportunity = activeTradeAttempt.Opportunity;
+                        recoveryStartingSnapshot = activeTradeAttempt.StartingSnapshot;
+                        recoveryAvailableCredits = activeTradeAttempt.StartingSnapshot.SynchronizedCredits;
+                        recoveryTradeSector = activeTradeAttempt.Sector;
+                        followUpBuyProduct = recoveryOpportunity.FollowUpBuyProduct ??
+                            (recoveryOpportunity.SellingExistingCargo
+                                ? null
+                                : recoveryOpportunity.Product);
+                    }
+                    else if (portTradeOpportunityProvider is not null &&
+                        recoveryStartingSnapshot is { CurrentSector: { } recoverySector } opportunitySnapshot)
+                    {
+                        recoveryOpportunity =
+                            await portTradeOpportunityProvider.GetOpportunityAsync(
+                                recoverySector,
+                                sessionState.PreviousSector,
+                                nextSector: null,
+                                opportunitySnapshot,
+                                stoppingToken,
+                                sessionState.PortTradeAttemptedSectors).ConfigureAwait(false);
+                        if (recoveryOpportunity is not null &&
+                            (recoveryOpportunity.TradeSector is null ||
+                             recoveryOpportunity.TradeSector == recoverySector))
                         {
-                            AutonomousPortTradeOpportunity? recoveryOpportunity =
-                                await portTradeOpportunityProvider.GetOpportunityAsync(
-                                    recoverySector,
-                                    sessionState.PreviousSector,
-                                    nextSector: null,
-                                    recoverySnapshot,
-                                    stoppingToken,
-                                    sessionState.PortTradeAttemptedSectors).ConfigureAwait(false);
-                            if (recoveryOpportunity is not null &&
-                                (recoveryOpportunity.TradeSector is null ||
-                                 recoveryOpportunity.TradeSector == recoverySector))
-                            {
-                                followUpBuyProduct = recoveryOpportunity.FollowUpBuyProduct ??
-                                    (recoveryOpportunity.SellingExistingCargo
-                                        ? null
-                                        : recoveryOpportunity.Product);
-                            }
+                            followUpBuyProduct = recoveryOpportunity.FollowUpBuyProduct ??
+                                (recoveryOpportunity.SellingExistingCargo
+                                    ? null
+                                    : recoveryOpportunity.Product);
+                        }
+                        else
+                        {
+                            recoveryOpportunity = null;
                         }
                     }
 
                     await portTradeRecovery.RecoverUntrackedPortTradeAsync(
                         agentId,
                         sessionEvent.Event.Timestamp,
-                        followUpBuyProduct,
-                        stoppingToken).ConfigureAwait(false);
-                    statusStore?.SetActivity(
-                        agentId,
-                        "Skipped an untracked port trade and returned to the Command prompt");
+                        followUpBuyProduct: followUpBuyProduct,
+                        cancellationToken: stoppingToken,
+                        availableCredits: recoveryAvailableCredits,
+                        requestedProduct: recoveryOpportunity?.Product,
+                        sellingExistingCargo: recoveryOpportunity?.SellingExistingCargo ?? false)
+                        .ConfigureAwait(false);
+                    if (recoveryOpportunity is not null &&
+                        recoveryStartingSnapshot is not null &&
+                        recoveryTradeSector is { } verifiedTradeSector)
+                    {
+                        sessionState.PortTradeAttemptedSectors.Add(verifiedTradeSector);
+                        sessionState.PendingPortTrade = new PendingPortTrade(
+                            verifiedTradeSector,
+                            recoveryOpportunity,
+                            recoveryStartingSnapshot,
+                            DateTimeOffset.UtcNow);
+                        sessionState.PendingShipStatusRefreshSentAt = null;
+                        statusStore?.SetActivity(
+                            agentId,
+                            "Recovered an untracked trade and am awaiting a fresh snapshot to verify it",
+                            recoverySituation);
+                        logger.LogInformation(
+                            "Recovered an untracked port-trade prompt for agent {AgentId} at sector {Sector}; a fresh ship snapshot is required to verify the transaction.",
+                            agentId,
+                            verifiedTradeSector);
+                    }
+                    else
+                    {
+                        statusStore?.SetActivity(
+                            agentId,
+                            "Handled an untracked port-trade prompt and returned to the Command prompt");
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -602,10 +839,24 @@ public sealed class AutonomousTestWorker(
                 {
                     sessionState.FedSpaceFastStartSkipped = true;
                 }
+                // A running Dock Shopper can stall at a [Pause] it never answers; keep heartbeat cycles running so the
+                // shopper stage can continue it.
+                if (string.Equals(promptSurface, "Pause", StringComparison.OrdinalIgnoreCase) &&
+                    sessionState.StarDockShopperStage != StarDockShopperStage.Inactive)
+                {
+                    pendingCommandPromptAt = sessionEvent.Event.Timestamp;
+                }
                 continue;
             }
 
-            portTradeRecoveryAttempted = false;
+            lastPortTradeRecoveryPromptSurface = null;
+            if (sessionState.ActivePortTradeAttempt is { } expiringTradeAttempt &&
+                DateTimeOffset.UtcNow >= expiringTradeAttempt.StartedAt &&
+                DateTimeOffset.UtcNow - expiringTradeAttempt.StartedAt > PortTradeRecoveryContextMaximumAge)
+            {
+                sessionState.ActivePortTradeAttempt = null;
+            }
+
             if (lastCommandPromptAt == sessionEvent.Event.Timestamp ||
                 !HasRemainingActionBudget(promptsHandled))
             {
@@ -666,6 +917,253 @@ public sealed class AutonomousTestWorker(
         metadata.TryGetValue("promptIsCurrent", out string? value) &&
         bool.TryParse(value, out bool isCurrent) &&
         isCurrent;
+
+    private async Task<AutonomousGameLoginCredentials> EnsureNewCharacterIdentityAsync(
+        AutonomousGameLoginCredentials credentials,
+        CancellationToken cancellationToken)
+    {
+        IAutonomousLoginIdentityProvider identityProvider = loginIdentityProvider
+            ?? throw new InvalidOperationException(
+                "New-character creation requires the configured local model to choose an identity.");
+        AutonomousLoginCredentialStore credentialStore =
+            !string.IsNullOrWhiteSpace(credentials.CredentialProfilePath)
+                ? new AutonomousLoginCredentialStore(credentials.CredentialProfilePath)
+                : loginCredentialStore
+                    ?? throw new InvalidOperationException(
+                        "New-character identity cannot be saved because the login credential store is unavailable.");
+        // Naming is a trivial task, so it uses the fast reactive model rather than the Pilot model.
+        var modelConfiguration = new ModelConfiguration(
+            "Ollama",
+            string.IsNullOrWhiteSpace(_identityModelName) ? _pilotModelName : _identityModelName,
+            modelEndpoint);
+        string gameProfile = string.IsNullOrWhiteSpace(credentials.GameProfileKey)
+            ? credentials.GameLetter
+            : credentials.GameProfileKey;
+        // Only the game letter is shared: small models copy profile text such as the learner ID into names.
+        string identityContextProfile = $"Game {credentials.GameLetter}";
+        var context = new AutonomousLoginIdentityContext(
+            "MTC",
+            0,
+            identityContextProfile,
+            credentials.GameLetter,
+            credentials.LoginName,
+            credentials.TraderAlias);
+
+        string loginName = credentials.LoginName;
+        if (string.IsNullOrWhiteSpace(loginName))
+        {
+            loginName = MakeUniqueLoginName(
+                await ChooseValidatedLoginNameAsync(
+                    () => identityProvider.ChooseServerLoginNameAsync(modelConfiguration, context, cancellationToken),
+                    _ => true,
+                    cancellationToken).ConfigureAwait(false)
+                ?? CreateFallbackCallsign(),
+                agentId);
+            await credentialStore.SaveLoginNameAsync(loginName, cancellationToken).ConfigureAwait(false);
+            context = context with { ServerLoginName = loginName };
+        }
+
+        string traderAlias = credentials.TraderAlias;
+        if (string.IsNullOrWhiteSpace(traderAlias))
+        {
+            traderAlias = await ChooseValidatedLoginNameAsync(
+                () => identityProvider.ChooseTraderAliasAsync(modelConfiguration, context, cancellationToken),
+                alias => IsAliasDistinctFromLogin(alias, loginName),
+                cancellationToken).ConfigureAwait(false) ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(traderAlias))
+            {
+                traderAlias = DeriveDistinctTraderAlias(loginName);
+                logger.LogWarning(
+                    "The model did not generate a valid trader alias distinct from the login name; using derived alias {TraderAlias}.",
+                    traderAlias);
+            }
+
+            await credentialStore.SaveTraderAliasAsync(
+                gameProfile,
+                traderAlias,
+                cancellationToken).ConfigureAwait(false);
+            context = context with { TraderAlias = traderAlias };
+        }
+
+        string shipName = credentials.ShipName;
+        if (string.IsNullOrWhiteSpace(shipName))
+        {
+            shipName = await ChooseValidatedIdentityAsync(
+                    () => identityProvider.ChooseShipNameAsync(modelConfiguration, context, cancellationToken),
+                    value => ValidateGeneratedCharacterName(value, "ship name"),
+                    _ => true,
+                    cancellationToken).ConfigureAwait(false)
+                ?? DeriveCharacterName(traderAlias, "Voyager");
+        }
+
+        string homePlanetName = credentials.HomePlanetName;
+        if (string.IsNullOrWhiteSpace(homePlanetName))
+        {
+            homePlanetName = await ChooseValidatedIdentityAsync(
+                    () => identityProvider.ChooseHomePlanetNameAsync(modelConfiguration, context, cancellationToken),
+                    value => ValidateGeneratedCharacterName(value, "home planet name"),
+                    _ => true,
+                    cancellationToken).ConfigureAwait(false)
+                ?? DeriveCharacterName(traderAlias, "Haven");
+        }
+
+        if (string.IsNullOrWhiteSpace(credentials.ShipName) ||
+            string.IsNullOrWhiteSpace(credentials.HomePlanetName))
+        {
+            await credentialStore.SaveCharacterNamesAsync(
+                gameProfile,
+                shipName,
+                homePlanetName,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return credentials with
+        {
+            LoginName = loginName,
+            TraderAlias = traderAlias,
+            ShipName = shipName,
+            HomePlanetName = homePlanetName
+        };
+    }
+
+    private Task<string?> ChooseValidatedLoginNameAsync(
+        Func<Task<string>> choose,
+        Func<string, bool> accept,
+        CancellationToken cancellationToken) =>
+        ChooseValidatedIdentityAsync(
+            choose,
+            value => ValidateGeneratedLoginName(NormalizeGeneratedLoginName(value)),
+            accept,
+            cancellationToken);
+
+    /// <summary>
+    /// Keeps the leading run of ASCII letters, so replies such as "EclipticExile - extra" become "EclipticExile".
+    /// </summary>
+    public static string NormalizeGeneratedLoginName(string value)
+    {
+        string trimmed = (value ?? string.Empty).Trim();
+        int length = 0;
+        while (length < trimmed.Length && char.IsAsciiLetter(trimmed[length]))
+        {
+            length++;
+        }
+        return trimmed[..Math.Min(length, 20)];
+    }
+
+    /// <summary>
+    /// Appends six letters derived from the agent ID so model-chosen login names cannot collide with an existing BBS
+    /// account (a collision makes the server ask for that account's password). The login name is not shown in game.
+    /// </summary>
+    public static string MakeUniqueLoginName(string baseName, string agentId)
+    {
+        string stem = NormalizeGeneratedLoginName(baseName);
+        if (stem.Length < 3)
+        {
+            stem = CreateFallbackCallsign();
+        }
+        stem = stem[..Math.Min(stem.Length, 14)];
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(agentId));
+        var suffix = new char[6];
+        for (int index = 0; index < suffix.Length; index++)
+        {
+            char letter = (char)('a' + hash[index] % 26);
+            suffix[index] = index == 0 ? char.ToUpperInvariant(letter) : letter;
+        }
+        return stem + new string(suffix);
+    }
+
+    /// <summary>A random pronounceable PascalCase callsign of 6-15 letters, used when the model cannot produce one.</summary>
+    public static string CreateFallbackCallsign()
+    {
+        string[] starts = ["Kor", "Vel", "Tan", "Mir", "Sol", "Dra", "Zen", "Lys", "Quo", "Bren", "Cal", "Ory"];
+        string[] ends = ["ax", "en", "ion", "ara", "ix", "on", "eth", "ul", "is", "ane", "or", "yn"];
+        string Part() => starts[Random.Shared.Next(starts.Length)] + ends[Random.Shared.Next(ends.Length)];
+        return Part() + Part();
+    }
+
+    private async Task<string?> ChooseValidatedIdentityAsync(
+        Func<Task<string>> choose,
+        Func<string, string> validate,
+        Func<string, bool> accept,
+        CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; attempt < MaximumLoginIdentityAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string candidate;
+            try
+            {
+                candidate = validate(await choose().ConfigureAwait(false));
+            }
+            catch (InvalidDataException exception)
+            {
+                logger.LogWarning("Generated identity attempt {Attempt} was rejected: {Reason}", attempt + 1, exception.Message);
+                continue;
+            }
+            if (accept(candidate))
+            {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>A 3-30 character letters-and-spaces name built from the trader alias.</summary>
+    public static string DeriveCharacterName(string traderAlias, string suffix)
+    {
+        string name = $"{traderAlias} {suffix}";
+        return name.Length <= 30 ? name : name[..30].TrimEnd();
+    }
+
+    /// <summary>
+    /// A letters-only alias of 3-20 characters that neither contains nor is contained in <paramref name="loginName"/>;
+    /// TradeWars servers reject an alias that contains the BBS login name.
+    /// </summary>
+    public static string DeriveDistinctTraderAlias(string loginName)
+    {
+        for (int attempt = 0; attempt < 50; attempt++)
+        {
+            string alias = CreateFallbackCallsign();
+            if (IsAliasDistinctFromLogin(alias, loginName))
+            {
+                return alias;
+            }
+        }
+
+        return IsAliasDistinctFromLogin("Starfarer", loginName) ? "Starfarer" : "Wayfinder";
+    }
+
+    public static bool IsAliasDistinctFromLogin(string alias, string loginName) =>
+        string.IsNullOrEmpty(loginName) ||
+        !alias.Contains(loginName, StringComparison.OrdinalIgnoreCase) &&
+        !loginName.Contains(alias, StringComparison.OrdinalIgnoreCase);
+
+    private static string ValidateGeneratedLoginName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Length is < 3 or > 20 ||
+            value.Any(character => !char.IsAsciiLetter(character)))
+        {
+            throw new InvalidDataException(
+                "The model generated an invalid login name; it must contain 3-20 ASCII letters.");
+        }
+
+        return value;
+    }
+
+    private static string ValidateGeneratedCharacterName(string value, string nameType)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Length is < 3 or > 30 ||
+            value != value.Trim() ||
+            value.Any(character => !char.IsAsciiLetter(character) && character != ' '))
+        {
+            throw new InvalidDataException(
+                $"The model generated an invalid {nameType}; it must contain 3-30 ASCII letters and spaces.");
+        }
+
+        return value;
+    }
 
     private static AutonomousExistingAccountLoginSession? CreateLoginSession(
         AutonomousGameLoginCredentials? credentials) =>
@@ -797,7 +1295,60 @@ public sealed class AutonomousTestWorker(
         AutonomousTestActionContext actionContext,
         CancellationToken cancellationToken)
     {
-        actionContext = actionContext with { AgentId = currentAgentId };
+        if (!string.IsNullOrWhiteSpace(teamId))
+        {
+            if (teamStore is null)
+            {
+                throw new InvalidOperationException(
+                    "Team coordination is configured but its persistent store is unavailable.");
+            }
+
+            var situation = actionContext.Situation;
+            var snapshot = situation.Snapshot;
+            DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+            bool hasFreshSnapshot =
+                situation.Presence == GamePresenceState.Connected &&
+                situation.Authentication == GameAuthenticationState.Authenticated &&
+                situation.Synchronization == GameSynchronizationState.Healthy &&
+                snapshot is
+                {
+                    CurrentSector: > 0,
+                    Turns: >= 0,
+                    SynchronizedCredits: >= 0
+                } &&
+                snapshot.ObservedAt <= observedAt &&
+                observedAt - snapshot.ObservedAt <= MaximumSnapshotAge;
+            GameSnapshot? trustedSnapshot = hasFreshSnapshot ? snapshot : null;
+            await teamStore.UpsertStatusAsync(
+                new AgentTeamStatus(
+                    teamId,
+                    currentAgentId,
+                    sessionName,
+                    observedAt,
+                    hasFreshSnapshot,
+                    trustedSnapshot?.CurrentSector,
+                    trustedSnapshot?.Turns,
+                    trustedSnapshot?.SynchronizedCredits,
+                    actionContext.ActiveObjective?.Goal),
+                cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<AgentTeamStatus> teamMembers =
+                await teamStore.GetRecentTeamMembersAsync(
+                    teamId,
+                    currentAgentId,
+                    DateTimeOffset.UtcNow - TimeSpan.FromMinutes(15),
+                    cancellationToken).ConfigureAwait(false);
+            actionContext = actionContext with
+            {
+                AgentId = currentAgentId,
+                TeamId = teamId,
+                TeamMembers = teamMembers
+            };
+        }
+        else
+        {
+            actionContext = actionContext with { AgentId = currentAgentId };
+        }
+
         DateTimeOffset startedAt = DateTimeOffset.UtcNow;
         statusStore?.MarkModelRequestStarted(currentAgentId, startedAt);
         try
@@ -839,6 +1390,156 @@ public sealed class AutonomousTestWorker(
         }
     }
 
+    private async Task RecordTrajectoryStepAsync(
+        string currentAgentId,
+        GameSituationReport situation,
+        AutonomousTestActionDecision decision,
+        TrajectoryDecisionSource source,
+        AutonomousActionObjective? objective,
+        CancellationToken cancellationToken,
+        AutonomousRefurbQuote? refurbQuote = null)
+    {
+        if (trajectoryRecorder is null)
+        {
+            return;
+        }
+
+        await trajectoryRecorder.RecordDecisionAsync(
+            currentAgentId,
+            _pilotModelName,
+            situation,
+            decision,
+            source,
+            objective?.Goal,
+            cancellationToken).ConfigureAwait(false);
+        if (episodeSupervisor is null || _episodeEnded)
+        {
+            return;
+        }
+
+        EpisodeEndDecision? end = await episodeSupervisor.EvaluateAsync(
+            currentAgentId,
+            situation,
+            _lastKnownStarDockSector,
+            refurbQuote,
+            cancellationToken).ConfigureAwait(false);
+        if (end is not null)
+        {
+            await EndManagedEpisodeAsync(currentAgentId, end.Status, end.Reason, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private const int UnaffordableOfferLoopThreshold = 3;
+    private static readonly TimeSpan UnaffordableOfferWindow = TimeSpan.FromSeconds(20);
+
+    private static int CountRecentUnaffordableOffers(GameSituationReport situation)
+    {
+        DateTimeOffset since = DateTimeOffset.UtcNow - UnaffordableOfferWindow;
+        return situation.RecentServerText.Count(line =>
+            line.ObservedAt >= since &&
+            line.Text.Contains("You only have", StringComparison.OrdinalIgnoreCase) &&
+            line.Text.Contains("credits", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsScriptOwnedPromptSurface(string promptSurface) =>
+        promptSurface.Equals("PortTradeQuantity", StringComparison.OrdinalIgnoreCase) ||
+        promptSurface.Equals("PortTradeOffer", StringComparison.OrdinalIgnoreCase) ||
+        promptSurface.Equals("AutopilotConfirmation", StringComparison.OrdinalIgnoreCase) ||
+        promptSurface.Equals("StopInSector", StringComparison.OrdinalIgnoreCase) ||
+        promptSurface.Equals("NavPointSelection", StringComparison.OrdinalIgnoreCase) ||
+        promptSurface.Equals("FighterEncounter", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<bool> IsReviewedScriptRunningAsync(string currentAgentId, CancellationToken cancellationToken)
+    {
+        if (gameScriptRunner is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await gameScriptRunner.IsWorldTradeModeRunningAsync(currentAgentId, cancellationToken)
+                       .ConfigureAwait(false) ||
+                   await gameScriptRunner.IsStarDockShopperRunningAsync(currentAgentId, cancellationToken)
+                       .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "Could not check whether a reviewed script is running for agent {AgentId}.", currentAgentId);
+            return false;
+        }
+    }
+
+    /// <summary>Returns true when the episode ended and the worker should stop.</summary>
+    private async Task<bool> EvaluateEpisodeOnHeartbeatAsync(string currentAgentId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            GameSituationReport situation = await situationProvider.CaptureSituationAsync(currentAgentId, cancellationToken)
+                .ConfigureAwait(false);
+            trajectoryRecorder?.ObserveSnapshot(currentAgentId, situation.Snapshot);
+            EpisodeEndDecision? end = await episodeSupervisor!.EvaluateAsync(
+                currentAgentId,
+                situation,
+                _lastKnownStarDockSector,
+                null,
+                cancellationToken).ConfigureAwait(false);
+            if (end is null)
+            {
+                return false;
+            }
+
+            await EndManagedEpisodeAsync(currentAgentId, end.Status, end.Reason, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "The heartbeat episode check failed for agent {AgentId}.", currentAgentId);
+            return false;
+        }
+    }
+
+    private async Task EndManagedEpisodeAsync(
+        string currentAgentId,
+        EpisodeStatus status,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        _episodeEnded = true;
+        statusStore?.SetActivity(currentAgentId, $"Episode ended: {status} — {reason}");
+        TrajectoryEpisode? episode = trajectoryRecorder is null
+            ? null
+            : await trajectoryRecorder.EndEpisodeAsync(currentAgentId, status, reason, cancellationToken)
+                .ConfigureAwait(false);
+        if (episode is null || episodeCompletionHandler is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await episodeCompletionHandler.OnEpisodeEndedAsync(episode, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "The episode completion handler failed for agent {AgentId}.", currentAgentId);
+        }
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        // A managed episode is not ended when the worker stops: stopping usually means the user paused the agent or
+        // switched to Learn to take over, and ending it would exit MTC. The episode continues when the agent resumes;
+        // if MTC itself closes, the harness records the outcome from the process exit.
+        if (trajectoryRecorder is not null && !_episodeEnded && episodeSupervisor is null)
+        {
+            await EndManagedEpisodeAsync(agentId, EpisodeStatus.Stopped, "Worker stopped", cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
     private async Task<AutonomousTestActionResult> RunTestActionAsync(
         string currentAgentId,
         AutonomousTestSessionState sessionState,
@@ -847,6 +1548,7 @@ public sealed class AutonomousTestWorker(
     {
         var situation = await situationProvider.CaptureSituationAsync(currentAgentId, cancellationToken)
             .ConfigureAwait(false);
+        trajectoryRecorder?.ObserveSnapshot(currentAgentId, situation.Snapshot);
         if (statusStore is not null)
         {
             AutonomousActionWatchdogObservation watchdogObservation = _actionWatchdog.Observe(
@@ -949,6 +1651,60 @@ public sealed class AutonomousTestWorker(
                 cancellationToken).ConfigureAwait(false);
         }
 
+        // Watchdog: a script that keeps offering more than the ship has ("You only have N credits!") never leaves the
+        // port. Stop it; with no script running, the pending offer is then declined by the untracked-trade recovery.
+        if (sessionState.WorldTradeModeStarted &&
+            gameScriptRunner is not null &&
+            CountRecentUnaffordableOffers(situation) >= UnaffordableOfferLoopThreshold &&
+            await gameScriptRunner.IsWorldTradeModeRunningAsync(currentAgentId, cancellationToken).ConfigureAwait(false))
+        {
+            await gameScriptRunner.StopWorldTradeModeAsync(currentAgentId, cancellationToken).ConfigureAwait(false);
+            sessionState.WorldTradeModeStarted = false;
+            sessionState.ActiveScriptObjective = null;
+            sessionState.LastWorldTradeAttemptSector = situation.Snapshot?.CurrentSector;
+            statusStore?.RecordDecision(
+                currentAgentId,
+                "World Trade stopped: it kept offering more credits than the ship has",
+                AutonomousTestAction.StopWorldTradeMode.ToString(),
+                "The script repeated offers the server rejected as unaffordable; stopping it lets the pending offer be declined and normal trading resume.",
+                situation);
+            logger.LogWarning(
+                "World Trade for agent {AgentId} was stopped after repeated unaffordable offers.",
+                currentAgentId);
+            return AutonomousTestActionResult.Handled;
+        }
+
+        if (situation.CurrentPrompt is { } currentPromptSurface &&
+            IsScriptOwnedPromptSurface(currentPromptSurface) &&
+            await IsReviewedScriptRunningAsync(currentAgentId, cancellationToken).ConfigureAwait(false))
+        {
+            // A fighter encounter left unanswered means the script is not handling it; resolve it rather than wait for
+            // the server to disconnect the idle session.
+            if (currentPromptSurface.Equals("FighterEncounter", StringComparison.OrdinalIgnoreCase) &&
+                situation.CurrentPromptObservedAt is { } encounterSeenAt &&
+                DateTimeOffset.UtcNow - encounterSeenAt >= TimeSpan.FromSeconds(10) &&
+                allowGameActions)
+            {
+                sessionState.LastFighterEncounterAt = DateTimeOffset.UtcNow;
+                await commandSender.SendAsync(
+                    currentAgentId,
+                    new GameCommandRequest(GameCommand.ResolveFighterEncounter),
+                    cancellationToken).ConfigureAwait(false);
+                statusStore?.RecordDecision(
+                    currentAgentId,
+                    "Unanswered fighter encounter resolved",
+                    GameCommand.ResolveFighterEncounter.ToString(),
+                    "The running script left the toll/fighter prompt unanswered; paid the toll or retreated.",
+                    situation);
+                return AutonomousTestActionResult.Handled;
+            }
+            statusStore?.SetActivity(
+                currentAgentId,
+                $"Left the {currentPromptSurface} prompt to the running script",
+                situation);
+            return AutonomousTestActionResult.ScriptModeRunning;
+        }
+
         if (string.Equals(
                 situation.CurrentPrompt,
                 "AutopilotConfirmation",
@@ -1030,6 +1786,17 @@ public sealed class AutonomousTestWorker(
                         actionProvider,
                         stopContext,
                         cancellationToken).ConfigureAwait(false);
+                    await RecordTrajectoryStepAsync(
+                        currentAgentId,
+                        situation,
+                        stopDecision,
+                        TrajectoryDecisionSource.Pilot,
+                        stopContext.ActiveObjective,
+                        cancellationToken).ConfigureAwait(false);
+                    if (_episodeEnded)
+                    {
+                        return AutonomousTestActionResult.Handled;
+                    }
                     if (stopDecision.Action == AutonomousTestAction.StopWorldTradeMode)
                     {
                         GameSituationReport stopVerification = await situationProvider.CaptureSituationAsync(
@@ -1110,6 +1877,23 @@ public sealed class AutonomousTestWorker(
                         return AutonomousTestActionResult.StatusRefreshPending;
                     }
 
+                    // A retreat from a fighter encounter puts the ship back where it started; that is a refused move,
+                    // not a desynchronised one, so avoid that sector instead of disabling movement.
+                    if (snapshot.CurrentSector == requestedOrigin &&
+                        sessionState.LastFighterEncounterAt is { } encounterAt &&
+                        encounterAt >= sentAt)
+                    {
+                        sessionState.HostileSectors.Add(pendingTarget);
+                        sessionState.ClearPendingMovement();
+                        statusStore?.RecordDecision(
+                            currentAgentId,
+                            "Retreated from a guarded sector",
+                            GameCommand.ResolveFighterEncounter.ToString(),
+                            $"Sector {pendingTarget} is guarded by hostile fighters; the ship retreated to sector {requestedOrigin} and will avoid it.",
+                            situation);
+                        return AutonomousTestActionResult.Handled;
+                    }
+
                     sessionState.MovementDisabled = true;
                     sessionState.ClearPendingMovement();
                     statusStore?.RecordDecision(
@@ -1128,6 +1912,11 @@ public sealed class AutonomousTestWorker(
                 }
 
                 sessionState.PreviousSector = sessionState.PendingMovementOrigin;
+                sessionState.RecentMoveTargets.Add(pendingTarget);
+                if (sessionState.RecentMoveTargets.Count > 8)
+                {
+                    sessionState.RecentMoveTargets.RemoveAt(0);
+                }
                 sessionState.ClearPendingMovement();
                 if (moveTargetProvider?.RequiresCurrentSectorDisplayBeforeMovement == true)
                 {
@@ -1251,6 +2040,12 @@ public sealed class AutonomousTestWorker(
                     IsPortTradeVerified(pendingTrade, tradeResultSnapshot);
                 if (tradeVerified)
                 {
+                    // Cargo and credits changed, so earlier failed attempts (e.g. an unaffordable buy at the port that
+                    // now buys this cargo) no longer predict failure; only the port just traded at stays excluded.
+                    sessionState.PortTradeAttemptedSectors.Clear();
+                    sessionState.PortTradeAttemptedSectors.Add(pendingTrade.Sector);
+                    sessionState.RecentMoveTargets.Clear();
+                    sessionState.ActivePortTradeAttempt = null;
                     sessionState.PendingTradePartnerSector = pendingTrade.Opportunity.SellingExistingCargo
                         ? pendingTrade.Opportunity.FollowUpPartnerSector
                         : pendingTrade.Opportunity.PartnerSector;
@@ -1350,7 +2145,15 @@ public sealed class AutonomousTestWorker(
         int? starDockSector = gameWorldProvider is not null
             ? await gameWorldProvider.GetStarDockSectorAsync(cancellationToken).ConfigureAwait(false)
             : null;
+        if (starDockSector is > 0)
+        {
+            _lastKnownStarDockSector = starDockSector;
+        }
         int? currentSector = situation.Snapshot?.CurrentSector;
+        if (currentSector is > 0)
+        {
+            sessionState.VisitedSectors.Add(currentSector.Value);
+        }
         if (sessionState.FedSpaceFastStartPhase == FedSpaceFastStartPhase.NotStarted)
         {
             sessionState.FedSpaceFastStartPhase =
@@ -1408,18 +2211,16 @@ public sealed class AutonomousTestWorker(
             sessionState.LastStarDockFighterDeploymentAttemptSector = null;
         }
 
-        if (situation.Snapshot is
-            {
-                DensityScannerInstalled: true,
-                HoloScannerInstalled: false
-            } densityScannerSnapshot)
+        ScannerPurchaseTarget? scannerTarget = GetScannerPurchaseTarget(situation.Snapshot);
+        if (scannerTarget == ScannerPurchaseTarget.Holo &&
+            sessionState.FedSpaceFastStartPhase is
+                FedSpaceFastStartPhase.Sweeping or
+                FedSpaceFastStartPhase.RefreshingCim or
+                FedSpaceFastStartPhase.TradingPairs)
         {
-            sessionState.DensityScannerStartingSnapshot ??= densityScannerSnapshot;
+            sessionState.FedSpaceFastStartSkipped = true;
+            sessionState.FedSpaceFastStartPhase = FedSpaceFastStartPhase.Skipped;
         }
-
-        ScannerPurchaseTarget? scannerTarget = GetScannerPurchaseTarget(
-            situation.Snapshot,
-            sessionState.DensityScannerStartingSnapshot);
         bool needsFuelOreForDockShopper =
             allowGameActions &&
             NeedsFuelOreForDockShopper(situation.Snapshot, starDockSector, scannerTarget);
@@ -1428,10 +2229,12 @@ public sealed class AutonomousTestWorker(
             starDockSector is > 0 &&
             situation.Snapshot is
             {
-                SynchronizedCredits: >= AutonomousTradePolicy.MinimumScannerUpgradeCredits,
+                SynchronizedCredits: { } synchronizedCredits,
                 HoldsEmpty: 0,
                 HoldsTotal: > 0
             } fuelReadySnapshot &&
+            synchronizedCredits >=
+                AutonomousTradePolicy.GetMinimumScannerUpgradeCredits(scannerTarget) &&
             scannerTarget is not null &&
             fuelReadySnapshot.FuelOre == fuelReadySnapshot.HoldsTotal &&
             fuelReadySnapshot.Organics == 0 &&
@@ -1451,6 +2254,7 @@ public sealed class AutonomousTestWorker(
             currentSector == starDockSector && currentSectorIsFederationSpace is true;
         bool starDockFighterDeploymentAvailable =
             allowGameActions &&
+            gameScriptRunner is not null &&
             IsCommandPromptEligible(situation) &&
             starDockSector is > 0 &&
             currentSector == starDockSector &&
@@ -1459,8 +2263,9 @@ public sealed class AutonomousTestWorker(
             situation.Snapshot is { } fighterDeploymentSnapshot &&
             GameSnapshotValidation.IsValid(fighterDeploymentSnapshot) &&
             IsScannerTargetAbsent(fighterDeploymentSnapshot, scannerTarget) &&
-            fighterDeploymentSnapshot.SynchronizedCredits is >=
-                AutonomousTradePolicy.MinimumScannerUpgradeCredits &&
+            fighterDeploymentSnapshot.SynchronizedCredits is { } deploymentCredits &&
+            deploymentCredits >=
+                AutonomousTradePolicy.GetMinimumScannerUpgradeCredits(scannerTarget) &&
             fighterDeploymentSnapshot.HoldsEmpty == 0 &&
             fighterDeploymentSnapshot.HoldsTotal is > 0 &&
             fighterDeploymentSnapshot.FuelOre == fighterDeploymentSnapshot.HoldsTotal &&
@@ -1473,12 +2278,14 @@ public sealed class AutonomousTestWorker(
             sessionState.StarDockShopperStage == StarDockShopperStage.Inactive;
         bool starDockShopperReady =
             allowGameActions &&
+            gameScriptRunner is not null &&
             situation.Synchronization == GameSynchronizationState.Healthy &&
             situation.Snapshot is { } readySnapshot &&
             GameSnapshotValidation.IsValid(readySnapshot) &&
             readySnapshot.CurrentSector == starDockSector &&
             IsScannerTargetAbsent(readySnapshot, scannerTarget) &&
-            readySnapshot.SynchronizedCredits is >= AutonomousTradePolicy.MinimumScannerUpgradeCredits &&
+            readySnapshot.SynchronizedCredits is { } readyCredits &&
+            readyCredits >= AutonomousTradePolicy.GetMinimumScannerUpgradeCredits(scannerTarget) &&
             readySnapshot.HoldsEmpty == 0 &&
             readySnapshot.HoldsTotal is > 0 &&
             readySnapshot.FuelOre == readySnapshot.HoldsTotal &&
@@ -1722,6 +2529,24 @@ public sealed class AutonomousTestWorker(
             int? nextSector = await gameWorldProvider.GetNextSectorTowardStarDockAsync(
                 routeOriginSector,
                 cancellationToken).ConfigureAwait(false);
+            if (nextSector is not > 0 &&
+                allowGameActions &&
+                ShouldPlotCourse(sessionState, routeOriginSector, dockSector))
+            {
+                sessionState.CoursePlotAttempts[(routeOriginSector, dockSector)] = DateTimeOffset.UtcNow;
+                await commandSender.SendAsync(
+                    currentAgentId,
+                    new GameCommandRequest(GameCommand.PlotCourseToSector, dockSector),
+                    cancellationToken).ConfigureAwait(false);
+                statusStore?.RecordDecision(
+                    currentAgentId,
+                    "Course plotted",
+                    GameCommand.PlotCourseToSector.ToString(),
+                    $"No charted route reaches StarDock sector {dockSector}; plot it with the ship computer (no turns used) instead of wandering.",
+                    situation);
+                return AutonomousTestActionResult.StatusRefreshSent;
+            }
+
             availableAdjacentSectors = nextSector is > 0 &&
                 freshAdjacentSectors.Contains(nextSector.Value)
                 ? [nextSector.Value]
@@ -1859,9 +2684,7 @@ public sealed class AutonomousTestWorker(
                      DensityScannerInstalled: true,
                      HoloScannerInstalled: false
                  } preHoloSnapshot &&
-                 !IsHoloScannerPurchaseReady(
-                     preHoloSnapshot,
-                     sessionState.DensityScannerStartingSnapshot))
+                 !IsHoloScannerPurchaseReady(preHoloSnapshot))
         {
             long credits = preHoloSnapshot.SynchronizedCredits ?? 0;
             if (credits < AutonomousTradePolicy.MinimumWorldTradeUpgradeCredits)
@@ -1922,7 +2745,7 @@ public sealed class AutonomousTestWorker(
             activeObjective = atStarDock
                 ? new AutonomousActionObjective(
                     $"Acquire the Density Scanner at StarDock sector {starDockSector} before World Trade.",
-                    "No scanner is verified. Run the approved Dock Shopper when ready; if funding is insufficient, use only a verified compatible port-pair trade whose next hop is in sectors 1-10, StarDock, or already explored. Never enter sector 99 or an unexplored sector without a Density or Holo Scanner.")
+                    "No scanner is verified. Run the approved Dock Shopper when ready; if funding is insufficient, use only a verified compatible port-pair trade whose next hop is in sectors 1-10, StarDock, already explored, or on the charted StarDock route. Never enter sector 99; without a Density or Holo Scanner, enter other unexplored sectors only when exploration is required.")
                 : new AutonomousActionObjective(
                     $"Reach StarDock sector {starDockSector} to buy a Density Scanner before leaving safe early-game play.",
                     "The FedSpace survey/trading phase is inactive. Follow the known shortest-hop route and trade only at freshly verified compatible ports.");
@@ -1948,9 +2771,10 @@ public sealed class AutonomousTestWorker(
         }
         int? pendingPartnerSector = sessionState.PendingTradePartnerSector;
         int? forcedTradeRouteSector = null;
-        if (pendingPartnerSector == tradeSectorNow &&
-            situation.Snapshot is { HoldsEmpty: { } empty, HoldsTotal: { } total } &&
-            empty >= total)
+        if (tradeSectorNow is { } partnerCheckSector &&
+            pendingPartnerSector == partnerCheckSector &&
+            (situation.Snapshot is { HoldsEmpty: { } empty, HoldsTotal: { } total } && empty >= total ||
+             sessionState.PortTradeAttemptedSectors.Contains(partnerCheckSector)))
         {
             sessionState.PendingTradePartnerSector = null;
             pendingPartnerSector = null;
@@ -2068,7 +2892,9 @@ public sealed class AutonomousTestWorker(
         }
         if (plannedTradeSellerSector is { } sellerAtCurrentSector &&
             sellerAtCurrentSector == tradeSectorNow &&
-            (portTradeOpportunity is null || portTradeOpportunity.TradeSector is not null))
+            (portTradeOpportunity is null ||
+             (portTradeOpportunity.TradeSector is { } opportunityTradeSector &&
+              opportunityTradeSector != sellerAtCurrentSector)))
         {
             sessionState.PortTradeAttemptedSectors.Add(sellerAtCurrentSector);
             sessionState.PlannedTradeSellerSector = null;
@@ -2089,14 +2915,37 @@ public sealed class AutonomousTestWorker(
                 HoloScannerInstalled: not true
             })
         {
+            // The next hop of the shortest charted route to StarDock (often plotted by the ship computer) is allowed
+            // even if unexplored: reaching StarDock is how a scannerless ship gets its scanner. Sector 99 stays blocked.
+            int? starDockRouteHop =
+                starDockSector is { } routeDock &&
+                currentSector is { } routeFrom &&
+                routeFrom != routeDock &&
+                gameWorldProvider is not null
+                    ? await gameWorldProvider.GetNextSectorTowardStarDockAsync(routeFrom, cancellationToken)
+                        .ConfigureAwait(false)
+                    : null;
+            sessionState.ScannerlessStarDockRouteHop =
+                starDockRouteHop is > 0 and not KnownHighRiskSector ? starDockRouteHop : null;
             availableAdjacentSectors = availableAdjacentSectors
-                .Where(targetSector => IsScannerlessDestinationAllowed(
-                    targetSector,
-                    starDockSector,
-                    adjacentSectorKnowledge))
+                .Where(targetSector =>
+                    targetSector == sessionState.ScannerlessStarDockRouteHop ||
+                    IsScannerlessDestinationAllowed(
+                        targetSector,
+                        starDockSector,
+                        adjacentSectorKnowledge))
                 .ToArray();
 
+            // Same for the next hop toward a Fuel Ore seller when the Dock Shopper needs ore: without that cargo the
+            // scanner cannot be bought, and dropping the plan only in some sectors made the ship oscillate.
+            bool fuelOreRouteForDockShopper =
+                needsFuelOreForDockShopper &&
+                portTradeOpportunity is { SellingExistingCargo: false, Product: TradeProduct.FuelOre } &&
+                portTradeOpportunity.RouteSector is > 0 and not KnownHighRiskSector;
+            sessionState.ScannerlessFuelOreRouteHop =
+                fuelOreRouteForDockShopper ? portTradeOpportunity!.RouteSector : null;
             if (portTradeOpportunity?.RouteSector is { } scannerlessTradeRouteSector &&
+                !fuelOreRouteForDockShopper &&
                 !IsScannerlessDestinationAllowed(
                     scannerlessTradeRouteSector,
                     starDockSector,
@@ -2104,6 +2953,67 @@ public sealed class AutonomousTestWorker(
             {
                 portTradeOpportunity = null;
             }
+        }
+        // Once the scanner is affordable and StarDock is reachable, buying more cargo only delays the scanner: back-to-back
+        // trades keep a partner pending, which disables the StarDock return. Carried cargo may still be sold.
+        if (scannerTarget is not null &&
+            starDockSector is { } affordableDock &&
+            currentSector is { } affordableFrom &&
+            affordableFrom != affordableDock &&
+            gameWorldProvider is not null &&
+            situation.Snapshot is { } affordableSnapshot &&
+            IsScannerTargetAbsent(affordableSnapshot, scannerTarget) &&
+            affordableSnapshot.SynchronizedCredits is { } affordableCredits &&
+            affordableCredits >= GetScannerGoCredits(affordableSnapshot, scannerTarget) &&
+            await gameWorldProvider.GetNextSectorTowardStarDockAsync(affordableFrom, cancellationToken)
+                .ConfigureAwait(false) is > 0 and var affordableDockHop)
+        {
+            // Fuel Ore is still bought: the Dock Shopper requires holds full of it.
+            bool fuelOreForDockShopperAvailable =
+                needsFuelOreForDockShopper &&
+                portTradeOpportunity is { SellingExistingCargo: false, Product: TradeProduct.FuelOre };
+            if (portTradeOpportunity is { SellingExistingCargo: false } && !fuelOreForDockShopperAvailable)
+            {
+                portTradeOpportunity = null;
+            }
+            if (!HasCarriedCargo(affordableSnapshot) && !fuelOreForDockShopperAvailable)
+            {
+                sessionState.PendingTradePartnerSector = null;
+                sessionState.PlannedTradeSellerSector = null;
+                pendingPartnerSector = null;
+                plannedTradeSellerSector = null;
+                forcedTradeRouteSector = null;
+                if (movementEnabled && freshAdjacentSectors.Contains(affordableDockHop))
+                {
+                    availableAdjacentSectors = [affordableDockHop];
+                }
+            }
+        }
+        // Safety net: three A-B-A-B round trips without a verified trade mean two rules are fighting. Drop the trade plan
+        // pulling the ship back so a different plan (StarDock, another port, or exploration) can win.
+        if (IsOscillating(sessionState.RecentMoveTargets) && portTradeOpportunity is not null)
+        {
+            logger.LogWarning(
+                "Agent {AgentId} oscillated between sectors {First} and {Second}; dropping the trade plan toward sector {TradeSector}.",
+                currentAgentId,
+                sessionState.RecentMoveTargets[^1],
+                sessionState.RecentMoveTargets[^2],
+                portTradeOpportunity.TradeSector ?? portTradeOpportunity.PartnerSector);
+            if (portTradeOpportunity.TradeSector is { } oscillationTradeSector)
+            {
+                sessionState.PortTradeAttemptedSectors.Add(oscillationTradeSector);
+            }
+            if (portTradeOpportunity.RouteSector is { } oscillationRouteSector)
+            {
+                sessionState.PortTradeAttemptedSectors.Add(oscillationRouteSector);
+            }
+            portTradeOpportunity = null;
+            sessionState.PendingTradePartnerSector = null;
+            sessionState.PlannedTradeSellerSector = null;
+            pendingPartnerSector = null;
+            plannedTradeSellerSector = null;
+            forcedTradeRouteSector = null;
+            sessionState.RecentMoveTargets.Clear();
         }
         bool remoteTradeOpportunity =
             portTradeOpportunity?.TradeSector is { } tradeTargetSector &&
@@ -2246,6 +3156,21 @@ public sealed class AutonomousTestWorker(
         bool portTradeAttemptedAtCurrentSector =
             situation.Snapshot?.CurrentSector is { } currentTradeSector &&
             sessionState.PortTradeAttemptedSectors.Contains(currentTradeSector);
+        long? scannerFundingTargetCredits = null;
+        long? scannerFundingShortfallCredits = null;
+        if (situation.Snapshot is
+            {
+                DensityScannerInstalled: false,
+                HoloScannerInstalled: false,
+                SynchronizedCredits: { } scannerFundingCredits
+            })
+        {
+            scannerFundingTargetCredits = GetScannerGoCredits(situation.Snapshot, scannerTarget);
+            scannerFundingShortfallCredits = Math.Max(
+                0L,
+                scannerFundingTargetCredits.Value - scannerFundingCredits);
+        }
+
         var relevantKnowledge = actionKnowledgeProvider is not null
             ? await actionKnowledgeProvider.GetRelevantKnowledgeAsync(
                 currentAgentId,
@@ -2258,12 +3183,21 @@ public sealed class AutonomousTestWorker(
         {
             availableAdjacentSectors = [verifiedSweepTarget];
         }
+        if (scannerFundingShortfallCredits is > 0 &&
+            currentSector != starDockSector &&
+            sessionState.FedSpaceFastStartPhase != FedSpaceFastStartPhase.Sweeping)
+        {
+            long verifiedCredits = situation.Snapshot!.SynchronizedCredits!.Value;
+            activeObjective = new AutonomousActionObjective(
+                $"Earn at least {scannerFundingTargetCredits!.Value.ToString("N0", CultureInfo.InvariantCulture)} credits through compatible port trades before traveling to StarDock sector {starDockSector} for the Density Scanner.",
+                $"The verified balance is {verifiedCredits.ToString("N0", CultureInfo.InvariantCulture)} credits, leaving a scanner funding shortfall of {scannerFundingShortfallCredits.Value.ToString("N0", CultureInfo.InvariantCulture)}. Complete and verify a known compatible trade before resuming the StarDock route.");
+        }
+
         bool scannerlessStarDockHold =
             movementEnabled &&
             currentSector == starDockSector &&
             situation.Snapshot is
             {
-                SynchronizedCredits: <= 1,
                 DensityScannerInstalled: not true,
                 HoloScannerInstalled: not true,
                 FuelOre: 0,
@@ -2271,17 +3205,84 @@ public sealed class AutonomousTestWorker(
                 Equipment: 0
             } &&
             !starDockShopperReady &&
-            portTradeOpportunity is null &&
-            freshAdjacentSectors.Any(targetSector => IsScannerlessDestinationAllowed(
-                targetSector,
-                starDockSector,
-                adjacentSectorKnowledge));
+            portTradeOpportunity is null;
+        bool scannerReturnToStarDockRequired =
+            movementEnabled &&
+            scannerAcquisitionRouteRequired &&
+            pendingPartnerSector is null &&
+            plannedTradeSellerSector is null &&
+            scannerTarget is not null &&
+            situation.Snapshot?.SynchronizedCredits is { } scannerBudgetCredits &&
+            scannerBudgetCredits >= GetScannerGoCredits(situation.Snapshot, scannerTarget) &&
+            // The Dock Shopper cannot run without full Fuel Ore holds, so a known Fuel Ore purchase comes first.
+            !(needsFuelOreForDockShopper &&
+              portTradeOpportunity is { SellingExistingCargo: false, Product: TradeProduct.FuelOre });
         if (scannerlessStarDockHold)
         {
             activeObjective = new AutonomousActionObjective(
                 $"Acquire a scanner at StarDock sector {starDockSector} before exploring.",
                 "The Dock Shopper is not ready and no verified compatible scanner-funding trade is available. Stay at StarDock; do not leave for a sector merely because it is known or adjacent.");
             availableAdjacentSectors = Array.Empty<int>();
+        }
+
+        // Bootstrap exploration: a new character usually knows no route to StarDock and no compatible trade,
+        // and every routing rule above then leaves it no move. Holding can never make progress in that state.
+        bool explorationRequired = false;
+        // A trade at a port already attempted this session cannot be used again, so it must not block exploration.
+        bool usableTradeKnown =
+            portTradeOpportunity is not null &&
+            !(portTradeAttemptedAtCurrentSector &&
+              (portTradeOpportunity.TradeSector is null || portTradeOpportunity.TradeSector == currentSector));
+        bool noTradeKnown =
+            !usableTradeKnown &&
+            pendingPartnerSector is null &&
+            plannedTradeSellerSector is null;
+        // With the scanner budget verified, trades are deliberately skipped in favour of StarDock; if no route step is
+        // known, waiting cannot reveal one, so the known trade must not suppress exploration.
+        bool starDockRouteUnknown =
+            scannerReturnToStarDockRequired &&
+            availableAdjacentSectors.Count != 1;
+        // A pending sale partner or planned seller elsewhere with no usable move toward it is equally unreachable.
+        bool tradeRouteBlocked =
+            !usableTradeKnown &&
+            availableAdjacentSectors.Count == 0 &&
+            (pendingPartnerSector is { } blockedPartner && blockedPartner != currentSector ||
+             plannedTradeSellerSector is { } blockedSeller && blockedSeller != currentSector);
+        if (movementEnabled &&
+            (noTradeKnown || starDockRouteUnknown || tradeRouteBlocked) &&
+            freshAdjacentSectors.Count > 0 &&
+            fedSpaceSweepTarget is null &&
+            sessionState.FedSpaceFastStartPhase != FedSpaceFastStartPhase.Sweeping &&
+            (!preserveFuelOreForDockShopper || starDockRouteUnknown) &&
+            !starDockShopperReady &&
+            situation.Snapshot is { Turns: >= MinimumExplorationTurns } explorationSnapshot &&
+            !(currentSector == starDockSector &&
+              (explorationSnapshot.DensityScannerInstalled is true || explorationSnapshot.HoloScannerInstalled is true)) &&
+            (availableAdjacentSectors.Count == 0 || starDockRouteUnknown))
+        {
+            IReadOnlyList<int> explorationCandidates = SelectExplorationCandidates(
+                freshAdjacentSectors,
+                adjacentSectorKnowledge,
+                sessionState.PreviousSector,
+                sessionState.VisitedSectors);
+            if (explorationCandidates.Count > 0)
+            {
+                explorationRequired = true;
+                scannerlessStarDockHold = false;
+                scannerReturnToStarDockRequired = false;
+                availableAdjacentSectors = explorationCandidates;
+                string blockedGoal = activeObjective?.Goal ?? "the current objective";
+                activeObjective = new AutonomousActionObjective(
+                    "Explore an adjacent sector to chart routes and find compatible ports.",
+                    $"From sector {currentSector}, no known route serves '{blockedGoal}' and no compatible trade is known. " +
+                    "Holding cannot make progress; each move reveals the new sector's warps and port.");
+            }
+        }
+        if (sessionState.HostileSectors.Count > 0)
+        {
+            availableAdjacentSectors = availableAdjacentSectors
+                .Where(sector => !sessionState.HostileSectors.Contains(sector))
+                .ToArray();
         }
         var actionContext = new AutonomousTestActionContext(situation, availableAdjacentSectors)
         {
@@ -2306,13 +3307,38 @@ public sealed class AutonomousTestWorker(
             StarDockFighterDeploymentAvailable = starDockFighterDeploymentAvailable,
             StarDockShopperStage = sessionState.StarDockShopperStage,
             ScannerTarget = scannerTarget,
+            ScannerFundingTargetCredits = scannerFundingTargetCredits,
+            ScannerFundingShortfallCredits = scannerFundingShortfallCredits,
             PreferredTradeProduct = needsFuelOreForDockShopper ? TradeProduct.FuelOre : null,
             RecentReactiveSignals = recentReactiveSignals,
             AdjacentSectorKnowledge = adjacentSectorKnowledge,
-            RelevantKnowledge = relevantKnowledge
+            RelevantKnowledge = relevantKnowledge,
+            ExplorationRequired = explorationRequired
         };
         AutonomousTestActionDecision decision;
-        if (fedSpaceSweepTarget is { } sweepTarget &&
+        TrajectoryDecisionSource decisionSource = TrajectoryDecisionSource.Policy;
+        PendingMoveDecision? pendingMove = sessionState.PendingMoveDecision;
+        sessionState.PendingMoveDecision = null;
+        if (pendingMove is not null &&
+            movementEnabled &&
+            pendingMove.OriginSector == currentSector &&
+            DateTimeOffset.UtcNow - pendingMove.DecidedAt <= PendingMoveDecisionMaximumAge &&
+            freshAdjacentSectors.Contains(pendingMove.Decision.TargetSector) &&
+            (pendingMove.Exploration || availableAdjacentSectors.Contains(pendingMove.Decision.TargetSector)))
+        {
+            decision = pendingMove.Decision;
+            decisionSource = pendingMove.Source;
+            if (pendingMove.Exploration && !availableAdjacentSectors.Contains(decision.TargetSector))
+            {
+                availableAdjacentSectors = [decision.TargetSector];
+            }
+            explorationRequired = pendingMove.Exploration;
+            statusStore?.SetActivity(
+                currentAgentId,
+                $"Resuming the decided move to sector {decision.TargetSector} after the status refresh",
+                situation);
+        }
+        else if (fedSpaceSweepTarget is { } sweepTarget &&
             movementEnabled &&
             availableAdjacentSectors.Contains(sweepTarget))
         {
@@ -2335,33 +3361,158 @@ public sealed class AutonomousTestWorker(
                 AutonomousTestAction.None,
                 "Hold at StarDock until a verified compatible trade can fund the required scanner.");
         }
-        else if (portTradeOpportunity is not null &&
-            (portTradeOpportunity.TradeSector is null ||
-             portTradeOpportunity.TradeSector == situation.Snapshot?.CurrentSector) &&
-            !portTradeAttemptedAtCurrentSector)
+        else if (explorationRequired)
         {
-            string tradeRationale = portTradeOpportunity.SellingExistingCargo
-                ? $"Sell the {portTradeOpportunity.Product} already aboard at this port, which buys it."
-                : $"Buy {portTradeOpportunity.Product} here for the compatible buyer port in adjacent sector {portTradeOpportunity.PartnerSector}.";
-            if (portTradeOpportunity.SellingExistingCargo &&
-                portTradeOpportunity.FollowUpBuyProduct is { } followUpProduct &&
-                portTradeOpportunity.FollowUpPartnerSector is { } followUpPartnerSector)
+            statusStore?.SetActivity(currentAgentId, "Pilot choosing an adjacent sector to explore", situation);
+            AutonomousTestActionDecision explorationDecision = await DecideWithTelemetryAsync(
+                currentAgentId,
+                actionProvider,
+                actionContext,
+                cancellationToken).ConfigureAwait(false);
+            if (explorationDecision.Action == AutonomousTestAction.MoveToAdjacentSector &&
+                availableAdjacentSectors.Contains(explorationDecision.TargetSector))
             {
-                tradeRationale +=
-                    $" Then buy {followUpProduct} here for the compatible buyer port in adjacent sector {followUpPartnerSector}.";
+                decision = explorationDecision;
+                decisionSource = TrajectoryDecisionSource.Pilot;
+            }
+            else
+            {
+                int explorationTarget = availableAdjacentSectors[0];
+                logger.LogInformation(
+                    "Pilot chose {PilotAction} while exploration was required for agent {AgentId}; exploring adjacent sector {TargetSector}.",
+                    explorationDecision.Action,
+                    currentAgentId,
+                    explorationTarget);
+                decision = new AutonomousTestActionDecision(
+                    AutonomousTestAction.MoveToAdjacentSector,
+                    $"Explore adjacent sector {explorationTarget}: no known route or compatible trade exists from sector {currentSector}, so holding cannot make progress.",
+                    explorationTarget)
+                {
+                    InteractionId = explorationDecision.InteractionId
+                };
+                decisionSource = explorationDecision.Action == AutonomousTestAction.None
+                    ? TrajectoryDecisionSource.PilotFallbackToPolicy
+                    : TrajectoryDecisionSource.PilotOverriddenByPolicy;
+            }
+        }
+        else if (starDockShopperReady)
+        {
+            decision = new AutonomousTestActionDecision(
+                AutonomousTestAction.RunStarDockShopper,
+                "Start the approved Dock Shopper now; scanner absence, funding, cargo, and StarDock prerequisites are verified.");
+        }
+        else if (scannerReturnToStarDockRequired &&
+                 scannerTarget is { } routeScannerTarget)
+        {
+            if (availableAdjacentSectors.Count == 1)
+            {
+                int targetSector = availableAdjacentSectors[0];
+                decision = new AutonomousTestActionDecision(
+                    AutonomousTestAction.MoveToAdjacentSector,
+                    $"The {GetScannerDisplayName(routeScannerTarget)} budget is verified; return to StarDock via adjacent sector {targetSector} before optional port trades.",
+                    targetSector);
+            }
+            else
+            {
+                statusStore?.SetActivity(
+                    currentAgentId,
+                    "Waiting for a fresh adjacent route to StarDock; scanner budget is already verified",
+                    situation);
+                decision = new AutonomousTestActionDecision(
+                    AutonomousTestAction.None,
+                    "The scanner is affordable, but no fresh adjacent route to StarDock is verified. Wait for route synchronization rather than trading elsewhere.");
+            }
+        }
+        else if (gameActionsEnabled &&
+                 gameScriptRunner is not null &&
+                 currentSector == starDockSector &&
+                 starDockSector is > 0 &&
+                 situation.Snapshot is { SynchronizedCredits: { } worldTradeCredits } &&
+                 (situation.Snapshot.DensityScannerInstalled is true ||
+                  situation.Snapshot.HoloScannerInstalled is true) &&
+                 worldTradeCredits < AutonomousTradePolicy.MinimumWorldTradeUpgradeCredits &&
+                 // World Trade buys at every port pair; with almost no credits it docks endlessly without trading.
+                 worldTradeCredits >= AutonomousTradePolicy.MinimumWorldTradeStartCredits &&
+                 // Sell leftover cargo (e.g. the Dock Shopper's Fuel Ore) first; World Trade would jettison it.
+                 !HasCarriedCargo(situation.Snapshot!) &&
+                 !sessionState.WorldTradeModeStarted &&
+                 sessionState.LastWorldTradeAttemptSector != currentSector)
+        {
+            decision = new AutonomousTestActionDecision(
+                AutonomousTestAction.StartWorldTradeMode,
+                "The active strategy plan is to earn the verified refurb budget with the fixed World Trade script.");
+        }
+        else if (portTradeOpportunity is not null &&
+                 (!portTradeAttemptedAtCurrentSector &&
+                      (portTradeOpportunity.TradeSector is null ||
+                       portTradeOpportunity.TradeSector == situation.Snapshot?.CurrentSector) ||
+                  remoteTradeOpportunity))
+        {
+            bool tradeAtCurrentSector =
+                !portTradeAttemptedAtCurrentSector &&
+                (portTradeOpportunity.TradeSector is null ||
+                 portTradeOpportunity.TradeSector == situation.Snapshot?.CurrentSector);
+            AutonomousTestActionDecision policyDecision;
+            if (tradeAtCurrentSector)
+            {
+                string tradeRationale = portTradeOpportunity.SellingExistingCargo
+                    ? $"Sell the {portTradeOpportunity.Product} already aboard at this port, which buys it."
+                    : $"Buy {portTradeOpportunity.Product} here for the compatible buyer port in adjacent sector {portTradeOpportunity.PartnerSector}.";
+                if (portTradeOpportunity.SellingExistingCargo &&
+                    portTradeOpportunity.FollowUpBuyProduct is { } followUpProduct &&
+                    portTradeOpportunity.FollowUpPartnerSector is { } followUpPartnerSector)
+                {
+                    tradeRationale +=
+                        $" Then buy {followUpProduct} here for the compatible buyer port in adjacent sector {followUpPartnerSector}.";
+                }
+
+                policyDecision = new AutonomousTestActionDecision(
+                    AutonomousTestAction.TradeAtCurrentPort,
+                    tradeRationale);
+            }
+            else
+            {
+                int targetSector = portTradeOpportunity.RouteSector!.Value;
+                policyDecision = new AutonomousTestActionDecision(
+                    AutonomousTestAction.MoveToAdjacentSector,
+                    $"Move to sector {targetSector} to buy {portTradeOpportunity.Product} from a known compatible port pair.",
+                    targetSector);
             }
 
-            decision = new AutonomousTestActionDecision(
-                AutonomousTestAction.TradeAtCurrentPort,
-                tradeRationale);
-        }
-        else if (remoteTradeOpportunity)
-        {
-            int targetSector = portTradeOpportunity!.RouteSector!.Value;
-            decision = new AutonomousTestActionDecision(
-                AutonomousTestAction.MoveToAdjacentSector,
-                $"Move to sector {targetSector} to buy {portTradeOpportunity.Product} from a known compatible port pair.",
-                targetSector);
+            statusStore?.SetActivity(currentAgentId, "Pilot evaluating the verified port-trade plan", situation);
+            AutonomousTestActionDecision pilotDecision = await DecideWithTelemetryAsync(
+                currentAgentId,
+                actionProvider,
+                actionContext,
+                cancellationToken).ConfigureAwait(false);
+            if (pilotDecision.Action == AutonomousTestAction.None)
+            {
+                logger.LogInformation(
+                    "Pilot selected no action for the verified port plan at sector {Sector}; applying its bounded fallback action {Action}.",
+                    situation.Snapshot?.CurrentSector,
+                    policyDecision.Action);
+                decision = policyDecision with { InteractionId = pilotDecision.InteractionId };
+                decisionSource = TrajectoryDecisionSource.PilotFallbackToPolicy;
+            }
+            else if (pilotDecision.Action == policyDecision.Action &&
+                     (policyDecision.Action != AutonomousTestAction.MoveToAdjacentSector ||
+                      pilotDecision.TargetSector == policyDecision.TargetSector))
+            {
+                decision = pilotDecision;
+                decisionSource = TrajectoryDecisionSource.Pilot;
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Pilot recommended {PilotAction} with target {PilotTarget} instead of the verified port-plan action {PolicyAction} with target {PolicyTarget} for agent {AgentId}; enforcing the verified trade plan.",
+                    pilotDecision.Action,
+                    pilotDecision.TargetSector,
+                    policyDecision.Action,
+                    policyDecision.TargetSector,
+                    currentAgentId);
+                decision = policyDecision with { InteractionId = pilotDecision.InteractionId };
+                decisionSource = TrajectoryDecisionSource.PilotOverriddenByPolicy;
+            }
         }
         else if (forcedTradeRouteSector is { } forcedTargetSector &&
                  availableAdjacentSectors.Contains(forcedTargetSector))
@@ -2402,21 +3553,6 @@ public sealed class AutonomousTestWorker(
                 $"Follow the active World Trade objective toward StarDock via verified adjacent sector {targetSector}.",
                 targetSector);
         }
-        else if (gameActionsEnabled &&
-                 gameScriptRunner is not null &&
-                 currentSector == starDockSector &&
-                 starDockSector is > 0 &&
-                 situation.Snapshot is { SynchronizedCredits: { } worldTradeCredits } &&
-                 (situation.Snapshot.DensityScannerInstalled is true ||
-                  situation.Snapshot.HoloScannerInstalled is true) &&
-                 worldTradeCredits < AutonomousTradePolicy.MinimumWorldTradeUpgradeCredits &&
-                 !sessionState.WorldTradeModeStarted &&
-                 sessionState.LastWorldTradeAttemptSector != currentSector)
-        {
-            decision = new AutonomousTestActionDecision(
-                AutonomousTestAction.StartWorldTradeMode,
-                "The active strategy plan is to earn the verified refurb budget with the fixed World Trade script.");
-        }
         else
         {
             statusStore?.SetActivity(currentAgentId, "Thinking", situation);
@@ -2425,6 +3561,7 @@ public sealed class AutonomousTestWorker(
                 actionProvider,
                 actionContext,
                 cancellationToken).ConfigureAwait(false);
+            decisionSource = TrajectoryDecisionSource.Pilot;
         }
         string decisionRationale = decision.Rationale;
         if (preserveFuelOreForDockShopper &&
@@ -2450,6 +3587,17 @@ public sealed class AutonomousTestWorker(
             decision.Action.ToString(),
             decisionRationale,
             situation);
+        await RecordTrajectoryStepAsync(
+            currentAgentId,
+            situation,
+            decision,
+            decisionSource,
+            actionContext.ActiveObjective,
+            cancellationToken).ConfigureAwait(false);
+        if (_episodeEnded)
+        {
+            return AutonomousTestActionResult.Handled;
+        }
         if (decision.Action == AutonomousTestAction.None)
         {
             if (decision.TargetSector != 0)
@@ -2588,9 +3736,7 @@ public sealed class AutonomousTestWorker(
             TradeProduct? preferredTradeProduct = NeedsFuelOreForDockShopper(
                 refreshedTradeSituation.Snapshot,
                 starDockSector,
-                GetScannerPurchaseTarget(
-                    refreshedTradeSituation.Snapshot,
-                    sessionState.DensityScannerStartingSnapshot))
+                GetScannerPurchaseTarget(refreshedTradeSituation.Snapshot))
                 ? TradeProduct.FuelOre
                 : null;
             AutonomousPortTradeOpportunity? refreshedOpportunity =
@@ -2613,8 +3759,9 @@ public sealed class AutonomousTestWorker(
                             sessionState.PortTradeAttemptedSectors,
                             preferredTradeProduct).ConfigureAwait(false)
                         : null;
+            // StarDock buys any cargo, but the port planner only proposes regular ports, so it returns some other
+            // plan here. A StarDock sale is verified on its own terms (class 9 and sellable cargo) instead.
             bool verifiedStarDockCargoSale =
-                refreshedOpportunity is null &&
                 portTradeOpportunity.SellingExistingCargo &&
                 portTradeOpportunity.TradeSector is null &&
                 portTradeOpportunity.PartnerSector == tradeCommandSector &&
@@ -2636,6 +3783,13 @@ public sealed class AutonomousTestWorker(
 
             AutonomousPortTradeOpportunity verifiedOpportunity =
                 verifiedStarDockCargoSale ? portTradeOpportunity : refreshedOpportunity!;
+            sessionState.PortTradeAttemptedSectors.Add(tradeCommandSector);
+            GameSnapshot tradeStartingSnapshot = refreshedTradeSituation.Snapshot!;
+            sessionState.ActivePortTradeAttempt = new PortTradeAttempt(
+                tradeCommandSector,
+                verifiedOpportunity,
+                tradeStartingSnapshot,
+                DateTimeOffset.UtcNow);
             await commandSender.SendAsync(
                 currentAgentId,
                 new GameCommandRequest(
@@ -2644,12 +3798,13 @@ public sealed class AutonomousTestWorker(
                 {
                     SellingExistingCargo = verifiedOpportunity.SellingExistingCargo,
                     FollowUpBuyProduct = verifiedOpportunity.FollowUpBuyProduct,
+                    AvailableCredits = refreshedTradeSituation.Snapshot!.SynchronizedCredits,
                 },
                 cancellationToken).ConfigureAwait(false);
             sessionState.PendingPortTrade = new PendingPortTrade(
                 tradeCommandSector,
                 verifiedOpportunity,
-                refreshedTradeSituation.Snapshot!,
+                tradeStartingSnapshot,
                 DateTimeOffset.UtcNow);
             sessionState.PendingShipStatusRefreshSentAt = null;
             sessionState.PlannedTradeSellerSector = null;
@@ -2716,8 +3871,9 @@ public sealed class AutonomousTestWorker(
                 !GameSnapshotValidation.IsValid(deploymentSnapshot) ||
                 deploymentSnapshot.CurrentSector != starDockSector ||
                 !IsScannerTargetAbsent(deploymentSnapshot, scannerTarget) ||
-                deploymentSnapshot.SynchronizedCredits is not >=
-                    AutonomousTradePolicy.MinimumScannerUpgradeCredits ||
+                deploymentSnapshot.SynchronizedCredits is not { } refreshedDeploymentCredits ||
+                refreshedDeploymentCredits <
+                    AutonomousTradePolicy.GetMinimumScannerUpgradeCredits(scannerTarget) ||
                 deploymentSnapshot.HoldsEmpty != 0 ||
                 deploymentSnapshot.HoldsTotal is not > 0 ||
                 deploymentSnapshot.FuelOre != deploymentSnapshot.HoldsTotal ||
@@ -2786,7 +3942,6 @@ public sealed class AutonomousTestWorker(
                 return AutonomousTestActionResult.Handled;
             }
 
-            sessionState.LastStarDockShopperAttemptSector = shopperSector;
             await gameScriptRunner.StartStarDockShopperAsync(
                 currentAgentId,
                 cancellationToken).ConfigureAwait(false);
@@ -3044,6 +4199,13 @@ public sealed class AutonomousTestWorker(
                 new GameCommandRequest(GameCommand.RequestShipInformation),
                 cancellationToken).ConfigureAwait(false);
             sessionState.PendingShipStatusRefreshSentAt = DateTimeOffset.UtcNow;
+            // Keep the move so a slow model call does not cause it to be re-decided after every status refresh.
+            sessionState.PendingMoveDecision = new PendingMoveDecision(
+                decision,
+                decisionSource,
+                situation.Snapshot!.CurrentSector!.Value,
+                explorationRequired,
+                DateTimeOffset.UtcNow);
             statusStore?.RecordDecision(
                 currentAgentId,
                 "Status refresh sent",
@@ -3074,7 +4236,11 @@ public sealed class AutonomousTestWorker(
         if (movementSnapshot.DensityScannerInstalled is not true &&
             movementSnapshot.HoloScannerInstalled is not true &&
             (decision.TargetSector == KnownHighRiskSector ||
-             (decision.TargetSector is > 10 && decision.TargetSector != starDockSector)))
+             (!explorationRequired &&
+              decision.TargetSector != sessionState.ScannerlessStarDockRouteHop &&
+              decision.TargetSector != sessionState.ScannerlessFuelOreRouteHop &&
+              decision.TargetSector is > 10 &&
+              decision.TargetSector != starDockSector)))
         {
             IReadOnlyList<AdjacentSectorKnowledge> targetKnowledge =
                 decision.TargetSector == KnownHighRiskSector
@@ -3197,6 +4363,18 @@ public sealed class AutonomousTestWorker(
             decision.Action.ToString(),
             decision.Rationale,
             situation);
+        await RecordTrajectoryStepAsync(
+            currentAgentId,
+            situation,
+            decision,
+            TrajectoryDecisionSource.Pilot,
+            context.ActiveObjective,
+            cancellationToken,
+            refurbQuote: quote).ConfigureAwait(false);
+        if (_episodeEnded)
+        {
+            return AutonomousTestActionResult.Handled;
+        }
 
         AutonomousRefurbUpgrade? upgrade = decision.Action switch
         {
@@ -3287,6 +4465,24 @@ public sealed class AutonomousTestWorker(
         GameSituationReport situation,
         CancellationToken cancellationToken)
     {
+        // At the post-landing [Pause] the session reads as unverified because a pause is not an in-game surface. MTC
+        // re-checks that the live prompt is a pause before continuing it, so the authentication gate is not needed here.
+        if (situation.Presence == GamePresenceState.Connected &&
+            string.Equals(situation.CurrentPrompt, "Pause", StringComparison.OrdinalIgnoreCase) &&
+            allowGameActions &&
+            gameScriptRunner is not null &&
+            await gameScriptRunner.IsStarDockShopperRunningAsync(currentAgentId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            sessionState.StarDockShopperRunningObserved = true;
+            await TryContinueStuckScriptPauseAsync(currentAgentId, sessionState, situation, cancellationToken)
+                .ConfigureAwait(false);
+            statusStore?.SetActivity(
+                currentAgentId,
+                "Dock Shopper is paused by the server; continuing the pause if it stays stuck",
+                situation);
+            return AutonomousTestActionResult.ScriptModeRunning;
+        }
         if (situation.Presence != GamePresenceState.Connected ||
             situation.Authentication != GameAuthenticationState.Authenticated)
         {
@@ -3308,6 +4504,19 @@ public sealed class AutonomousTestWorker(
                     currentAgentId,
                     cancellationToken).ConfigureAwait(false))
             {
+                sessionState.StarDockShopperRunningObserved = true;
+                if (sessionState.PendingStarDockShopper is { } runningShopper)
+                {
+                    sessionState.LastStarDockShopperAttemptSector = runningShopper.Sector;
+                }
+                if (await TryContinueStuckScriptPauseAsync(
+                        currentAgentId,
+                        sessionState,
+                        situation,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    return AutonomousTestActionResult.ScriptModeRunning;
+                }
                 statusStore?.SetActivity(
                     currentAgentId,
                     "Dock Shopper is running; waiting for its result",
@@ -3351,9 +4560,10 @@ public sealed class AutonomousTestWorker(
             return AutonomousTestActionResult.StatusRefreshSent;
         }
 
-        if (!await gameScriptRunner.IsStarDockShopperRunningAsync(
+        bool shopperRunning = await gameScriptRunner.IsStarDockShopperRunningAsync(
                 currentAgentId,
-                cancellationToken).ConfigureAwait(false))
+                cancellationToken).ConfigureAwait(false);
+        if (!shopperRunning)
         {
             if (sessionState.PendingStarDockShopper is { } startingShopper &&
                 !sessionState.StarDockShopperRunningObserved &&
@@ -3388,11 +4598,59 @@ public sealed class AutonomousTestWorker(
                 "Dock Shopper is active without a recorded starting snapshot.");
         }
 
+        sessionState.StarDockShopperRunningObserved = true;
+        sessionState.LastStarDockShopperAttemptSector =
+            sessionState.PendingStarDockShopper.Sector;
+        if (await TryContinueStuckScriptPauseAsync(
+                currentAgentId,
+                sessionState,
+                situation,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return AutonomousTestActionResult.ScriptModeRunning;
+        }
         statusStore?.SetActivity(
             currentAgentId,
             "Dock Shopper is running; waiting for its next observed script prompt",
             situation);
         return AutonomousTestActionResult.ScriptModeRunning;
+    }
+
+    /// <summary>
+    /// The Dock Shopper waits for the StarDock menu after landing, but this server shows a [Pause] after the landing
+    /// art first, which the script never answers. A pause only accepts "continue", so it is continued after a delay.
+    /// </summary>
+    private async Task<bool> TryContinueStuckScriptPauseAsync(
+        string currentAgentId,
+        AutonomousTestSessionState sessionState,
+        GameSituationReport situation,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(situation.CurrentPrompt, "Pause", StringComparison.OrdinalIgnoreCase))
+        {
+            sessionState.ScriptPauseFirstSeenAt = null;
+            return false;
+        }
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        sessionState.ScriptPauseFirstSeenAt ??= now;
+        if (now - sessionState.ScriptPauseFirstSeenAt < StuckScriptPauseDelay)
+        {
+            return false;
+        }
+
+        sessionState.ScriptPauseFirstSeenAt = null;
+        await commandSender.SendAsync(
+            currentAgentId,
+            new GameCommandRequest(GameCommand.ContinuePausePrompt),
+            cancellationToken).ConfigureAwait(false);
+        statusStore?.RecordDecision(
+            currentAgentId,
+            "Script pause continued",
+            GameCommand.ContinuePausePrompt.ToString(),
+            "The running Dock Shopper was stuck at a [Pause] prompt it does not answer; continuing it.",
+            situation);
+        return true;
     }
 
     private async Task<AutonomousTestActionResult> HandleScriptInputPromptAsync(
@@ -3452,6 +4710,43 @@ public sealed class AutonomousTestWorker(
             sessionState.StarDockShopperRunningObserved = true;
         }
 
+        ScannerPurchaseTarget? scannerTarget = sessionState.PendingStarDockShopper?.Target;
+        string? scannerSelectionResponse = GetDockShopperAutomaticResponse(prompt, scannerTarget);
+        if (scannerTarget is { } selectedScannerTarget &&
+            scannerSelectionResponse is not null &&
+            ScriptInputPromptPolicy.IsSafeResponse(prompt, scannerSelectionResponse))
+        {
+            await gameScriptRunner.SendScriptInputResponseAsync(
+                currentAgentId,
+                prompt,
+                scannerSelectionResponse,
+                cancellationToken).ConfigureAwait(false);
+            sessionState.LastEvaluatedScriptPromptAt = prompt.ObservedAt;
+            string scannerName = GetScannerDisplayName(selectedScannerTarget);
+            string decisionSummary = prompt.Text.Contains(
+                    "scanner type",
+                    StringComparison.OrdinalIgnoreCase)
+                ? $"Selected {scannerName} in Dock Shopper"
+                : scannerSelectionResponse switch
+                {
+                    "R" => "Opened Long Range Scanners in Dock Shopper",
+                    "X" => $"Executing the verified affordable {scannerName} purchase",
+                    _ => "Approved Dock Shopper price refresh"
+                };
+            statusStore?.RecordDecision(
+                currentAgentId,
+                decisionSummary,
+                "RespondToScriptInputPrompt",
+                $"The observed Dock Shopper prompt supports the approved next step for {scannerName}; responded with {scannerSelectionResponse}.",
+                situation);
+            logger.LogInformation(
+                "Sent the validated response {Response} to approved script {ScriptName}, agent {AgentId}.",
+                scannerSelectionResponse,
+                prompt.ScriptName,
+                currentAgentId);
+            return AutonomousTestActionResult.Handled;
+        }
+
         AutonomousActionObjective? activeObjective = sessionState.ActiveScriptObjective;
         if (activeObjective is null &&
             actionObjectiveProvider is not null &&
@@ -3484,6 +4779,17 @@ public sealed class AutonomousTestWorker(
             context,
             cancellationToken).ConfigureAwait(false);
         sessionState.LastEvaluatedScriptPromptAt = prompt.ObservedAt;
+        await RecordTrajectoryStepAsync(
+            currentAgentId,
+            situation,
+            decision,
+            TrajectoryDecisionSource.Pilot,
+            context.ActiveObjective,
+            cancellationToken).ConfigureAwait(false);
+        if (_episodeEnded)
+        {
+            return AutonomousTestActionResult.Handled;
+        }
 
         if (decision.Action == AutonomousTestAction.None)
         {
@@ -3496,6 +4802,15 @@ public sealed class AutonomousTestWorker(
         if (decision.Action != AutonomousTestAction.RespondToScriptInputPrompt ||
             decision.TargetSector != 0 ||
             !ScriptInputPromptPolicy.IsSafeResponse(prompt, decision.ScriptInputResponse) ||
+            (Path.GetFileName(prompt.ScriptName).Equals(
+                 "ls-dock-shopper-v33.ts",
+                 StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(
+                 GetDockShopperAutomaticResponse(
+                     prompt,
+                     sessionState.PendingStarDockShopper?.Target),
+                 decision.ScriptInputResponse,
+                 StringComparison.OrdinalIgnoreCase)) ||
             !IsExpectedScannerSelectionResponse(
                 prompt,
                 sessionState.PendingStarDockShopper?.Target,
@@ -3608,6 +4923,15 @@ public sealed class AutonomousTestWorker(
         snapshot.ObservedAt <= DateTimeOffset.UtcNow &&
         DateTimeOffset.UtcNow - snapshot.ObservedAt <= MaximumSnapshotAge;
 
+    /// <summary>
+    /// Credits needed to head for the scanner now: with holds already full of Dock Shopper Fuel Ore, the scanner bar;
+    /// otherwise the bar plus the ore still to be bought.
+    /// </summary>
+    private static long GetScannerGoCredits(GameSnapshot? snapshot, ScannerPurchaseTarget? scannerTarget) =>
+        snapshot is { HoldsTotal: > 0 } fullOreSnapshot && fullOreSnapshot.FuelOre == fullOreSnapshot.HoldsTotal
+            ? AutonomousTradePolicy.GetMinimumScannerUpgradeCredits(scannerTarget)
+            : AutonomousTradePolicy.GetScannerFundingCredits(scannerTarget, snapshot?.HoldsTotal);
+
     private static bool NeedsFuelOreForDockShopper(
         GameSnapshot? snapshot,
         int? starDockSector,
@@ -3616,14 +4940,14 @@ public sealed class AutonomousTestWorker(
         scannerTarget is not null &&
         snapshot is
         {
-            SynchronizedCredits: >= AutonomousTradePolicy.MinimumScannerUpgradeCredits,
+            SynchronizedCredits: { } synchronizedCredits,
             HoldsTotal: > 0
         } fuelNeedSnapshot &&
+        synchronizedCredits >=
+            AutonomousTradePolicy.GetScannerFundingCredits(scannerTarget, fuelNeedSnapshot.HoldsTotal) &&
         fuelNeedSnapshot.FuelOre != fuelNeedSnapshot.HoldsTotal;
 
-    private static ScannerPurchaseTarget? GetScannerPurchaseTarget(
-        GameSnapshot? snapshot,
-        GameSnapshot? densityScannerStartingSnapshot)
+    private static ScannerPurchaseTarget? GetScannerPurchaseTarget(GameSnapshot? snapshot)
     {
         if (snapshot?.HoloScannerInstalled is true)
         {
@@ -3636,7 +4960,7 @@ public sealed class AutonomousTestWorker(
         }
 
         if (snapshot is not null &&
-            IsHoloScannerPurchaseReady(snapshot, densityScannerStartingSnapshot))
+            IsHoloScannerPurchaseReady(snapshot))
         {
             return ScannerPurchaseTarget.Holo;
         }
@@ -3644,18 +4968,10 @@ public sealed class AutonomousTestWorker(
         return null;
     }
 
-    private static bool IsHoloScannerPurchaseReady(
-        GameSnapshot snapshot,
-        GameSnapshot? densityScannerStartingSnapshot) =>
+    private static bool IsHoloScannerPurchaseReady(GameSnapshot snapshot) =>
         snapshot.DensityScannerInstalled is true &&
         snapshot.HoloScannerInstalled is false &&
-        densityScannerStartingSnapshot is not null &&
-        snapshot.Ship is { } currentShip &&
-        densityScannerStartingSnapshot.Ship is { } startingShip &&
-        currentShip.Fighters > startingShip.Fighters &&
-        snapshot.Shields is { } shields &&
-        densityScannerStartingSnapshot.Shields is { } startingShields &&
-        shields > startingShields;
+        snapshot.SynchronizedCredits is >= AutonomousTradePolicy.MinimumHoloScannerUpgradeCredits;
 
     private static bool AreScannerStatusesKnown(GameSnapshot snapshot) =>
         snapshot.HoloScannerInstalled is not null &&
@@ -3689,6 +5005,71 @@ public sealed class AutonomousTestWorker(
             _ => false
         };
 
+    /// <summary>
+    /// Adjacent sectors worth exploring: known hazards and (when there is a choice) the sector just left are excluded,
+    /// and only the best-ranked group is returned — never-visited and unexplored sectors first.
+    /// </summary>
+    public static IReadOnlyList<int> SelectExplorationCandidates(
+        IReadOnlyList<int> freshAdjacentSectors,
+        IReadOnlyList<AdjacentSectorKnowledge> sectorKnowledge,
+        int? previousSector,
+        IReadOnlySet<int> visitedSectors)
+    {
+        int[] candidates = freshAdjacentSectors
+            .Where(sector => sector > 0 && sector != KnownHighRiskSector)
+            .Distinct()
+            .ToArray();
+        if (candidates.Length > 1 && previousSector is { } previous)
+        {
+            int[] forward = candidates.Where(sector => sector != previous).ToArray();
+            if (forward.Length > 0)
+            {
+                candidates = forward;
+            }
+        }
+        if (candidates.Length == 0)
+        {
+            return [];
+        }
+
+        int Rank(int sector) =>
+            visitedSectors.Contains(sector) ? 2
+            : sectorKnowledge.Any(item => item.SectorId == sector && item.Exploration == ExplorationStatus.Explored) ? 1
+            : 0;
+        int best = candidates.Min(Rank);
+        return candidates.Where(sector => Rank(sector) == best).Order().ToArray();
+    }
+
+    public static bool IsOscillating(IReadOnlyList<int> recentMoveTargets)
+    {
+        if (recentMoveTargets.Count < 6)
+        {
+            return false;
+        }
+
+        int a = recentMoveTargets[^1];
+        int b = recentMoveTargets[^2];
+        if (a == b)
+        {
+            return false;
+        }
+
+        for (int index = 1; index <= 6; index++)
+        {
+            if (recentMoveTargets[^index] != (index % 2 == 1 ? a : b))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>One course plot per origin/target per 10 minutes; a plot that found no route is not retried sooner.</summary>
+    private static bool ShouldPlotCourse(AutonomousTestSessionState sessionState, int origin, int target) =>
+        !sessionState.CoursePlotAttempts.TryGetValue((origin, target), out DateTimeOffset plottedAt) ||
+        DateTimeOffset.UtcNow - plottedAt >= TimeSpan.FromMinutes(10);
+
     private static bool IsScannerlessDestinationAllowed(
         int targetSector,
         int? starDockSector,
@@ -3713,14 +5094,125 @@ public sealed class AutonomousTestWorker(
             return true;
         }
 
-        char expectedResponse = target switch
+        string? expectedResponse = GetScannerSelectionResponse(prompt, target);
+        return expectedResponse is not null &&
+            response.Equals(expectedResponse, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetScannerSelectionResponse(
+        GameScriptInputPrompt prompt,
+        ScannerPurchaseTarget? target)
+    {
+        if (!Path.GetFileName(prompt.ScriptName).Equals(
+                "ls-dock-shopper-v33.ts",
+                StringComparison.OrdinalIgnoreCase) ||
+            !prompt.Text.Contains("scanner type", StringComparison.OrdinalIgnoreCase))
         {
-            ScannerPurchaseTarget.Density => 'D',
-            ScannerPurchaseTarget.Holo => 'Y',
-            _ => '\0'
+            return null;
+        }
+
+        return target switch
+        {
+            ScannerPurchaseTarget.Density => "D",
+            ScannerPurchaseTarget.Holo => "Y",
+            _ => null
         };
-        return response.Length == 1 &&
-            char.ToUpperInvariant(response[0]) == expectedResponse;
+    }
+
+    private static string? GetDockShopperAutomaticResponse(
+        GameScriptInputPrompt prompt,
+        ScannerPurchaseTarget? target)
+    {
+        if (!Path.GetFileName(prompt.ScriptName).Equals(
+                "ls-dock-shopper-v33.ts",
+                StringComparison.OrdinalIgnoreCase) ||
+            target is null)
+        {
+            return null;
+        }
+
+        if (prompt.Text.Contains(
+                "Item Costs Need To Be Updated",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "Y";
+        }
+
+        string? scannerSelectionResponse = GetScannerSelectionResponse(prompt, target);
+        if (scannerSelectionResponse is not null)
+        {
+            return scannerSelectionResponse;
+        }
+
+        string? scannerMenuLine = prompt.Text
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(line => line.Contains(
+                "Long Range Scanners",
+                StringComparison.OrdinalIgnoreCase));
+        if (scannerMenuLine is null)
+        {
+            return null;
+        }
+
+        bool targetAlreadySelected = target switch
+        {
+            ScannerPurchaseTarget.Density =>
+                scannerMenuLine.Contains("Density", StringComparison.OrdinalIgnoreCase),
+            ScannerPurchaseTarget.Holo =>
+                scannerMenuLine.Contains("Yes", StringComparison.OrdinalIgnoreCase),
+            _ => false
+        };
+        if (!targetAlreadySelected)
+        {
+            return "R";
+        }
+
+        return IsDisplayedScannerPriceAffordable(prompt.Text, scannerMenuLine)
+            ? "X"
+            : null;
+    }
+
+    private static bool IsDisplayedScannerPriceAffordable(
+        string promptText,
+        string scannerMenuLine)
+    {
+        int cashLabelIndex = promptText.IndexOf(
+            "Cash On Hand",
+            StringComparison.OrdinalIgnoreCase);
+        return cashLabelIndex >= 0 &&
+            TryParseDisplayedAmount(scannerMenuLine, 0, out int scannerPrice) &&
+            TryParseDisplayedAmount(promptText, cashLabelIndex, out int cashOnHand) &&
+            scannerPrice > 0 &&
+            cashOnHand >= scannerPrice;
+    }
+
+    private static bool TryParseDisplayedAmount(
+        string text,
+        int startIndex,
+        out int amount)
+    {
+        amount = 0;
+        int currencyIndex = text.IndexOf('$', startIndex);
+        if (currencyIndex < 0)
+        {
+            return false;
+        }
+
+        int valueStart = currencyIndex + 1;
+        int valueEnd = valueStart;
+        while (valueEnd < text.Length &&
+               (char.IsAsciiDigit(text[valueEnd]) || text[valueEnd] == ','))
+        {
+            valueEnd++;
+        }
+        if (valueEnd == valueStart)
+        {
+            return false;
+        }
+
+        string normalizedAmount = text[valueStart..valueEnd]
+            .Replace(",", string.Empty, StringComparison.Ordinal);
+        return int.TryParse(normalizedAmount, out amount);
     }
 
     private static bool NeedsShipStatusRefresh(GameSituationReport situation) =>
@@ -3761,6 +5253,12 @@ public sealed class AutonomousTestWorker(
         GameSnapshot StartingSnapshot,
         DateTimeOffset SentAt);
 
+    private sealed record PortTradeAttempt(
+        int Sector,
+        AutonomousPortTradeOpportunity Opportunity,
+        GameSnapshot StartingSnapshot,
+        DateTimeOffset StartedAt);
+
     private sealed record PendingScannerVerification(
         GameSnapshot StartingSnapshot,
         int Sector,
@@ -3778,6 +5276,13 @@ public sealed class AutonomousTestWorker(
         AutonomousRefurbUpgrade Upgrade,
         DateTimeOffset SentAt);
 
+    private sealed record PendingMoveDecision(
+        AutonomousTestActionDecision Decision,
+        TrajectoryDecisionSource Source,
+        int OriginSector,
+        bool Exploration,
+        DateTimeOffset DecidedAt);
+
     private sealed class AutonomousTestSessionState
     {
         public int? PendingMovementTarget { get; set; }
@@ -3788,10 +5293,10 @@ public sealed class AutonomousTestWorker(
         public int? PreviousSector { get; set; }
         public HashSet<int> DisplayedSectors { get; } = [];
         public HashSet<int> PortTradeAttemptedSectors { get; } = [];
+        public PortTradeAttempt? ActivePortTradeAttempt { get; set; }
         public PendingPortTrade? PendingPortTrade { get; set; }
         public PendingScannerVerification? PendingScannerVerification { get; set; }
         public PendingStarDockShopper? PendingStarDockShopper { get; set; }
-        public GameSnapshot? DensityScannerStartingSnapshot { get; set; }
         public AutonomousActionObjective? ActiveScriptObjective { get; set; }
         public PendingRefurbVerification? PendingRefurbVerification { get; set; }
         public StarDockShopperStage StarDockShopperStage { get; set; }
@@ -3817,7 +5322,18 @@ public sealed class AutonomousTestWorker(
         public FedSpaceFastStartPhase FedSpaceFastStartPhase { get; set; }
         public bool FedSpaceFastStartSkipped { get; set; }
         public HashSet<int> FedSpaceVisitedSectors { get; } = [];
+        public HashSet<int> VisitedSectors { get; } = [];
+        public PendingMoveDecision? PendingMoveDecision { get; set; }
         public DateTimeOffset? LastFedSpaceCimRefreshAttemptAt { get; set; }
+        public Dictionary<(int Origin, int Target), DateTimeOffset> CoursePlotAttempts { get; } = [];
+        public int? ScannerlessStarDockRouteHop { get; set; }
+        public int? ScannerlessFuelOreRouteHop { get; set; }
+        /// <summary>Verified move destinations, oldest first; cleared by a verified trade.</summary>
+        public List<int> RecentMoveTargets { get; } = [];
+        public DateTimeOffset? ScriptPauseFirstSeenAt { get; set; }
+        public DateTimeOffset? LastFighterEncounterAt { get; set; }
+        /// <summary>Sectors the ship retreated from because of hostile (non-toll) fighters.</summary>
+        public HashSet<int> HostileSectors { get; } = [];
 
         public void ClearPendingMovement()
         {
@@ -3834,10 +5350,10 @@ public sealed class AutonomousTestWorker(
             PreviousSector = null;
             DisplayedSectors.Clear();
             PortTradeAttemptedSectors.Clear();
+            ActivePortTradeAttempt = null;
             PendingPortTrade = null;
             PendingScannerVerification = null;
             PendingStarDockShopper = null;
-            DensityScannerStartingSnapshot = null;
             ActiveScriptObjective = null;
             PendingRefurbVerification = null;
             StarDockShopperStage = StarDockShopperStage.Inactive;
@@ -3862,7 +5378,16 @@ public sealed class AutonomousTestWorker(
             StarDockShopperRunningObserved = false;
             FedSpaceFastStartPhase = FedSpaceFastStartPhase.NotStarted;
             FedSpaceFastStartSkipped = false;
+            CoursePlotAttempts.Clear();
+            ScannerlessStarDockRouteHop = null;
+            ScannerlessFuelOreRouteHop = null;
+            RecentMoveTargets.Clear();
+            ScriptPauseFirstSeenAt = null;
+            LastFighterEncounterAt = null;
+            HostileSectors.Clear();
             FedSpaceVisitedSectors.Clear();
+            VisitedSectors.Clear();
+            PendingMoveDecision = null;
             LastFedSpaceCimRefreshAttemptAt = null;
         }
     }

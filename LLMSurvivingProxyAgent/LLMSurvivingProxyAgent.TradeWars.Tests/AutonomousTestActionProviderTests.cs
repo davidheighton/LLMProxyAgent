@@ -12,7 +12,8 @@ public sealed class AutonomousTestActionProviderTests
     [Theory]
     [InlineData(4, 3, TradeProduct.Organics)]
     [InlineData(1, 4, TradeProduct.Equipment)]
-    [InlineData(7, 8, TradeProduct.FuelOre)]
+    [InlineData(7, 8, TradeProduct.Equipment)]
+    [InlineData(7, 6, TradeProduct.FuelOre)]
     public void PortClassesIdentifyCompatibleTradeProducts(
         int sellerClass,
         int buyerClass,
@@ -21,6 +22,33 @@ public sealed class AutonomousTestActionProviderTests
         Assert.Equal(
             expectedProduct,
             PortTradeCompatibility.FindTradeProduct(sellerClass, buyerClass));
+    }
+
+    [Theory]
+    [InlineData(900L, 20, TradeProduct.Equipment)]
+    [InlineData(300L, 20, TradeProduct.Organics)]
+    [InlineData(5_000L, 20, TradeProduct.Equipment)]
+    [InlineData(5_000L, 3, TradeProduct.Equipment)]
+    public void TradeProductChoiceFollowsAffordableProfit(long credits, int emptyHolds, TradeProduct expectedProduct)
+    {
+        // A class 7 port sells everything and a class 8 port buys everything, so only profit decides.
+        Assert.Equal(
+            expectedProduct,
+            PortTradeCompatibility.FindMostProfitableProduct(7, 8, null, credits, emptyHolds));
+    }
+
+    [Fact]
+    public void PreferredProductWinsWhenCompatibleEvenIfLessProfitable()
+    {
+        Assert.Equal(
+            TradeProduct.FuelOre,
+            PortTradeCompatibility.FindMostProfitableProduct(7, 8, TradeProduct.FuelOre, 5_000, 20));
+        Assert.True(
+            PortTradeCompatibility.EstimateTripProfit(TradeProduct.Equipment, 5_000, 20) >
+            PortTradeCompatibility.EstimateTripProfit(TradeProduct.Organics, 5_000, 20));
+        Assert.True(
+            PortTradeCompatibility.EstimateTripProfit(TradeProduct.Organics, 5_000, 20) >
+            PortTradeCompatibility.EstimateTripProfit(TradeProduct.FuelOre, 5_000, 20));
     }
 
     [Fact]
@@ -155,8 +183,8 @@ public sealed class AutonomousTestActionProviderTests
                 ],
                 [
                     new IntegratedGameScriptSnapshot(
-                        "1_Trade",
-                        "Pack1/1_Trade.ts",
+                        "2-worldtrade",
+                        "trading-cashing/2-worldtrade.ts",
                         Paused: false,
                         IsSystemScript: false,
                         IsBot: false)
@@ -164,7 +192,7 @@ public sealed class AutonomousTestActionProviderTests
                 [
                     new IntegratedGameScriptCapability(
                         "worldTrade",
-                        "Pack1/1_Trade.ts",
+                        "trading-cashing/2-worldtrade.ts",
                         "Earn credits through approved World Trade.",
                         MayStart: true)
                 ])
@@ -173,7 +201,7 @@ public sealed class AutonomousTestActionProviderTests
                 ScriptCatalogTotalEntries = 2,
                 ScriptCatalogEntries =
                 [
-                    new IntegratedGameScriptCatalogEntry("Pack1/1_Trade.ts", "Trading"),
+                    new IntegratedGameScriptCatalogEntry("trading-cashing/2-worldtrade.ts", "Trading"),
                     new IntegratedGameScriptCatalogEntry(
                         "combat-defense/unreviewed-action.ts",
                         "combat-defense")
@@ -248,6 +276,10 @@ public sealed class AutonomousTestActionProviderTests
                 .Select(value => value.GetString()));
         Assert.False(format.GetProperty("properties").TryGetProperty("scriptInputResponse", out _));
         Assert.Equal(
+            new[] { string.Empty, "scan-node" },
+            format.GetProperty("properties").GetProperty("citedKnowledgeNodeId")
+                .GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal(
             "integer",
             format.GetProperty("properties").GetProperty("targetSector").GetProperty("type").GetString());
         Assert.Equal(
@@ -280,7 +312,7 @@ public sealed class AutonomousTestActionProviderTests
             integratedClient.GetProperty("scriptCapabilities")[0].GetProperty("id").GetString());
         Assert.Single(integratedClient.GetProperty("scriptCatalogEntries").EnumerateArray());
         Assert.Equal(
-            "Pack1/1_Trade.ts",
+            "trading-cashing/2-worldtrade.ts",
             integratedClient.GetProperty("scriptCatalogEntries")[0].GetProperty("file").GetString());
         Assert.Equal(
             "Trading",
@@ -592,6 +624,12 @@ public sealed class AutonomousTestActionProviderTests
                 .GetProperty("targetSector").GetProperty("enum")
                 .EnumerateArray()
                 .Select(value => value.GetInt32()));
+        Assert.Equal(
+            new[] { string.Empty },
+            request.RootElement.GetProperty("format").GetProperty("properties")
+                .GetProperty("citedKnowledgeNodeId").GetProperty("enum")
+                .EnumerateArray()
+                .Select(value => value.GetString()));
     }
 
     [Theory]
@@ -619,7 +657,7 @@ public sealed class AutonomousTestActionProviderTests
             GameSynchronizationState.Healthy,
             "Command",
             now,
-            new GameSnapshot(551, AutonomousTradePolicy.MinimumScannerUpgradeCredits, 300, null, now)
+            new GameSnapshot(551, 6_403, 300, null, now)
             {
                 HoloScannerInstalled = holoScannerInstalled,
                 DensityScannerInstalled = densityScannerInstalled
@@ -982,20 +1020,75 @@ public sealed class AutonomousTestActionProviderTests
         using var request = JsonDocument.Parse(handler.RequestBody);
         JsonElement format = request.RootElement.GetProperty("format");
         Assert.True(format.GetProperty("properties").TryGetProperty("scriptInputResponse", out _));
-        Assert.Contains(
+        Assert.DoesNotContain(
             "scriptInputResponse",
             format.GetProperty("required").EnumerateArray().Select(value => value.GetString()));
-        foreach (JsonElement branch in format.GetProperty("oneOf").EnumerateArray())
+        JsonElement[] branches = format.GetProperty("oneOf").EnumerateArray().ToArray();
+        JsonElement scriptInputBranch = Assert.Single(
+            branches,
+            branch => branch.GetProperty("properties").GetProperty("action")
+                .GetProperty("enum").EnumerateArray()
+                .Any(value => value.GetString() == "respondToScriptInputPrompt"));
+        Assert.True(scriptInputBranch.GetProperty("properties").TryGetProperty("scriptInputResponse", out _));
+        Assert.Contains(
+            "scriptInputResponse",
+            scriptInputBranch.GetProperty("required").EnumerateArray()
+                .Select(value => value.GetString()));
+        Assert.False(scriptInputBranch.GetProperty("additionalProperties").GetBoolean());
+        foreach (JsonElement branch in branches.Where(branch =>
+                     !branch.GetProperty("properties").GetProperty("action")
+                         .GetProperty("enum").EnumerateArray()
+                         .Any(value => value.GetString() == "respondToScriptInputPrompt")))
         {
-            Assert.True(branch.GetProperty("properties").TryGetProperty("scriptInputResponse", out _));
-            Assert.Contains(
-                "scriptInputResponse",
-                branch.GetProperty("required").EnumerateArray()
-                    .Select(value => value.GetString()));
+            Assert.False(branch.GetProperty("properties").TryGetProperty("scriptInputResponse", out _));
+            Assert.False(branch.GetProperty("additionalProperties").GetBoolean());
         }
 
         Assert.Contains("Item Costs Need To Be Updated", handler.RequestBody, StringComparison.Ordinal);
         Assert.Contains("plannedScripts", handler.RequestBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OllamaProviderOmitsScriptResponseForStaleScriptPrompt()
+    {
+        var handler = new RecordingHttpHandler(JsonSerializer.Serialize(
+            new
+            {
+                message = new
+                {
+                    content = """{"action":"none","targetSector":0,"rationale":"Wait for a fresh approved script prompt.","citedKnowledgeNodeId":""}"""
+                }
+            }));
+        using var client = new HttpClient(handler);
+        var provider = new OllamaAutonomousTestActionProvider(client);
+        var situation = CreateTradeSituation(551) with
+        {
+            ScriptInputPrompt = new GameScriptInputPrompt(
+                "ls-dock-shopper-v33.ts",
+                "Scanner type (Y/N/D)? Holo=Y, Density=D",
+                SingleKey: true,
+                DateTimeOffset.UtcNow.AddMinutes(-2))
+        };
+
+        AutonomousTestActionDecision result = await provider.DecideAsync(
+            new ModelConfiguration("Ollama", "qwen3:8b", new Uri("http://localhost:11434/")),
+            new AutonomousTestActionContext(situation, [])
+            {
+                GameActionsEnabled = true
+            });
+
+        Assert.Equal(AutonomousTestAction.None, result.Action);
+        using var request = JsonDocument.Parse(handler.RequestBody);
+        JsonElement format = request.RootElement.GetProperty("format");
+        Assert.False(format.GetProperty("properties").TryGetProperty("scriptInputResponse", out _));
+        Assert.DoesNotContain(
+            "respondToScriptInputPrompt",
+            format.GetProperty("properties").GetProperty("action").GetProperty("enum")
+                .EnumerateArray().Select(value => value.GetString()));
+        foreach (JsonElement branch in format.GetProperty("oneOf").EnumerateArray())
+        {
+            Assert.False(branch.GetProperty("properties").TryGetProperty("scriptInputResponse", out _));
+        }
     }
 
     [Fact]
@@ -1040,7 +1133,9 @@ public sealed class AutonomousTestActionProviderTests
         var actionContext = new AutonomousTestActionContext(CreateTradeSituation(8), [])
         {
             GameActionsEnabled = true,
-            PortTradeOpportunity = opportunity
+            PortTradeOpportunity = opportunity,
+            ScannerFundingTargetCredits = 20_000,
+            ScannerFundingShortfallCredits = 19_500
         };
 
         var result = await provider.DecideAsync(
@@ -1054,6 +1149,17 @@ public sealed class AutonomousTestActionProviderTests
             request.RootElement.GetProperty("format").GetProperty("properties")
                 .GetProperty("action").GetProperty("enum").EnumerateArray()
                 .Select(value => value.GetString()));
+        string? systemPrompt = request.RootElement.GetProperty("messages")[0]
+            .GetProperty("content").GetString();
+        Assert.NotNull(systemPrompt);
+        Assert.Contains(
+            "buy its product at the current sector's",
+            systemPrompt,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "selling port and treat partnerSector as the buyer",
+            systemPrompt,
+            StringComparison.Ordinal);
         var contextContent = request.RootElement.GetProperty("messages")[1].GetProperty("content").GetString();
         Assert.NotNull(contextContent);
         using var context = JsonDocument.Parse(contextContent);
@@ -1061,6 +1167,8 @@ public sealed class AutonomousTestActionProviderTests
             9,
             context.RootElement.GetProperty("portTradeOpportunity").GetProperty("partnerSector").GetInt32());
         Assert.False(context.RootElement.GetProperty("portTradeAttemptedAtCurrentSector").GetBoolean());
+        Assert.Equal(20_000, context.RootElement.GetProperty("scannerFundingTargetCredits").GetInt64());
+        Assert.Equal(19_500, context.RootElement.GetProperty("scannerFundingShortfallCredits").GetInt64());
 
         var invalidHandler = new RecordingHttpHandler(JsonSerializer.Serialize(
             new

@@ -24,6 +24,7 @@ public partial class MainWindow
     ];
 
     private readonly DashboardHost _dashboardHost = new();
+    private MtcSessionWindowHost? _mtcSessionWindowHost;
     private readonly SemaphoreSlim _dashboardStartGate = new(1, 1);
     private readonly object _reactiveSnapshotSync = new();
     private readonly object _reactiveObservationQueueSync = new();
@@ -38,6 +39,7 @@ public partial class MainWindow
     private Task? _automaticAgentStartupTask;
     private int _automaticAgentStartupScheduled;
     private int _reactiveObserverAttached;
+    private bool _assignedGameProfileLoadFailed;
 
     private Task OnOpenDashboardAsync() =>
         NavigateDashboardAsync("fleet", "/");
@@ -72,7 +74,14 @@ public partial class MainWindow
                     isDockShopperRunning: IsStarDockShopperRunningAsync,
                     stopScriptByName: name => StopMtcRpcScriptAsync(null, name),
                     getRecentServerLines: GetRecentAgentServerLines,
-                    getCurrentScriptInputPrompt: _gameAgent.GetCurrentScriptInputPrompt);
+                    getCurrentScriptInputPrompt: _gameAgent.GetCurrentScriptInputPrompt,
+                    setNativeHaggleEnabled: enabled =>
+                        (_gameInstance ?? throw new InvalidOperationException(
+                            "Native haggling cannot be changed because the game session is unavailable."))
+                        .SetNativeHaggleEnabled(
+                            enabled,
+                            NativeHaggleChangeSource.Runtime),
+                    submitScriptInput: SendMtcRpcScriptInputAsync);
                 _dashboardAddress = await _dashboardHost.StartAsync(
                     agentId,
                     eventLogDirectory,
@@ -87,7 +96,35 @@ public partial class MainWindow
                     () => GetGameAgentGameName(),
                     () => _sessionDb,
                     BuildIntegratedGameClientSnapshot,
-                    () => _gameAgent.GetCurrentScriptInputPrompt());
+                    () => _gameAgent.GetCurrentScriptInputPrompt(),
+                    _mtcSessionWindowHost);
+                if (string.IsNullOrWhiteSpace(
+                        Environment.GetEnvironmentVariable("LLMCONTROL_GAME_PROFILE")))
+                {
+                    string? assignedProfile = await _dashboardHost
+                        .GetAgentGameProfileAsync(agentId);
+                    if (!string.IsNullOrWhiteSpace(assignedProfile))
+                    {
+                        navigationId = "runtime";
+                        route = $"/agents/{Uri.EscapeDataString(agentId)}/runtime";
+                        try
+                        {
+                            await LoadAssignedAgentGameProfileAsync(assignedProfile);
+                            _assignedGameProfileLoadFailed = false;
+                        }
+                        catch (Exception exception)
+                        {
+                            _assignedGameProfileLoadFailed = true;
+                            _dashboardHost.SetAgentStartupActivity(
+                                agentId,
+                                $"Startup blocked: assigned game profile could not be loaded ({exception.Message}).");
+                            GlobalModules.DebugLog(
+                                $"[Startup] saved agent game profile could not be loaded: {exception}\n");
+                            _parser.Feed(
+                                $"\x1b[1;31m[Assigned game profile failed to load: {exception.Message}]\x1b[0m\r\n");
+                        }
+                    }
+                }
                 if (Interlocked.Exchange(ref _reactiveObserverAttached, 1) == 0)
                 {
                     _gameAgent.EventRecorded += OnReactiveGameAgentEventRecorded;
@@ -105,8 +142,13 @@ public partial class MainWindow
             if (_dashboardAddress is null || _dashboardWebView is null)
                 throw new InvalidOperationException("The embedded dashboard did not initialize.");
 
-            _activeWorkspaceNavigationId = navigationId;
-            SetWorkspaceView(WorkspaceView.Dashboard);
+            _activeWorkspaceNavigationId = IsDockedSessionWindow
+                ? "mtc-local-session"
+                : navigationId;
+            SetWorkspaceView(
+                IsDockedSessionWindow
+                    ? WorkspaceView.AgentTerminal
+                    : WorkspaceView.Dashboard);
             _dashboardWebView.Source = new Uri(_dashboardAddress, route.TrimStart('/'));
             RefreshWorkspaceNavigationState();
             if (Interlocked.Exchange(ref _automaticAgentStartupScheduled, 1) == 0)
@@ -342,7 +384,7 @@ public partial class MainWindow
                     MayStart: true),
                 new IntegratedGameScriptCapability(
                     "worldTrade",
-                    "Pack1/1_Trade.ts",
+                    "trading-cashing/2-worldtrade.ts",
                     "Earn credits through the approved World Trade script.",
                     MayStart: true)
             ])
@@ -380,8 +422,26 @@ public partial class MainWindow
     private Task ConfigureAgentConnectionAsync() =>
         RunDashboardUiActionAsync(OnNewConnectionAsync);
 
-    private Task<bool> LoadSavedAgentConnectionAsync() =>
-        RunDashboardUiActionAsync(async () =>
+    private async Task<bool> LoadSavedAgentConnectionAsync()
+    {
+        string? assignedProfileFileName =
+            Environment.GetEnvironmentVariable("LLMCONTROL_GAME_PROFILE");
+        if (string.IsNullOrWhiteSpace(assignedProfileFileName))
+        {
+            assignedProfileFileName =
+                await _dashboardHost.GetAgentGameProfileAsync(DefaultAgentId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(assignedProfileFileName))
+        {
+            _assignedGameProfileLoadFailed = true;
+            bool loaded = await LoadAssignedAgentGameProfileAsync(assignedProfileFileName);
+            _assignedGameProfileLoadFailed = !loaded;
+            return loaded;
+        }
+
+        _assignedGameProfileLoadFailed = false;
+        return await RunDashboardUiActionAsync(async () =>
         {
             string? recentGameConfigPath = _appPrefs.RecentFiles.FirstOrDefault(path =>
                 !string.IsNullOrWhiteSpace(path) &&
@@ -395,6 +455,80 @@ public partial class MainWindow
             await OpenPathAsync(recentGameConfigPath, addToRecent: true);
             return true;
         });
+    }
+
+    private Task<bool> LoadAssignedAgentGameProfileAsync(string assignedProfileFileName) =>
+        RunDashboardUiActionAsync(async () =>
+        {
+            if (!string.Equals(
+                    Path.GetFileName(assignedProfileFileName),
+                    assignedProfileFileName,
+                    StringComparison.Ordinal) ||
+                !string.Equals(
+                    Path.GetExtension(assignedProfileFileName),
+                    ".json",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "The assigned game profile must be a .json file in the MTC games directory.");
+            }
+
+            string assignedProfilePath = Path.GetFullPath(
+                Path.Combine(AppPaths.TwxproxyGamesDir, assignedProfileFileName));
+            string currentProfilePath = Path.GetFullPath(AppPaths.TwxproxyGamesDir)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            if (!assignedProfilePath.StartsWith(
+                    currentProfilePath,
+                    StringComparison.OrdinalIgnoreCase) ||
+                !File.Exists(assignedProfilePath))
+            {
+                throw new FileNotFoundException(
+                    $"The assigned MTC game profile '{assignedProfileFileName}' was not found.",
+                    assignedProfilePath);
+            }
+            if (!string.IsNullOrWhiteSpace(_currentProfilePath) &&
+                string.Equals(
+                    Path.GetFullPath(_currentProfilePath),
+                    assignedProfilePath,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (GameFileLock.IsLockedByAnotherProcess(assignedProfilePath))
+            {
+                throw new InvalidOperationException(
+                    $"The assigned game profile '{assignedProfileFileName}' is open in another MTC process. " +
+                    "Close that session before launching this agent on the profile.");
+            }
+
+            await OpenPathAsync(assignedProfilePath, addToRecent: true);
+            return true;
+        });
+
+    private async Task OpenAssignedAgentDashboardAsync()
+    {
+        try
+        {
+            if (!await LoadSavedAgentConnectionAsync())
+            {
+                throw new InvalidOperationException(
+                    "The assigned MTC game profile could not be loaded.");
+            }
+
+            await NavigateDashboardAsync(
+                "runtime",
+                $"/agents/{Uri.EscapeDataString(DefaultAgentId)}/runtime");
+        }
+        catch (Exception exception)
+        {
+            GlobalModules.DebugLog(
+                $"[Startup] assigned agent game profile could not be loaded: {exception}\n");
+            _parser.Feed(
+                $"\x1b[1;31m[Agent startup failed: {exception.Message}]\x1b[0m\r\n");
+        }
+    }
 
     private Task<bool> CanConnectAgentSessionAsync() =>
         InvokeMtcRpcUiAsync(() => Task.FromResult(
@@ -406,6 +540,24 @@ public partial class MainWindow
     {
         try
         {
+            if (!await _dashboardHost.IsAgentAutoStartEnabledAsync(
+                    DefaultAgentId,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                _dashboardHost.SetAgentStartupActivity(
+                    DefaultAgentId,
+                    "Automatic launch is disabled for this agent; start it manually from Agent Runtime when ready.");
+                return;
+            }
+
+            if (_assignedGameProfileLoadFailed)
+            {
+                _dashboardHost.SetAgentStartupActivity(
+                    DefaultAgentId,
+                    "Startup blocked because the saved game assignment could not be loaded. Correct it and reload the assigned profile.");
+                return;
+            }
+
             if (!IsMtcRpcConnected())
             {
                 try
@@ -416,6 +568,14 @@ public partial class MainWindow
                 {
                     GlobalModules.DebugLog(
                         $"[Startup] could not load the most recent game profile: {exception}\n");
+                }
+
+                if (_assignedGameProfileLoadFailed)
+                {
+                    _dashboardHost.SetAgentStartupActivity(
+                        DefaultAgentId,
+                        "Startup blocked because the saved game assignment could not be loaded. Correct it and reload the assigned profile.");
+                    return;
                 }
             }
 
@@ -455,13 +615,13 @@ public partial class MainWindow
 
             _dashboardHost.SetAgentStartupActivity(
                 DefaultAgentId,
-                "Startup: TradeWars is connected; waiting for the configured AI model.");
-            await _dashboardHost.WaitForAgentModelAsync(DefaultAgentId, cancellationToken)
-                .ConfigureAwait(false);
+                "Startup: TradeWars is connected; starting the agent and account login.");
             await _dashboardHost.StartAgentAsync(DefaultAgentId, cancellationToken)
                 .ConfigureAwait(false);
-            _dashboardHost.SetAgentStartupActivity(DefaultAgentId, "Agent started automatically.");
-            GlobalModules.DebugLog("[Startup] TradeWars and the configured AI model are ready; agent started.\n");
+            _dashboardHost.SetAgentStartupActivity(
+                DefaultAgentId,
+                "Agent started; waiting for game authentication and the first model decision.");
+            GlobalModules.DebugLog("[Startup] TradeWars is connected; agent started.\n");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -483,9 +643,10 @@ public partial class MainWindow
         IReadOnlyList<GameAgentRunningScriptSnapshot> scripts = await ListMtcRpcScriptsAsync()
             .ConfigureAwait(false);
         return scripts.Any(script =>
-            script.Name.Contains("1_Trade", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(script.Name, "2-worldtrade", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(script.Name, "2-worldtrade.ts", StringComparison.OrdinalIgnoreCase) ||
             script.Reference.Replace('\\', '/').EndsWith(
-                "Pack1/1_Trade.ts",
+                "trading-cashing/2-worldtrade.ts",
                 StringComparison.OrdinalIgnoreCase));
     }
 

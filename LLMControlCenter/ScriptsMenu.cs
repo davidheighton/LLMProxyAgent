@@ -84,10 +84,33 @@ public partial class MainWindow
 
         var baseDir = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, ' ');
 
-        _ = Task.Run(() => ScanScriptNodes(baseDir, baseDir, depth: 0))
+        _ = Task.Run(() =>
+            ScanScriptNodes(
+                baseDir,
+                baseDir,
+                depth: 0,
+                scriptMetadata: Core.ProxyMenuCatalog.ReadScriptMenuMetadata(baseDir)))
                 .ContinueWith(t =>
                 {
-                    if (t.IsFaulted) return;
+                    if (t.IsFaulted)
+                    {
+                        string error = t.Exception?.GetBaseException().Message
+                            ?? "Unknown script catalog error.";
+                        _parser.Feed(
+                            $"\x1b[1;31m[Scripts menu could not be rebuilt: {error}]\x1b[0m\r\n");
+                        _scriptsMenu.ItemsSource = new List<object>
+                        {
+                            reloadItem,
+                            new Separator(),
+                            new MenuItem
+                            {
+                                Header = "Script catalog could not be loaded",
+                                IsEnabled = false
+                            },
+                        };
+                        RefreshNativeAppMenu();
+                        return;
+                    }
 
                     var items = new List<object> { reloadItem, new Separator() };
                     if (t.Result.Count == 0)
@@ -104,7 +127,11 @@ public partial class MainWindow
     /// Pure data scan — no Avalonia/UI objects created.  Safe on any thread.
     /// Directories are listed before files at every level.
     /// </summary>
-    private static List<ScriptNode> ScanScriptNodes(string dir, string baseDir, int depth)
+    private static List<ScriptNode> ScanScriptNodes(
+        string dir,
+        string baseDir,
+        int depth,
+        IReadOnlyDictionary<string, Core.ScriptMenuMetadata> scriptMetadata)
     {
         const int MaxDepth = 5;
         var nodes = new List<ScriptNode>();
@@ -121,7 +148,7 @@ public partial class MainWindow
                 foreach (var sub in subdirs)
                 {
                     if (!DirectoryHasScripts(sub, MaxDepth - depth - 1)) continue;
-                    var children = ScanScriptNodes(sub, baseDir, depth + 1);
+                    var children = ScanScriptNodes(sub, baseDir, depth + 1, scriptMetadata);
                     if (children.Count == 0) continue;
                     nodes.Add(new ScriptNode(
                         IsDir: true, Name: Path.GetFileName(sub),
@@ -140,11 +167,24 @@ public partial class MainWindow
                 .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase);
 
             foreach (var fp in files)
+            {
+                string relativePath = StripRelativePrefix(
+                    Path.GetRelativePath(baseDir, fp).Replace('\\', '/'));
+                string displayName = Path.GetFileName(fp);
+                if (scriptMetadata.TryGetValue(relativePath, out Core.ScriptMenuMetadata? metadata))
+                {
+                    if (metadata.IsNonPreferredVariant)
+                        continue;
+
+                    if (!string.IsNullOrWhiteSpace(metadata.DisplayName))
+                        displayName = metadata.DisplayName;
+                }
+
                 nodes.Add(new ScriptNode(
-                    IsDir: false, Name: Path.GetFileName(fp),
-                    RelPath: StripRelativePrefix(
-                               Path.GetRelativePath(baseDir, fp).Replace('\\', '/')),
+                    IsDir: false, Name: displayName,
+                    RelPath: relativePath,
                     Children: []));
+            }
         }
         catch { /* permission denied */ }
 

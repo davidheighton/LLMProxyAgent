@@ -1,0 +1,160 @@
+@using LLMSurvivingProxyAgent.Core
+@implements IDisposable
+@inject IAgentStore AgentStore
+@inject IAgentSessionController AgentSessionController
+@inject IAgentSessionLauncher AgentSessionLauncher
+@inject NavigationManager Navigation
+
+@if (_agents.Count > 0)
+{
+    <nav class="agent-session-tabs" aria-label="Game sessions">
+        @foreach (AgentContainer agent in _agents)
+        {
+            string agentUrl = $"/agents/{Uri.EscapeDataString(agent.AgentId)}/runtime";
+            bool isActive = IsActiveAgent(agent.AgentId);
+            string status = GetStatus(agent);
+            <a class="agent-session-tab @(isActive ? "selected" : null)"
+               href="@agentUrl"
+               aria-current="@(isActive ? "page" : null)">
+                <span class="status-dot @StatusClass(status)" aria-hidden="true"></span>
+                <span>@agent.DisplayName</span>
+                <small title="@StatusDescription(status)">@status</small>
+            </a>
+        }
+    </nav>
+    @if (!string.IsNullOrWhiteSpace(_refreshError))
+    {
+        <p class="small text-warning mb-2" role="status">@_refreshError</p>
+    }
+}
+
+@code {
+    private IReadOnlyList<AgentContainer> _agents = [];
+    private Dictionary<string, string> _liveStatuses = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? _refreshCancellation;
+    private string? _refreshError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        _refreshCancellation = new CancellationTokenSource();
+        await RefreshAgentsAsync(_refreshCancellation.Token);
+        _ = RefreshStatusLoopAsync(_refreshCancellation.Token);
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        await InvokeAsync(async () =>
+        {
+            await RefreshAgentsAsync(_refreshCancellation?.Token ?? CancellationToken.None);
+            StateHasChanged();
+        });
+    }
+
+    private async Task RefreshAgentsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            IReadOnlyList<AgentContainer> agents =
+                await AgentStore.GetAgentsAsync(cancellationToken);
+            var liveStatuses = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (AgentContainer agent in agents)
+            {
+                if (AgentSessionController.IsAvailable &&
+                    AgentSessionController.SupportsAgent(agent.AgentId))
+                {
+                    AgentSessionControlStatus status = await AgentSessionController
+                        .GetStatusAsync(agent.AgentId, cancellationToken);
+                    liveStatuses[agent.AgentId] = status.IsLearning
+                        ? "LEARN"
+                        : status.IsAgentRunning
+                            ? "RUNNING"
+                            : status.IsConnected
+                                ? "CONNECTED"
+                                : status.CanConnect
+                                    ? "READY"
+                                    : "OFFLINE";
+                }
+                else if (AgentSessionLauncher.IsAvailable)
+                {
+                    AgentSessionLaunchStatus status = await AgentSessionLauncher
+                        .GetStatusAsync(agent.AgentId, cancellationToken);
+                    liveStatuses[agent.AgentId] = status.IsRunning ? "MTC OPEN" : "OFFLINE";
+                }
+                else
+                {
+                    liveStatuses[agent.AgentId] = agent.Status.ToString().ToUpperInvariant();
+                }
+            }
+
+            _agents = agents;
+            _liveStatuses = liveStatuses;
+            _refreshError = null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            _refreshError = $"Session status refresh failed: {exception.Message}";
+        }
+    }
+
+    private async Task RefreshStatusLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshAgentsAsync(cancellationToken);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private string GetStatus(AgentContainer agent) =>
+        _liveStatuses.TryGetValue(agent.AgentId, out string? status)
+            ? status
+            : agent.Status.ToString().ToUpperInvariant();
+
+    private bool IsActiveAgent(string agentId)
+    {
+        string[] segments = Navigation.ToBaseRelativePath(Navigation.Uri)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length >= 2 &&
+               string.Equals(segments[0], "agents", StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(
+                   Uri.UnescapeDataString(segments[1]),
+                   agentId,
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string StatusClass(string status) => status switch
+    {
+        "RUNNING" or "LEARN" or "CONNECTED" or "MTC OPEN" or "THINKING" => "status-live",
+        "PAUSED" => "status-paused",
+        _ => "status-idle"
+    };
+
+    private static string StatusDescription(string status) => status switch
+    {
+        "MTC OPEN" => "The agent's MTC session process is open; worker status is shown in that session.",
+        "CONNECTED" => "The game terminal is connected; the autonomous worker is stopped.",
+        "READY" => "The MTC session can connect to its assigned game.",
+        _ => status
+    };
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+        _refreshCancellation?.Cancel();
+        _refreshCancellation?.Dispose();
+    }
+}

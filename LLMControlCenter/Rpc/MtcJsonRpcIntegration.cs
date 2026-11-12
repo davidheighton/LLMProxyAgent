@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Avalonia.Threading;
+using LLMSurvivingProxyAgent.Core;
 using Core = TWXProxy.Core;
 
 namespace MTC;
@@ -121,6 +122,9 @@ public partial class MainWindow
     private Task<MtcRpcActionResult> SendMtcRpcCommandAsync(string command, bool appendEnter)
         => InvokeMtcRpcUiAsync(() =>
         {
+            if (IsLearnModeActive())
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "Game-agent commands are disabled while Learn mode is observing human gameplay."));
             if (!IsMtcRpcConnected())
                 return Task.FromResult(MtcRpcActionResult.Fail("No active game connection."));
 
@@ -138,6 +142,49 @@ public partial class MainWindow
                 ["bytes"] = bytes.Length.ToString(),
                 ["appendEnter"] = appendEnter ? "true" : "false",
             }));
+        });
+
+    private Task<MtcRpcActionResult> SendMtcRpcScriptInputAsync(
+        GameScriptInputPrompt prompt,
+        string response)
+        => InvokeMtcRpcUiAsync(() =>
+        {
+            if (IsLearnModeActive())
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "Game-agent script input is disabled while Learn mode is observing human gameplay."));
+            if (!ScriptInputPromptPolicy.IsSafeResponse(prompt, response))
+            {
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "The script response is not permitted by the observed prompt."));
+            }
+
+            GameScriptInputPrompt? currentPrompt = _gameAgent.GetCurrentScriptInputPrompt();
+            if (currentPrompt is null ||
+                currentPrompt.ObservedAt != prompt.ObservedAt ||
+                currentPrompt.SingleKey != prompt.SingleKey ||
+                !string.Equals(currentPrompt.ScriptName, prompt.ScriptName, StringComparison.Ordinal) ||
+                !string.Equals(currentPrompt.Text, prompt.Text, StringComparison.Ordinal))
+            {
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "The script input prompt changed before the response could be delivered."));
+            }
+
+            Core.ModInterpreter? interpreter = CurrentInterpreter;
+            if (interpreter is null || !interpreter.IsAnyScriptWaitingForInput())
+            {
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "No TWX script is currently waiting for input."));
+            }
+
+            _gameAgent.ClearScriptInputPrompt();
+            if (!interpreter.LocalInputEvent(response))
+            {
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "The waiting TWX script did not consume the response."));
+            }
+
+            return Task.FromResult(MtcRpcActionResult.Ok(
+                "Response delivered directly to the waiting TWX script."));
         });
 
     private Task<MtcRpcSensitivePrompt?> GetMtcRpcSensitivePasswordPromptAsync()
@@ -232,9 +279,24 @@ public partial class MainWindow
     private Task<MtcRpcActionResult> RunMtcRpcScriptAsync(string script)
         => InvokeMtcRpcUiAsync(() =>
         {
+            if (IsLearnModeActive())
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "Game-agent scripts are disabled while Learn mode is observing human gameplay."));
             string scriptReference = (script ?? string.Empty).Trim().Replace('\\', '/');
             if (string.IsNullOrWhiteSpace(scriptReference))
                 return Task.FromResult(MtcRpcActionResult.Fail("Script name is required."));
+
+            bool isWorldTradeScript =
+                WorldTradeScriptStartPolicy.IsWorldTradeScriptReference(scriptReference);
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            GameAgentContextSnapshot contextSnapshot = BuildGameAgentContextSnapshot();
+            string? worldTradeBlockReason = WorldTradeScriptStartPolicy.GetBlockReason(
+                scriptReference,
+                contextSnapshot,
+                BuildIntegratedGameClientSnapshot().StarDockSector,
+                now);
+            if (worldTradeBlockReason is not null)
+                return Task.FromResult(MtcRpcActionResult.Fail(worldTradeBlockReason));
 
             if (RequiresTradeWarsCommandPrompt(scriptReference) &&
                 !_gameAgent.IsAtTradeWarsCommandPrompt())
@@ -247,11 +309,30 @@ public partial class MainWindow
             bool remoteProxyScripts = interpreter == null && CanUseRemoteProxyScripts();
             if (interpreter == null && !remoteProxyScripts)
                 return Task.FromResult(MtcRpcActionResult.Fail("Proxy scripts are not available for the current game."));
+            if (isWorldTradeScript && interpreter == null)
+            {
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "TWX World Trade requires the local script interpreter so its verified GO! menu can be started autonomously."));
+            }
 
             try
             {
                 if (interpreter != null)
                 {
+                    if (isWorldTradeScript)
+                    {
+                        string scriptsDirectory = GetConfiguredScriptsDirectoryValue();
+                        if (string.IsNullOrWhiteSpace(scriptsDirectory))
+                        {
+                            return Task.FromResult(MtcRpcActionResult.Fail(
+                                "The configured TWX scripts directory is missing; World Trade was not loaded."));
+                        }
+
+                        scriptReference = ResolveWorldTradeScriptPath(
+                            scriptReference,
+                            scriptsDirectory);
+                    }
+
                     if (RequiresTradeWarsCommandPrompt(scriptReference))
                     {
                         string scriptsDirectory = GetConfiguredScriptsDirectoryValue();
@@ -276,6 +357,82 @@ public partial class MainWindow
                     {
                         return Task.FromResult(MtcRpcActionResult.Fail(
                             $"TWX script '{scriptReference}' did not remain active after loading. Check its compiler diagnostics and interpreter output."));
+                    }
+
+                    if (isWorldTradeScript &&
+                        !Core.ProxyGameOperations.TrySetScriptVariable(
+                            interpreter,
+                            scriptReference,
+                            "$MOVE~EXTRASEND",
+                            string.Empty))
+                    {
+                        bool stopped = Core.ProxyGameOperations.StopScriptByName(
+                            interpreter,
+                            scriptReference);
+                        string stopStatus = stopped
+                            ? " The waiting script was stopped."
+                            : " The waiting script could not be stopped.";
+                        return Task.FromResult(MtcRpcActionResult.Fail(
+                            "TWX World Trade could not disable its extra movement commands for autonomous trading." +
+                            stopStatus));
+                    }
+
+                    bool densityOnlyScanner = isWorldTradeScript &&
+                        WorldTradeScriptStartPolicy.IsDensityOnlyScanner(
+                            contextSnapshot,
+                            now);
+                    if (isWorldTradeScript &&
+                        !Core.ProxyGameOperations.TrySetScriptVariable(
+                            interpreter,
+                            scriptReference,
+                            "$MOVE~DENSITYONLYSCANNER",
+                            densityOnlyScanner ? "1" : "0"))
+                    {
+                        bool stopped = Core.ProxyGameOperations.StopScriptByName(
+                            interpreter,
+                            scriptReference);
+                        string stopStatus = stopped
+                            ? " The waiting script was stopped."
+                            : " The waiting script could not be stopped.";
+                        return Task.FromResult(MtcRpcActionResult.Fail(
+                            "TWX World Trade could not configure the scanner-specific density-scan command." +
+                            stopStatus));
+                    }
+
+                    if (densityOnlyScanner &&
+                        !Core.ProxyGameOperations.TrySetScriptVariable(
+                            interpreter,
+                            scriptReference,
+                            "$MOVE~SCANHOLO",
+                            "0"))
+                    {
+                        bool stopped = Core.ProxyGameOperations.StopScriptByName(
+                            interpreter,
+                            scriptReference);
+                        string stopStatus = stopped
+                            ? " The waiting script was stopped."
+                            : " The waiting script could not be stopped.";
+                        return Task.FromResult(MtcRpcActionResult.Fail(
+                            "TWX World Trade could not disable holo-scanning for the verified Density-only ship." +
+                            stopStatus));
+                    }
+
+                    if (isWorldTradeScript &&
+                        !Core.ProxyGameOperations.TryHandleScriptMenuOption(
+                            interpreter,
+                            scriptReference,
+                            "WORLDTRADE",
+                            "GO"))
+                    {
+                        bool stopped = Core.ProxyGameOperations.StopScriptByName(
+                            interpreter,
+                            scriptReference);
+                        string stopStatus = stopped
+                            ? " The waiting script was stopped."
+                            : " The waiting script could not be stopped.";
+                        return Task.FromResult(MtcRpcActionResult.Fail(
+                            "TWX World Trade loaded but its expected WorldTrade GO! settings-menu option could not be safely selected." +
+                            stopStatus));
                     }
                 }
                 else
@@ -328,6 +485,54 @@ public partial class MainWindow
         return Path.GetFullPath(Path.Combine(scriptsDirectory, "utilities", canonicalName));
     }
 
+    internal static string ResolveWorldTradeScriptPath(
+        string scriptReference,
+        string scriptsDirectory)
+    {
+        if (!WorldTradeScriptStartPolicy.IsWorldTradeScriptReference(scriptReference))
+        {
+            throw new ArgumentException(
+                "Only the approved WorldTrade script can be resolved this way.",
+                nameof(scriptReference));
+        }
+        if (string.IsNullOrWhiteSpace(scriptsDirectory))
+        {
+            throw new ArgumentException(
+                "A configured TWX scripts directory is required.",
+                nameof(scriptsDirectory));
+        }
+
+        string normalizedReference = scriptReference
+            .Trim()
+            .Replace('\\', Path.DirectorySeparatorChar)
+            .Replace('/', Path.DirectorySeparatorChar);
+        string scriptsRoot = Path.GetFullPath(scriptsDirectory);
+        string resolvedPath = Path.GetFullPath(Path.Combine(scriptsRoot, normalizedReference));
+        if (File.Exists(resolvedPath))
+        {
+            return resolvedPath;
+        }
+
+        string[] referenceParts = normalizedReference.Split(
+            Path.DirectorySeparatorChar,
+            StringSplitOptions.RemoveEmptyEntries);
+        string scriptsRootName = Path.GetFileName(Path.TrimEndingDirectorySeparator(scriptsRoot));
+        if (referenceParts.Length > 1 &&
+            string.Equals(scriptsRootName, referenceParts[0], StringComparison.OrdinalIgnoreCase))
+        {
+            string resolvedFromCategoryRoot = Path.GetFullPath(
+                Path.Combine(scriptsRoot, Path.Combine(referenceParts.Skip(1).ToArray())));
+            if (File.Exists(resolvedFromCategoryRoot))
+            {
+                return resolvedFromCategoryRoot;
+            }
+        }
+
+        throw new FileNotFoundException(
+            $"The approved WorldTrade script was not found under the configured TWX scripts directory. Checked '{resolvedPath}'.",
+            resolvedPath);
+    }
+
     internal static bool IsRequestedScriptActive(
         IReadOnlyList<Core.RunningScriptInfo> runningScripts,
         string scriptReference)
@@ -347,6 +552,9 @@ public partial class MainWindow
     private Task<MtcRpcActionResult> StopMtcRpcScriptAsync(int? id, string? name)
         => InvokeMtcRpcUiAsync(() =>
         {
+            if (IsLearnModeActive())
+                return Task.FromResult(MtcRpcActionResult.Fail(
+                    "Game-agent script controls are disabled while Learn mode is observing human gameplay."));
             Core.ModInterpreter? interpreter = CurrentInterpreter;
             bool remoteProxyScripts = interpreter == null && CanUseRemoteProxyScripts();
             if (interpreter == null && !remoteProxyScripts)

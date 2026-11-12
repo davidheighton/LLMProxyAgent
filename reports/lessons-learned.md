@@ -1,6 +1,75 @@
 # Lessons Learned
 
-Updated through iteration 28. Read before diagnosing or repairing later runs.
+Updated through iteration 40. Read before diagnosing or repairing later runs.
+
+## Uncounted follow-up after iteration 40
+
+- The WorldTrade compile error came from resolving `trading-cashing/2-worldtrade.ts` relative to a configured directory that already ended in `trading-cashing`, duplicating that directory in the path. Path resolution now supports both the scripts root and the category directory.
+- Regression checks for both directory configurations passed, the Release build completed with 0 warnings and 0 errors, and the restarted runtime loaded `2-WORLDTRADE.TS` and automatically selected `GO!` without the path error.
+- The log then showed the script paused at Command. No trade or positive credit delta was verified, so script loading is not evidence that WorldTrade earned money.
+- WorldTrade's saved `ScanHolo=1` mode can issue `sh`, and the saved `ExtraSend=f1*ct` macro can emit extra keys. The script now forces density-only scanning and clears the macro before building its menu, without overwriting persisted user preferences.
+- The MTC safety regression harness and Release build pass after the change, but the edited TWX script has not yet been restarted and exercised; confirm its actual command sequence and a verified trade before calling the issue live-validated.
+- This was an uncounted follow-up, not a 15-minute run. Do not create an iteration report or update the scorecard based on this evidence.
+
+## Iteration 40 findings
+
+- The delayed trade-context repair passed live: an untracked StarDock sale retained the selected Fuel Ore sale and 5,555-credit balance, accepted the 966-credit offer, and a fresh snapshot verified 6,521 credits and 20 empty holds.
+- Sender return and prompt recovery must not be treated as success by themselves; the fresh cargo/credit snapshot is the proof. DEFECT-0029 is now validated for trade execution.
+- The run began its measured window at StarDock with full Fuel Ore cargo and sold it near the cutoff. It made progress and earned credits, but did not purchase a Density Scanner or start WorldTrade.
+- One `selected=0` was logged for an Equipment quantity prompt after arrival, not for a price quote. Preserve that distinction, but inspect the StarDock purchase objective before treating the skip as intentional.
+- MTC remained game-connected for the 900-second window. An HTTP fetch of dashboard markup included 0 decisions and generic reconnect text, but no interactive browser confirmed an active visible error. The debug log had 54 Reflex entries and no Pilot/Strategic entries. Preserve the uncertainty: absent logs do not prove absent lane invocation.
+- The remaining-time-capped sampler completed in 900.019 seconds. Its metrics were sampled for 896.541 seconds; keep reporting the actual sample interval separately from the observation window.
+- A profitable transaction alone does not satisfy the strategy objective. Track the next deterministic milestone separately: scanner purchase at StarDock, then WorldTrade start and positive earnings.
+
+## Iteration 39 findings
+
+- The pre-send active trade context repaired only the timing window before `SendAsync` returned. A later untracked prompt still lost the product and credit context because the worker cleared the active attempt before a fresh ship snapshot verified the transaction.
+- Retain the selected opportunity and starting snapshot through verification. Clear it only after a verified cargo/credit delta or when its bounded freshness window expires; continue enforcing same-sector, freshness, and affordability checks.
+- Iteration 39 verified a 20-unit Fuel Ore purchase and sale, but a later 209-credit quote was declined after context was lost and a `0` was then sent at an Organics quantity prompt. A selected quantity, an affordable-looking quote, and movement do not by themselves prove successful trade or scanner progress.
+- The delayed-untracked-prompt regression passed along with all 73 worker tests; the full TradeWars suite passed 277/277. The MTC safety/dashboard harness passed 152 checks and the Release build had 0 warnings/errors. The repair still needs live validation.
+- The sampler captured 900.006 seconds, but shutdown metadata recorded 901.788 seconds. Recompute the remaining window after metrics/container collection instead of sleeping based on a pre-sample timestamp.
+- The process survived, but exact connected time was not retained. Do not infer the scorecard's connected-duration metric from process survival.
+- Reflex-only logs and absent Pilot/Strategic entries remain ambiguous without persisted role prompt/reply history.
+- The run ended with empty holds and 5,752 credits in sector 172; no Density Scanner purchase or WorldTrade start was verified.
+
+## Iteration 38 findings
+
+- Heartbeat filtering was live-validated: nine verified port transactions increased credits from 309 to 4,072, and the ship reached StarDock with 20 Fuel Ore. This confirms prompt correlation was a real cause of the earlier unanswered affordable quotes.
+- One interrupted Organics purchase still submitted `0` because `PendingPortTrade` was assigned only after the sender completed. Save the active selected opportunity and starting credit snapshot before awaiting I/O, then carry that original intent into untracked recovery. Keep the existing freshness, sector-match, and affordability guards.
+- The new recovery contract passes the requested product and sale/buy flag in addition to follow-up product and verified credits. Cover both worker-to-recovery propagation and sender quantity/quote handling; the fix still needs live validation.
+- The complete TradeWars test run had one temporary SQLite-file-lock cleanup failure (275/276); the affected test passed alone. Distinguish shared test-fixture contention from product regressions, while still recording the full-suite failure.
+- StarDock and WorldTrade remain unverified. A full cargo hold can be the result of a successful run but also prevents buying more until a sale; track scanner funding and the next sale as separate verified steps.
+
+## Iterations 35–37 run and repair findings
+
+- A full-hold quantity is not a successful trade: require the actual quote response and a fresh ship snapshot showing the expected cargo and credit changes before planning the next action.
+- Widening quantity-to-quote correlation to 45 seconds addressed only one failure mode. Iteration 37 showed that confirmed presence heartbeats can masquerade as additional actionable prompts and hide the actual quote context.
+- Keep heartbeat observations available for connection/current-state checks, but exclude them from port-trade prompt sequencing and product/quote correlation. Regression tests should include a heartbeat interleaved with both a normal quote and an untracked recovery.
+- Iteration 37 selected 20/20 empty holds and received three offers within the verified credit balance; it earned nothing because the quotes were not answered. Do not interpret a selected quantity or affordable quote as a completed transaction.
+- The 15-minute sampler's fixed 30-second sleep overshot the target by 0.934 seconds. Cap each sleep to the remaining window on subsequent runs.
+- Reflex-only entries and absent Pilot/Strategic logs do not prove those lanes were never invoked; durable game events do not preserve role prompts or model responses.
+
+## Iteration 34 run and repair findings
+
+- The debug trace proves the sender selected 20/20 Fuel Ore with 500 credits, then recovery handled the resulting 107- and 191-credit quotes with no selected product and answered `0`. Preserve selection context across recovery; a quote is not safe to accept merely because it looks affordable.
+- Correlate a recovered offer only to its fresh preceding quantity prompt. If the context cannot be proven, send no response rather than a success-shaped decline or acceptance.
+- Returning to Command is not trade verification. Record the pending opportunity and require a fresh ship snapshot that confirms cargo and credit deltas before route planning resumes.
+- Iteration 34 moved 168 observed sector transitions among 172, 206, and 805 while credits and cargo stayed unchanged. Movement is not earnings, and repeated route cycling should remain a separate unresolved defect.
+- The new correlated-quote, unmatched-quote, and fresh-snapshot checks passed; the Release build has zero warnings/errors. The repairs still need a live transaction in iteration 35 before DEFECT-0029 can be closed.
+- The persisted log recorded 328 Reflex entries but no Pilot or Strategic entries. Since interaction history is still in-memory, preserve the distinction between absent lane invocation and absent durable evidence.
+
+## Iteration 33 evidence gap
+
+- The handoff retained only the final 500-credit, 20-empty-hold state and a 161-credit Fuel Ore quote answered with `0`. Do not invent a duration, movement count, or LLM lane score when the raw logs and metric archive are missing.
+
+## Iteration 32 run and repair findings
+
+- The 900-second window qualified as productive because sector changes were verified, but movement is not earnings: 159 sector changes and 3 port-trade attempts produced no verified transaction, cargo, scanner, or WorldTrade progress.
+- A fresh credit snapshot captured for untracked port-prompt recovery was not forwarded to the sender. With `availableCredits` null, every purchase quote was declined, including an observed affordable opportunity. Pass only a valid synchronized balance through recovery; do not weaken the fail-closed behavior when the balance or selected product is unknown.
+- The sender selected the full prompted quantity, but affordability was decided only after the quote. Equality was incorrectly rejected; quotes equal to the verified balance are now accepted. The exact-balance case is covered by the MTC safety harness.
+- Iteration 32's debug log showed 294 Reflex processing entries and no Pilot or Strategic entries. Game-event telemetry lacks durable prompt/reply content; record lane invocation and final structured responses locally before shutdown so a missing prompt can be distinguished from missing history.
+- The StarDock hold is conditional on there being no port-trade opportunity. A remote plan can suppress that hold, but the live opportunity payload was not retained; instrument the current sector, TradeSector, RouteSector, product, freshness, and hold decision before changing route logic.
+- The recovery-credit change passed 71 `AutonomousTestWorkerTests` and 149 MTC RPC safety/dashboard checks. It is not live-validated; deploy it, run one controlled trade, and confirm fresh cargo and credit deltas before treating the no-trade defect as fixed.
 
 ## Iteration 27 follow-up findings
 
@@ -227,5 +296,38 @@ Updated through iteration 28. Read before diagnosing or repairing later runs.
 
 - The no-pair result had two code causes: the macro required at least two profile differences, rejecting a valid single-good buy/sell pair, and the general runtime provider searched only direct warps between seller and buyer ports.
 - The macro now accepts any known complementary product, and the provider searches fresh directed paths up to three hops. The pair remains a planning candidate, not a confirmed profitable trade; live stock, purchase affordability, and route safety must still be verified.
-- The 16 focused MacroExecutionTests and the MTC RPC safety harness passed, including a three-hop non-FedSpace funding pair. No in-game command was issued, so this follow-up is not a productive campaign run and must not increment the scorecard.
-- MTC automatically resumes Meridian after restart. Do not replace the active process until a safe stop/restart path is verified; keep the scannerless and sector-99 guards in force.
+- The 16 focused MacroExecutionTests, all 138 MTC RPC safety/dashboard checks, and the Release win-x64 build passed, including a three-hop non-FedSpace planning case with a scanner installed and rejection of an unsafe scannerless route. No in-game command was issued, so this follow-up is not a productive campaign run and must not increment the scorecard.
+- MTC can automatically resume Meridian after restart. The process is currently not running; do not start it until credits are restored and the fresh game state is checked. Keep the scannerless and sector-99 guards in force.
+- A buy prompt's advertised maximum is available capacity, not proof of affordability or profitability. The prior one-hold purchase cap prevented filling empty holds, so planned buys now use the full prompted capacity. The sender accepts a quote only for the selected trade, while native haggling is suppressed, when the prompt sequence is unambiguous, and when the quoted total is below the latest verified credit balance; otherwise it declines. Scannerless pair routes still require every hop to be in sectors 1–10, StarDock, or freshly recorded as explored (sector 99 remains blocked). Verify actual credits and cargo after each transaction; a compatible pair is not proof of profit.
+- Before cycle 32, the no-progress hold was found to apply only at 1 credit or less. That is not safe after a partial credit restore: 500 credits could still let an unverified movement decision through. The hold now applies whenever the ship is at StarDock without a scanner or cargo, the Dock Shopper is not ready, and no provider-verified funding trade exists. The focused 500-credit regression test passes; keep the agent stopped until this build is started and a fresh snapshot/trade plan is checked.
+- Uncounted source/test follow-up: the MTC safety harness passed 148 checks and the focused AutonomousTestWorker suite passed 71 tests. A live MTC process was already running and was left untouched; its loaded assemblies do not include these source changes. Do not count this as a gameplay iteration or assume a live trade was fixed until a controlled deployment and fresh credit/cargo verification.
+
+## Uncounted credit-loss evidence review
+
+- Archived event telemetry confirms a 14,453-credit spend during the earlier pre-reset session: the ship had 36,919 credits and 18 holds; at StarDock sector 1 it accepted a prompt to install 22 Cargo Holds; the next complete status showed 22,466 credits and 40 holds. No Density or Holo Scanner was recorded. This was an incorrect purchase for the scanner-first objective.
+- The decision-level cause is still unknown. The archived game events show the purchase prompt and quantity, but durable Pilot/Strategic prompt-and-response history does not identify which decision selected Cargo Holds or why. Do not assign that choice to a particular model or worker without evidence.
+- The later state at 1 credit is a separate episode. The retained archive ends this earlier sequence at 21,856 credits and does not contain the transaction that reduced the ship to 1 credit; the 14,453-credit Cargo Holds purchase is not proof of that later loss.
+- WorldTrade was also not a successful recovery path in the archived sequence: repeated launch attempts failed because `trading-cashing/2-worldtrade.ts` could not resolve `include\header`. No WorldTrade earnings were verified.
+- During scanner-first operation, authorize a Density Scanner purchase by default; do not purchase cargo holds or unrelated hardware without explicit authorization and a fresh affordability check. After each transaction, refresh ship status and compare credits, holds, cargo, and scanner ownership. Count a trade as earnings only when a fresh status verifies a positive credit delta.
+- Keep the agent stopped until the user confirms credits are restored and a fresh ship snapshot is obtained. This investigation did not start the agent, change credits, or count a gameplay iteration.
+
+## Iteration 35 learning
+
+- Filling empty capacity worked once recovery accepted the affordable quote: the full 20-unit Fuel Ore buy changed the verified balance from 500 to 309 and filled all holds. Keep accepting the selected full capacity when the total quote is affordable.
+- A successful purchase is not earnings. The next port offered 876 credits for the full cargo, but the quote remained unanswered at shutdown; require the sale and its fresh credit/cargo delta before calling the trade profitable.
+- Two earlier untracked recovery attempts had no recorded quote decision. The source now classifies port offer prompts and lets a fresh correlated offer override a stale Command indicator; retain the age and correlation checks and live-validate this fix.
+- The run recorded 12 Reflex entries and no Pilot or Strategic entries. Because prompt/response history is not durably archived, verify lane scheduling and capture before making claims about model invocation.
+
+## Iteration 36 learning
+
+- Recovery compared the offer's preceding quantity prompt to the original event within only 5 seconds. Iterations 35–36 recorded delays beyond that limit, including 8.145 seconds in iteration 36 and 30.730 seconds in iteration 35. Keep the existing 45-second prompt-freshness ceiling and correlate only the fresh current offer with its immediately preceding quantity prompt.
+- The 45-second correlation change and 35-second regression case pass the 151-check MTC safety/dashboard harness; the Release build has 0 warnings and 0 errors. The change was made after iteration 36, so it remains unvalidated in a live game.
+- Iteration 36 verified movement from sector 290 to 805 and two full-capacity purchase attempts, but neither quote completed. Selection and an offer are not proof of a trade; require a fresh snapshot showing cargo and credit deltas.
+- Four recent campaign runs have Reflex logs but no Pilot or Strategic entries. Preserve the distinction between absent lane invocation and absent durable history; export role histories before changing scheduling.
+
+## Game D/E Learn-mode follow-up
+
+- The main D session is the 13-observation Escape Pod recovery (`learn-bcad...`), not the separate four-observation post-midnight follow-up (`learn-3d...`). D's Kvertoo Merchant Cruiser was lost at sector 829 after facing 1,926 attackers with one fighter; the pod reached StarDock, bought a T'Khasi Orion, and refitted it. Preserve this as an observed recovery sequence, not a reward or named-agent attribution.
+- E's logs show ship refits and repeated Terra-to-Erebus E colonist deliveries. The planet's Organics workforce grew to 6.4 million with daily output at 3,200, while the log does not show a Citadel or the purchased Genesis Torpedoes being used to create it.
+- The Learn database contains 13 D recovery, 22 E, and 4 separate D follow-up `SituationObservation` records, not trajectory steps with verified action rewards. Cash peaked at 1,189,183 in the separate D follow-up and at 3,049,533 in E; neither cash peaks nor ending cash alone represent net worth across cargo and ship changes.
+- Keep state observations separate from action/reward labels. Full evidence, caveats, and source logs are documented in [event-log-learning.md](./event-log-learning.md). This is not a harness iteration and does not change the scorecard.

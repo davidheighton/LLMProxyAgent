@@ -513,6 +513,8 @@ internal sealed class GameAgentWindow : Window
             .AppendLine(background.DashboardHostAvailable ? "online" : "not started");
         processLines.Append("Agent runtime: ")
             .AppendLine(background.Runtime is { IsRunning: true } ? "running" : "idle");
+        if (background.LearningModeRunning)
+            processLines.AppendLine("Agent mode: LEARN (observe-only; no game commands)");
 
         if (background.AutonomousWorkerRunning)
         {
@@ -1622,8 +1624,8 @@ internal sealed class GameAgentWindow : Window
         {
             GameAgentActionRequestKind.MoveToSector => PlanMoveToSector(request, context, prompt, rawPrompt),
             GameAgentActionRequestKind.FindEnemyShip => PlanFindEnemyShip(request, context, prompt, rawPrompt, step),
-            GameAgentActionRequestKind.HoloScan => PlanScan(prompt, "H"),
-            GameAgentActionRequestKind.DensityScan => PlanScan(prompt, "D"),
+            GameAgentActionRequestKind.HoloScan => PlanScan(context, prompt, "H", step),
+            GameAgentActionRequestKind.DensityScan => PlanScan(context, prompt, "D", step),
             GameAgentActionRequestKind.QuickStats => PromptCommand(prompt, "/", "Refreshing quick stats."),
             GameAgentActionRequestKind.Redisplay => PromptCommand(prompt, "D", "Redisplaying current sector."),
             GameAgentActionRequestKind.Port => PromptCommand(prompt, "P", "Entering the port menu."),
@@ -1739,16 +1741,37 @@ internal sealed class GameAgentWindow : Window
 
         if (prompt == "Command")
         {
+            string? scannerType = GameAgentScanPolicy.GetFreshScannerType(
+                context,
+                DateTimeOffset.UtcNow);
+            bool hasHoloScanner = GameScannerType.IsHoloScanner(scannerType);
+            bool hasDensityScanner = GameScannerType.IsDensityScanner(scannerType);
             GameAgentSectorSnapshot? candidate = ChooseExplorationSector(context);
-            if (step <= 2 || step % 4 == 1 || candidate == null)
+
+            if (!hasHoloScanner)
             {
-                return new GameAgentRequestStep
+                if (!hasDensityScanner)
                 {
-                    Command = "S",
-                    Message = "Opening long-range scan to look for visible ships or trader contacts.",
-                    DelayMs = 500,
-                };
+                    return GameAgentRequestStep.Block(
+                        "Enemy search is blocked until fresh ship status verifies an installed scanner.");
+                }
+
+                if (step == 1)
+                    return PlanScan(context, prompt, "D", step);
+
+                if (candidate == null)
+                {
+                    return GameAgentRequestStep.Done(
+                        "No visible contact was found. A Holo Scanner is required to reveal object-level contacts in adjacent sectors.");
+                }
             }
+            else if (step <= 2 || step % 4 == 1)
+            {
+                return PlanScan(context, prompt, "H", step);
+            }
+
+            if (candidate == null)
+                return GameAgentRequestStep.Done("No visible contact was found in the scanned sectors.");
 
             return new GameAgentRequestStep
             {
@@ -1760,14 +1783,7 @@ internal sealed class GameAgentWindow : Window
         }
 
         if (prompt == "ScanChoice")
-        {
-            return new GameAgentRequestStep
-            {
-                Command = "H",
-                Message = "Running holo scan so adjacent sectors include object-level contacts.",
-                DelayMs = 1400,
-            };
-        }
+            return PlanScan(context, prompt, "H", step);
 
         if (prompt == "SpecialConfirmation")
         {
@@ -1803,23 +1819,65 @@ internal sealed class GameAgentWindow : Window
         return GameAgentRequestStep.Block($"I cannot continue the search from prompt '{Display(prompt)}' yet.");
     }
 
-    private static GameAgentRequestStep PlanScan(string prompt, string scanType)
+    private static GameAgentRequestStep PlanScan(
+        GameAgentContextSnapshot context,
+        string prompt,
+        string requestedScanType,
+        int step)
     {
+        string? scannerType = GameAgentScanPolicy.GetFreshScannerType(
+            context,
+            DateTimeOffset.UtcNow);
+        if (!GameAgentScanPolicy.TrySelectScanType(
+                requestedScanType,
+                scannerType,
+                out string selectedScanType,
+                out bool requiresScanChoice))
+        {
+            return GameAgentRequestStep.Block(
+                "Scanning is blocked until fresh ship status verifies an installed Density or Holo Scanner.");
+        }
+
+        string requestedScanner = requestedScanType == "H" ? "Holo" : "Density";
+        string selectedScanner = selectedScanType == "H" ? "Holo" : "Density";
+        bool usingFallback = !string.Equals(
+            requestedScanType,
+            selectedScanType,
+            StringComparison.OrdinalIgnoreCase);
+
         if (prompt == "Command")
         {
+            if (step > 1)
+                return GameAgentRequestStep.Done("Scan completed and the ship returned to the Command prompt.");
+
             return new GameAgentRequestStep
             {
                 Command = "S",
-                Message = "Opening long-range scan.",
-                DelayMs = 500,
+                Message = !requiresScanChoice
+                    ? usingFallback
+                        ? "No Holo Scanner is verified; S will run the available Density scan directly."
+                        : "Running the Density scan directly; S selects it when no Holo Scanner is installed."
+                    : usingFallback
+                        ? $"{requestedScanner} Scanner is not verified; opening the available {selectedScanner} scan."
+                        : $"Opening {selectedScanner.ToLowerInvariant()} scan.",
+                DelayMs = requiresScanChoice ? 500 : 1400,
             };
         }
+
         if (prompt == "ScanChoice")
         {
+            if (!requiresScanChoice)
+            {
+                return GameAgentRequestStep.Block(
+                    "The game requested a scanner choice even though fresh ship status shows no Holo Scanner; no input was sent.");
+            }
+
             return new GameAgentRequestStep
             {
-                Command = scanType,
-                Message = scanType == "H" ? "Running holo scan." : "Running density scan.",
+                Command = selectedScanType,
+                Message = usingFallback
+                    ? $"{requestedScanner} Scanner is not verified; running the available {selectedScanner.ToLowerInvariant()} scan."
+                    : $"Running {selectedScanner.ToLowerInvariant()} scan.",
                 DelayMs = 1400,
             };
         }

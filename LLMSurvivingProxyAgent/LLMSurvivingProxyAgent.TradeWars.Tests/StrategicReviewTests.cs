@@ -113,7 +113,7 @@ public sealed class StrategicReviewTests
                 ScriptCatalogTotalEntries = 1,
                 ScriptCatalogEntries =
                 [
-                    new IntegratedGameScriptCatalogEntry("Pack1/1_Trade.ts", "Trading")
+                    new IntegratedGameScriptCatalogEntry("trading-cashing/2-worldtrade.ts", "Trading")
                 ]
             }
         };
@@ -170,7 +170,7 @@ public sealed class StrategicReviewTests
             "Unknown exploration status is not a scan or safety evidence",
             handler.RequestBody,
             StringComparison.Ordinal);
-        Assert.Contains("Pack1/1_Trade.ts", handler.RequestBody, StringComparison.Ordinal);
+        Assert.Contains("trading-cashing/2-worldtrade.ts", handler.RequestBody, StringComparison.Ordinal);
         Assert.Contains("unreviewed discovery metadata", handler.RequestBody, StringComparison.Ordinal);
 
         using var request = JsonDocument.Parse(handler.RequestBody);
@@ -668,7 +668,7 @@ public sealed class StrategicReviewTests
                 ScriptCatalogTotalEntries = 1,
                 ScriptCatalogEntries =
                 [
-                    new IntegratedGameScriptCatalogEntry("Pack1/1_Trade.ts", "Trading")
+                    new IntegratedGameScriptCatalogEntry("trading-cashing/2-worldtrade.ts", "Trading")
                 ]
             };
             var objective = await objectiveProvider.GetOrCreateActiveObjectiveAsync(
@@ -697,7 +697,7 @@ public sealed class StrategicReviewTests
                 "qwen3:30b",
                 Assert.Single(await reviewStore.GetRecentAsync("meridian")).Model.Model);
             Assert.Equal(
-                "Pack1/1_Trade.ts",
+                "trading-cashing/2-worldtrade.ts",
                 Assert.Single(await reviewStore.GetRecentAsync("meridian"))
                     .Context.IntegratedGameClient?.ScriptCatalogEntries.Single().File);
 

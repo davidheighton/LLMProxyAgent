@@ -33,9 +33,14 @@ public sealed class AutonomousLoginWorkerTests
             "Re-enter your password:\r\n" +
             "Repeat password to verify.\r\n" +
             "Do you wish to make up a new Alias for your Trader Name?\r\n" +
+            "Use (N)ew Name or (B)BS Name [B] ?\r\n" +
+            "What Alias do you want to use?\r\n" +
             "That alias would look like this in the game\r\n" +
-            "What do you want to name your ship?\r\n" +
-            "What do you want to name your home planet?\r\n";
+            "StarMap is what you want? (Y/N)\r\n" +
+            "What do you want to name your ship? (30 letters)\r\n" +
+            "Starward Crown is what you want? (Y/N)\r\n" +
+            "What do you want to name your home planet? (Class O-J, Oceanic)\r\n" +
+            "New Terra is what you want? (Y/N)\r\n";
 
         await decoder.ObserveServerBytesAsync(Encoding.ASCII.GetBytes(promptText));
 
@@ -53,9 +58,14 @@ public sealed class AutonomousLoginWorkerTests
                 "PasswordConfirmation",
                 "PasswordConfirmation",
                 "TraderAlias",
+                "TraderAliasChoice",
+                "TraderAliasName",
                 "TraderAliasPreview",
+                "NameConfirmation",
                 "ShipName",
-                "HomePlanetName"
+                "NameConfirmation",
+                "HomePlanetName",
+                "NameConfirmation"
             ],
             events.Select(gameEvent => gameEvent.PromptSurface));
     }
@@ -105,10 +115,10 @@ public sealed class AutonomousLoginWorkerTests
             await SendPromptAndExpectAsync(
                 stream,
                 "Please enter your name (ENTER for none):\r\n",
-                "Meridian8\r");
+                "Meridian\r");
             var savedBeforeGameSelection = await ReadProfileAsync(profilePath);
-            Assert.Equal("Meridian8", savedBeforeGameSelection["AutonomousLogin"]!["LoginName"]!.GetValue<string>());
-            Assert.Equal("StarMap42", savedBeforeGameSelection["AutonomousLogin"]!["Games"]!["default"]!["TraderAlias"]!.GetValue<string>());
+            Assert.Equal("Meridian", savedBeforeGameSelection["AutonomousLogin"]!["LoginName"]!.GetValue<string>());
+            Assert.Equal("StarMap", savedBeforeGameSelection["AutonomousLogin"]!["Games"]!["default"]!["TraderAlias"]!.GetValue<string>());
             Assert.Equal(string.Empty, savedBeforeGameSelection["AutonomousLogin"]!["Games"]!["default"]!["Password"]!.GetValue<string>());
             Assert.Equal(["login-name", "trader-alias"], provider.Calls);
             await SendPromptAndExpectAsync(
@@ -123,12 +133,16 @@ public sealed class AutonomousLoginWorkerTests
                 stream,
                 "Would you like to start a new character in this game? (Type Y or N)\r\n",
                 "Y");
-            Assert.Equal(["login-name", "trader-alias", "game-password"], provider.Calls);
+            Assert.Equal(
+                ["login-name", "trader-alias", "game-password", "ship-name", "home-planet-name"],
+                provider.Calls);
 
             var savedAfterNewCharacterOffer = await ReadProfileAsync(profilePath);
-            Assert.Equal("Meridian8", savedAfterNewCharacterOffer["AutonomousLogin"]!["LoginName"]!.GetValue<string>());
-            Assert.Equal("StarMap42", savedAfterNewCharacterOffer["AutonomousLogin"]!["Games"]!["default"]!["TraderAlias"]!.GetValue<string>());
+            Assert.Equal("Meridian", savedAfterNewCharacterOffer["AutonomousLogin"]!["LoginName"]!.GetValue<string>());
+            Assert.Equal("StarMap", savedAfterNewCharacterOffer["AutonomousLogin"]!["Games"]!["default"]!["TraderAlias"]!.GetValue<string>());
             Assert.Equal("NovaPass42", savedAfterNewCharacterOffer["AutonomousLogin"]!["Games"]!["default"]!["Password"]!.GetValue<string>());
+            Assert.Equal("Starward Crown", savedAfterNewCharacterOffer["AutonomousLogin"]!["Games"]!["default"]!["ShipName"]!.GetValue<string>());
+            Assert.Equal("New Terra", savedAfterNewCharacterOffer["AutonomousLogin"]!["Games"]!["default"]!["HomePlanetName"]!.GetValue<string>());
             Assert.Equal("OtherGame42", savedAfterNewCharacterOffer["AutonomousLogin"]!["Games"]!["enhanced"]!["Password"]!.GetValue<string>());
 
             await stream.WriteAsync(Encoding.ASCII.GetBytes("Server registered to: test server\r\n"));
@@ -137,21 +151,44 @@ public sealed class AutonomousLoginWorkerTests
             await stream.WriteAsync(Encoding.ASCII.GetBytes("Password?\r\n"));
             await Task.Delay(100);
             Assert.False(stream.DataAvailable);
-            await SendPromptAndExpectAsync(
-                stream,
-                "Do you wish to make up a new Alias for your Trader Name?\r\n",
-                "NStarMap42\r");
-            await SendPromptAndExpectAsync(
-                stream,
-                "That alias would look like this in the game\r\n",
-                "Y.\rY");
-            await stream.WriteAsync(Encoding.ASCII.GetBytes("What do you want to name your ship?\r\n"));
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(
+                "Do you wish to make up a new Alias for your Trader Name?\r\n"));
             await Task.Delay(100);
             Assert.False(stream.DataAvailable);
             await SendPromptAndExpectAsync(
                 stream,
-                "What do you want to name your home planet?\r\n",
-                ".\rY");
+                "Use (N)ew Name or (B)BS Name [B] ?\r\n",
+                "N");
+            await SendPromptAndExpectAsync(
+                stream,
+                "What Alias do you want to use?\r\n",
+                "StarMap\r");
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(
+                "That alias would look like this in the game\r\n"));
+            await Task.Delay(100);
+            Assert.False(stream.DataAvailable);
+            await SendPromptAndExpectAsync(
+                stream,
+                "StarMap is what you want? (Y/N)\r\n",
+                "Y");
+            await SendPromptAndExpectAsync(
+                stream,
+                "What do you want to name your ship? (30 letters)\r\n",
+                "Starward Crown\r");
+            await SendPromptAndExpectAsync(
+                stream,
+                "Starward Crown is what you want? (Y/N)\r\n",
+                "Y");
+            await SendPromptAndExpectAsync(
+                stream,
+                "What do you want to name your home planet? (Class O-J, Oceanic)\r\n",
+                "New Terra\r");
+            await SendPromptAndExpectAsync(
+                stream,
+                "New Terra is what you want? (Y/N)\r\n",
+                "Y");
+            await Task.Delay(100);
+            Assert.False(stream.DataAvailable);
             await stream.WriteAsync(Encoding.ASCII.GetBytes(
                 "Command [TL=00:00:00]:[1] (?=Help)? : "));
 
@@ -165,13 +202,15 @@ public sealed class AutonomousLoginWorkerTests
             Directory.Delete(Path.GetDirectoryName(profilePath)!, recursive: true);
         }
 
-        Assert.Equal(["login-name", "trader-alias", "game-password"], provider.Calls);
-        Assert.Equal("Meridian8", provider.Contexts[2].ServerLoginName);
-        Assert.Equal("StarMap42", provider.Contexts[2].TraderAlias);
+        Assert.Equal(
+            ["login-name", "trader-alias", "game-password", "ship-name", "home-planet-name"],
+            provider.Calls);
+        Assert.Equal("Meridian", provider.Contexts[2].ServerLoginName);
+        Assert.Equal("StarMap", provider.Contexts[2].TraderAlias);
         Assert.DoesNotContain(
             logger.Messages,
-            message => message.Contains("Meridian8", StringComparison.Ordinal) ||
-                       message.Contains("StarMap42", StringComparison.Ordinal) ||
+            message => message.Contains("Meridian", StringComparison.Ordinal) ||
+                       message.Contains("StarMap", StringComparison.Ordinal) ||
                        message.Contains("NovaPass42", StringComparison.Ordinal));
     }
 
@@ -426,7 +465,7 @@ public sealed class AutonomousLoginWorkerTests
         {
             Calls.Add("login-name");
             Contexts.Add(context);
-            return Task.FromResult("Meridian8");
+            return Task.FromResult("Meridian");
         }
 
         public Task<string> ChooseTraderAliasAsync(
@@ -436,7 +475,27 @@ public sealed class AutonomousLoginWorkerTests
         {
             Calls.Add("trader-alias");
             Contexts.Add(context);
-            return Task.FromResult("StarMap42");
+            return Task.FromResult("StarMap");
+        }
+
+        public Task<string> ChooseShipNameAsync(
+            ModelConfiguration configuration,
+            AutonomousLoginIdentityContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add("ship-name");
+            Contexts.Add(context);
+            return Task.FromResult("Starward Crown");
+        }
+
+        public Task<string> ChooseHomePlanetNameAsync(
+            ModelConfiguration configuration,
+            AutonomousLoginIdentityContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add("home-planet-name");
+            Contexts.Add(context);
+            return Task.FromResult("New Terra");
         }
 
         public Task<string> GenerateGamePasswordAsync(

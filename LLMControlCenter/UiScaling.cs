@@ -48,6 +48,8 @@ public partial class MainWindow
 
         _menuBar.FontSize = DefaultShellFontSize;
         _statusBar.Height = UiSize(34);
+        _agentDashboardFooter.Height = UiSize(62);
+        _agentDashboardFooter.Padding = UiThickness(8, 4, 8, 4);
         _statusBarContent.Spacing = UiSize(8);
         _statusBarContent.Margin = UiThickness(8, 0, 8, 0);
         _statusText.FontSize = 13;
@@ -59,6 +61,7 @@ public partial class MainWindow
         ApplyUiFontScale(_menuBarHost, scale);
         ApplyUiFontScale(_shellHost, scale);
         ApplyUiFontScale(_statusBar, scale);
+        ApplyUiFontScale(_agentDashboardFooter, scale);
     }
 
     private void ApplyScaledFixedUiDimensions()
@@ -97,6 +100,12 @@ public partial class MainWindow
         _statusHaggleButton.MinWidth = UiSize(72);
         _statusHaggleButton.Height = UiSize(20);
         _statusHaggleButton.Padding = UiThickness(6, 1, 6, 1);
+        _statusAgentPauseButton.Width = UiSize(58);
+        _statusAgentPauseButton.Height = UiSize(20);
+        _statusAgentPauseButton.Padding = UiThickness(4, 1, 4, 1);
+        _statusAgentLearnButton.Width = UiSize(68);
+        _statusAgentLearnButton.Height = UiSize(20);
+        _statusAgentLearnButton.Padding = UiThickness(4, 1, 4, 1);
         _statusLivePausedButton.MinWidth = UiSize(56);
         _statusLivePausedButton.Height = UiSize(20);
         _statusLivePausedButton.Padding = UiThickness(4, 1, 4, 1);
@@ -112,6 +121,8 @@ public partial class MainWindow
                      _statusCommFrame,
                      _statusBotFrame,
                      _statusHaggleFrame,
+                     _statusAgentPauseFrame,
+                     _statusAgentLearnFrame,
                  })
         {
             frame.Padding = UiThickness(3, 2, 3, 2);

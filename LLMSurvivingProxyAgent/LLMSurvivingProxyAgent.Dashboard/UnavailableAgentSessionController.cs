@@ -18,7 +18,7 @@ public sealed class UnavailableAgentSessionController : IAgentSessionController
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new AgentSessionControlStatus(false, false, false));
+        return Task.FromResult(new AgentSessionControlStatus(false, false, false, false));
     }
 
     public Task ConfigureConnectionAsync(string agentId, CancellationToken cancellationToken = default) =>
@@ -45,6 +45,12 @@ public sealed class UnavailableAgentSessionController : IAgentSessionController
         NotAvailable(agentId, cancellationToken);
 
     public Task StopAgentAsync(string agentId, CancellationToken cancellationToken = default) =>
+        NotAvailable(agentId, cancellationToken);
+
+    public Task StartLearningAsync(string agentId, CancellationToken cancellationToken = default) =>
+        NotAvailable(agentId, cancellationToken);
+
+    public Task StopLearningAsync(string agentId, CancellationToken cancellationToken = default) =>
         NotAvailable(agentId, cancellationToken);
 
     private static Task NotAvailable(string agentId, CancellationToken cancellationToken)

@@ -1,0 +1,99 @@
+{
+  "batchId": "b20261102-2239-b0a264",
+  "generatedAt": "2026-11-03T05:47:39.9275931+00:00",
+  "baseProfile": "exiledTWGS  - Game E.json",
+  "goal": "FullyUpgradedShip",
+  "parallel": 1,
+  "wallClockMinutes": 35,
+  "episodes": 1,
+  "stateCounts": {
+    "Stopped": 1
+  },
+  "completionRate": 0,
+  "shipLossRate": 0,
+  "medianNetWorthPerTurn": 50.28,
+  "meanReward": 5.206,
+  "decisionSources": {
+    "Policy": 14,
+    "Pilot": 8,
+    "PilotFallbackToPolicy": 0,
+    "PilotOverriddenByPolicy": 3
+  },
+  "verifiedStepRate": 1,
+  "funnel": [
+    {
+      "milestone": "ReachedStarDock",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "DensityScanner",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "FirstProfitableTrade",
+      "episodesReached": 1,
+      "reachedRate": 1,
+      "medianTurnsUsed": 14,
+      "medianMinutes": 1.52
+    },
+    {
+      "milestone": "HoloScanner",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxHolds",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxFighters",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxShields",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "FullyUpgraded",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    }
+  ],
+  "rows": [
+    {
+      "episodeId": "b20261102-2239-b0a264-01",
+      "agentId": "learner-b0a264-01",
+      "profileFileName": "exiledTWGS  - Game E - learner-b0a264-01.json",
+      "state": "Stopped",
+      "segments": 1,
+      "steps": 25,
+      "milestones": 1,
+      "totalReward": 5.206,
+      "netWorthDelta": 2916,
+      "turnsUsed": 58,
+      "netWorthPerTurn": 50.28,
+      "pilotShare": 0.32,
+      "shipLost": false,
+      "endReason": "Worker stopped"
+    }
+  ]
+}

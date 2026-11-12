@@ -699,27 +699,40 @@
 		setVar $CurrentShip $SHIP_NUMBER
 		add $Runs2Dock 1
 
+		setVar $StartAtStarDock FALSE
+		if (($START_SECTOR = STARDOCK) AND ($Tow = 0) AND ($_Trickster = ""))
+			setVar $StartAtStarDock TRUE
+		end
+
 		if (($Tow > 0) AND ($_Trickster = ""))
 			setVar $Pass ""
 			gosub :GetPassWord
         	gosub :LockTow
         else
         	setVar $Tow 0
-        	send " W N * "
-		end
+        	# Startup already leaves the StarDock-sector path at Command; Q here opens game quit confirmation.
+        	if ($StartAtStarDock = FALSE)
+        		send " W N * "
+        	end
+        end
 
 		if ($RUN_ONCE)
 			# check adj's for Dock.. if present, then we don't need a jump sector.
 			setVar $i 1
 			setVar $WeAreAdjDock FALSE
-			while ($i <= SECTOR.WARPCOUNT[$START_SECTOR])
-				setVar $adj_start SECTOR.WARPS[$START_SECTOR][$i]
-				if ($adj_start = STARDOCK)
-					setVar $WeAreAdjDock TRUE
+			if ($StartAtStarDock)
+				setVar $WeAreAdjDock TRUE
+			else
+				while ($i <= SECTOR.WARPCOUNT[$START_SECTOR])
+					setVar $adj_start SECTOR.WARPS[$START_SECTOR][$i]
+					if ($adj_start = STARDOCK)
+						setVar $WeAreAdjDock TRUE
+					end
+					add $i 1
 				end
-				add $i 1
 			end
 
+			if ($StartAtStarDock = FALSE)
 			if (($ALIGNMENT < 1000) AND ($WeAreAdjDock = FALSE))
 				setVar $RED_adj 0
 				gosub :FindJumpSector
@@ -812,41 +825,48 @@
 	                end
 				end
 			end
+			end
 
-			send " C R " & STARDOCK & "*Q "
-			setTextLineTrigger itsalive :itsalive "Items     Status  Trading % of max OnBoard"
-			setTextLineTrigger nosoupforme :nosoupforme "I have no information about a port in that sector"
-			pause
-			:nosoupforme
-				killAllTriggers
-				Echo "**" & ANSI_14 & $TagLineB & ANSI_15 & " - StarDock appears to have been Blown Up!**"
-				halt
-			:itsalive
-				killAllTriggers
-				waitfor "(?="
-				setVar $msg ""
-				if (($ALIGNMENT >= 1000) AND ($WeAreAdjDock = FALSE))
-					setVar $TwarpTo STARDOCK
-					gosub :DoTwarp
-				elseif (($WeAreAdjDock = FALSE) AND ($RED_adj <> 0))
-					setVar $TwarpTo $RED_adj
-					gosub :DoTwarp
-				else
-					send " m " & STARDOCK & "*  *  P  S"
-				end
-				if ($msg = "")
-						setTextTrigger limp :have_limp "A port official runs up to you as you dock and informs you that"
-						setTextTrigger no_limp :dont_limp "<StarDock> Where to?"
-						pause
-					:have_limp
-						killAllTriggers
-						send "y"
-					:dont_limp
-						killAllTriggers
-				else
-					Echo "**" & ANSI_14 & $TagLineB & ANSI_15 & " - Unknown Problem Detected. Check TA!**"
+			if ($StartAtStarDock)
+				# Already in the StarDock sector; enter the port and StarDock menus without moving.
+				send " P S"
+				waitfor "<StarDock> Where to?"
+			else
+				send " C R " & STARDOCK & "*Q "
+				setTextLineTrigger itsalive :itsalive "Items     Status  Trading % of max OnBoard"
+				setTextLineTrigger nosoupforme :nosoupforme "I have no information about a port in that sector"
+				pause
+				:nosoupforme
+					killAllTriggers
+					Echo "**" & ANSI_14 & $TagLineB & ANSI_15 & " - StarDock appears to have been Blown Up!**"
 					halt
-				end
+				:itsalive
+					killAllTriggers
+					waitfor "(?="
+					setVar $msg ""
+					if (($ALIGNMENT >= 1000) AND ($WeAreAdjDock = FALSE))
+						setVar $TwarpTo STARDOCK
+						gosub :DoTwarp
+					elseif (($WeAreAdjDock = FALSE) AND ($RED_adj <> 0))
+						setVar $TwarpTo $RED_adj
+						gosub :DoTwarp
+					else
+						send " m " & STARDOCK & "*  *  P  S"
+					end
+					if ($msg = "")
+							setTextTrigger limp :have_limp "A port official runs up to you as you dock and informs you that"
+							setTextTrigger no_limp :dont_limp "<StarDock> Where to?"
+							pause
+						:have_limp
+							killAllTriggers
+							send "y"
+						:dont_limp
+							killAllTriggers
+					else
+						Echo "**" & ANSI_14 & $TagLineB & ANSI_15 & " - Unknown Problem Detected. Check TA!**"
+						halt
+					end
+			end
 
 	    gosub :quikstats
 
@@ -901,7 +921,12 @@
 
 		:GO_HOME_EMPTY_HANDED
 
-		if ($Tow > 0)
+		if ($StartAtStarDock)
+			# The number of menus to back out of depends on where the purchases ended (Hardware Emporium vs
+			# Shipyards). A fixed "Q Q Q Q" overshot the Command prompt into the quit confirmation, leaving the
+			# session idle until the server disconnected it, so back out one Q at a time until Command appears.
+			gosub :LeaveStarDockToCommand
+		elseif ($Tow > 0)
 			if ($location = "Citadel")
 				send "q q q  z  n  w  n  *  w  n" & $Tow & "*  n  n  *  m " & $START_SECTOR & " *  y  y  y  *  d  w  n * L Z" & #8 & $planet & "* p  s s * * c *"
 			else
@@ -918,7 +943,7 @@
 		gosub :quikstats
 
 		waitfor "(?="
-		if ($CURRENT_SECTOR = STARDOCK)
+		if (($CURRENT_SECTOR = STARDOCK) AND ($StartAtStarDock = FALSE))
 			Echo "**" & ANSI_14 & $TagLineB & ANSI_15 & " - Twarp Error, Should be Hiding on Dock!**"
 			halt
 		end
@@ -1232,7 +1257,7 @@
 	return
 # ============================== END QUICKSTATS SUB==============================
 :DoPurchases
-	if ($ShipData_Valid = 0)
+	if (($ShipData_Valid = 0) AND ($_Trickster <> ""))
 		gosub :ParseShipData
 	end
 	send "h "
@@ -1476,6 +1501,24 @@
 		end
 	end
 	return
+
+:LeaveStarDockToCommand
+	setVar $leaveAttempts 0
+	:LeaveStarDockAgain
+	if ($leaveAttempts >= 6)
+		return
+	end
+	add $leaveAttempts 1
+	setTextTrigger LeftToCommand :LeftToCommand "Command [TL="
+	setDelayTrigger LeaveRetry :LeaveRetry 1500
+	send "Q"
+	pause
+	:LeaveRetry
+		killTrigger LeftToCommand
+		goto :LeaveStarDockAgain
+	:LeftToCommand
+		killTrigger LeaveRetry
+		return
 
 :LockTow
 	:TryLockAgain

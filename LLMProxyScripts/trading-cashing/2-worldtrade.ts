@@ -56,6 +56,16 @@ else
   setVar $Move~Saved 1
   saveVar $Move~Saved
 end
+
+# WorldTrade must stay compatible with Density-only scanners. Do not issue holo-scan or saved extra-send commands.
+# The scanner-dependent settings are applied by :DetectScanner when the trade loop starts.
+setVar $Move~ScanHolo 0
+setVar $Move~ExtraSend ""
+# Pay toll fighters ("py") instead of attacking them.
+setVar $Move~Attack 3
+setVar $Move~DensityOnlyScanner 0
+setVar $PortCheck~DensityOnly 0
+
 setVar $Move~Menu "WorldTrade"
 gosub :Move~Menu
 setMenuHelp "Move" "This menu lets you configure how the script will navigate the game, searching for port pairs."
@@ -78,6 +88,8 @@ else
 end
 
 setVar $PPT~Menu "WorldTrade"
+# Unattended runs keep the ship's fighters: dropping a toll fighter at every traded port drains its defence.
+setVar $PPT~DropFigs 0
 gosub :PPT~Menu
 
 # set PPTCheck prefs
@@ -108,9 +120,37 @@ openMenu "WorldTrade"
 
 :Menu_Go
 setVar $WorldTrade~Quota 0
+gosub :DetectScanner
 setEventTrigger disconnect :disconnected "Connection lost"
 gosub :WorldTrade~WorldTrade
 halt
+
+:DetectScanner
+  # A Holo ship answers S with a Holo/Density choice; a Density-only ship scans at once, so the extra letter of
+  # "sd"/"sh" becomes a separate command (D redisplays the sector, H opens mine control and stalls the script).
+  setVar $hasHolo 0
+  send "i"
+  waitOn "<Info>"
+  setTextLineTrigger scannerLine :scannerLine "LongRange Scan :"
+  setTextTrigger infoDone :infoDone "Command [TL="
+  pause
+  :scannerLine
+  getWordPos CURRENTLINE $holoPos "Holo"
+  if ($holoPos > 0)
+    setVar $hasHolo 1
+  end
+  pause
+  :infoDone
+  killTrigger scannerLine
+  killTrigger infoDone
+  if ($hasHolo = 1)
+    setVar $Move~DensityOnlyScanner 0
+    setVar $PortCheck~DensityOnly 0
+  else
+    setVar $Move~DensityOnlyScanner 1
+    setVar $PortCheck~DensityOnly 1
+  end
+  return
 
 :disconnected
   # disconnected.  Wait for the prompt then restart

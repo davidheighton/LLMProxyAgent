@@ -15,4 +15,7 @@
     <ProjectReference Include="..\..\..\..\LLMSurvivingProxyAgent\LLMSurvivingProxyAgent.Dashboard\LLMSurvivingProxyAgent.Dashboard.csproj" />
     <ProjectReference Include="..\..\..\..\LLMControlCenter\LLMControlCenter.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="bin\**\*.cs" />
+  </ItemGroup>
 </Project>

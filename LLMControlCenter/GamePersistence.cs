@@ -1045,8 +1045,14 @@ public partial class MainWindow
     /// Non-proxy mode uses MTC's local database store. Embedded-proxy mode uses the
     /// shared TWX Proxy database store so MTC and the proxy read/write the same .xdb.
     /// </summary>
-    private void OpenSessionDatabase(string? gameName = null, int sectors = 0, bool useSharedProxyDatabase = false)
+    private bool OpenSessionDatabase(string? gameName = null, int sectors = 0, bool useSharedProxyDatabase = false)
     {
+        try { _sessionDb?.CloseDatabase(); } catch { }
+        _sessionDb = null;
+        _gameFileLock?.Dispose();
+        _gameFileLock = null;
+        Core.ScriptRef.SetActiveDatabase(null);
+
         try
         {
             int databaseSectors = sectors > 0
@@ -1088,8 +1094,6 @@ public partial class MainWindow
             string configPath = useSharedProxyDatabase
                 ? AppPaths.TwxproxyGameConfigFileFor(gameName)
                 : AppPaths.MtcStandaloneGameConfigFileFor(gameName);
-            _gameFileLock?.Dispose();
-            _gameFileLock = null;
             _gameFileLock = Core.GameFileLock.Acquire(
                 useSharedProxyDatabase ? "MTC embedded proxy" : "MTC standalone client",
                 configPath,
@@ -1159,11 +1163,18 @@ public partial class MainWindow
 
             Dispatcher.UIThread.Post(() =>
                 _parser.Feed($"\x1b[1;36m[Database: {dbPath}]\x1b[0m\r\n"));
+            return true;
         }
         catch (Exception ex)
         {
+            try { _sessionDb?.CloseDatabase(); } catch { }
+            _sessionDb = null;
+            _gameFileLock?.Dispose();
+            _gameFileLock = null;
+            Core.ScriptRef.SetActiveDatabase(null);
             Dispatcher.UIThread.Post(() =>
                 _parser.Feed($"\x1b[1;31m[DB open failed: {ex.Message}]\x1b[0m\r\n"));
+            return false;
         }
     }
 

@@ -237,11 +237,21 @@ public partial class MainWindow
             RefreshNativeAppMenu();
             RefreshNativeDockMenu();
             _ = EnsureSharedPathsConfiguredAsync();
-            _ = OnOpenDashboardAsync();
+            if (!string.IsNullOrWhiteSpace(
+                    Environment.GetEnvironmentVariable("LLMCONTROL_GAME_PROFILE")))
+            {
+                _ = OpenAssignedAgentDashboardAsync();
+            }
+            else
+            {
+                _ = OnOpenDashboardAsync();
+            }
         };
         Activated += (_, _) => FocusActiveTerminal();
+        Closing += (_, _) => _mtcSessionWindowHost?.RestoreAll();
         Closed    += (_, _) =>
         {
+            _mtcSessionWindowHost?.Dispose();
             _mainWindowClosing = true;
             _ = StopDashboardHostAsync();
             SaveCurrentNotesNow();
@@ -273,6 +283,7 @@ public partial class MainWindow
             if (_gameInstance != null) _ = _gameInstance.StopAsync();
             _gameFileLock?.Dispose();
             _gameFileLock = null;
+            _agentDashboardFooterTimer?.Stop();
             _sessionLog.Dispose();
             _terminalRecorder?.Dispose();
             _terminalRecorder = null;

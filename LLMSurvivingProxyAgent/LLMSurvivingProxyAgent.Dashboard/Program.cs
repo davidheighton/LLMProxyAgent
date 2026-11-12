@@ -49,6 +49,9 @@ public static class DashboardApplication
 
         builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
+        builder.Services.AddHttpClient<IAutonomousLoginIdentityProvider, OllamaAutonomousLoginIdentityProvider>(
+            client => client.Timeout = TimeSpan.FromMinutes(2));
+        builder.Services.AddSingleton(new AutonomousLoginCredentialStore(loginProfilePath));
 
         var databasePath = Path.GetFullPath(builder.Configuration["AgentDatabasePath"]
         ?? Path.Combine(
@@ -62,15 +65,21 @@ public static class DashboardApplication
         ?? Path.Combine(dataDirectory, "knowledge.seed.db"));
         var runtimeKnowledgePath = Path.GetFullPath(builder.Configuration["Knowledge:RuntimeDatabasePath"]
         ?? Path.Combine(dataDirectory, "knowledge.runtime.db"));
+        var trajectoryDatabasePath = Path.GetFullPath(builder.Configuration["Learning:TrajectoryDatabasePath"]
+        ?? Path.Combine(dataDirectory, "trajectories.db"));
         if (seedKnowledgePath.Equals(runtimeKnowledgePath, StringComparison.OrdinalIgnoreCase) ||
         seedKnowledgePath.Equals(databasePath, StringComparison.OrdinalIgnoreCase) ||
-        runtimeKnowledgePath.Equals(databasePath, StringComparison.OrdinalIgnoreCase))
+        runtimeKnowledgePath.Equals(databasePath, StringComparison.OrdinalIgnoreCase) ||
+        trajectoryDatabasePath.Equals(databasePath, StringComparison.OrdinalIgnoreCase) ||
+        trajectoryDatabasePath.Equals(seedKnowledgePath, StringComparison.OrdinalIgnoreCase) ||
+        trajectoryDatabasePath.Equals(runtimeKnowledgePath, StringComparison.OrdinalIgnoreCase))
         {
         throw new InvalidOperationException(
-            "Agent, seed knowledge, and runtime knowledge databases must use separate file paths.");
+            "Agent, seed knowledge, runtime knowledge, and trajectory databases must use separate file paths.");
         }
         Directory.CreateDirectory(Path.GetDirectoryName(seedKnowledgePath)!);
         Directory.CreateDirectory(Path.GetDirectoryName(runtimeKnowledgePath)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(trajectoryDatabasePath)!);
 
         static string BuildConnectionString(string path) => new SqliteConnectionStringBuilder
         {
@@ -81,7 +90,9 @@ public static class DashboardApplication
         var seedKnowledgeStore = new SqliteKnowledgeStore(BuildConnectionString(seedKnowledgePath));
         var runtimeKnowledgeStore = new SqliteKnowledgeStore(BuildConnectionString(runtimeKnowledgePath));
         builder.Services.AddSingleton<IAgentStore>(_ => new SqliteAgentStore(connectionString));
+        builder.Services.AddSingleton<IAgentTeamStore>(_ => new SqliteAgentTeamStore(connectionString));
         builder.Services.AddSingleton<IAgentSessionController, UnavailableAgentSessionController>();
+        builder.Services.AddSingleton<IAgentSessionLauncher, UnavailableAgentSessionLauncher>();
         builder.Services.AddSingleton<IWorldStateStore>(_ => new SqliteWorldStateStore(connectionString));
         builder.Services.AddSingleton<NavigationService>();
         builder.Services.AddSingleton<CimImportService>();
@@ -94,7 +105,15 @@ public static class DashboardApplication
         builder.Services.AddSingleton<ProxyGameCommandBroker>();
         builder.Services.AddSingleton<IAutonomousMoveApprovalGate, AutonomousMoveApprovalGate>();
         builder.Services.AddSingleton<AutonomousTestWorkerStatusStore>();
-        builder.Services.AddSingleton<ILlmInteractionHistoryStore, LlmInteractionHistoryStore>();
+        builder.Services.AddSingleton<ILlmInteractionHistoryStore>(
+        _ => new SqliteLlmInteractionHistoryStore(BuildConnectionString(trajectoryDatabasePath)));
+        builder.Services.AddSingleton<ITrajectoryStore>(_ =>
+        {
+            var trajectoryStore = new SqliteTrajectoryStore(BuildConnectionString(trajectoryDatabasePath));
+            trajectoryStore.InitializeAsync().GetAwaiter().GetResult();
+            return trajectoryStore;
+        });
+        builder.Services.AddSingleton<ITrajectoryRecorder, TrajectoryRecorder>();
         builder.Services.AddSingleton<IGameCommandSender>(
         serviceProvider => serviceProvider.GetRequiredService<ProxyGameCommandBroker>());
         builder.Services.AddSingleton<IAutonomousMoveTargetProvider, FreshAdjacentSectorProvider>();
@@ -118,6 +137,8 @@ public static class DashboardApplication
         var allowLegacyStandaloneHost =
         builder.Configuration.GetValue<bool>("LLMControlCenter:AllowLegacyStandaloneHost");
         var autonomousTestAgentId = builder.Configuration["AutonomousTesting:AgentId"] ?? "meridian";
+        var autonomousTestTeamId = builder.Configuration["AutonomousTesting:TeamId"] ?? string.Empty;
+        var autonomousTestSessionName = builder.Configuration["AutonomousTesting:SessionName"] ?? string.Empty;
         bool standaloneHostWouldControlGameplay =
         proxyListeners.Count > 0 ||
         autonomousGameplayEnabled ||
@@ -251,6 +272,7 @@ public static class DashboardApplication
         }
 
         builder.Services.AddHttpClient<IAutonomousTestActionProvider, OllamaAutonomousTestActionProvider>();
+        EpisodeOptions? episodeOptions = EpisodeOptionsConfiguration.Read(builder.Configuration);
         AutonomousTestWorker CreateAutonomousTestWorker(IServiceProvider serviceProvider, string modelName)
         {
             var objectiveProvider = new StrategicReviewAutonomousActionObjectiveProvider(
@@ -287,7 +309,27 @@ public static class DashboardApplication
                 serviceProvider.GetService<IAutonomousPortTradeOpportunityProvider>(),
                 serviceProvider.GetRequiredService<IAgentStore>(),
                 reactiveEventStore: serviceProvider.GetRequiredService<IReactiveEventStore>(),
-                fedSpaceFastStartProvider: serviceProvider.GetService<IAutonomousFedSpaceFastStartProvider>());
+                fedSpaceFastStartProvider: serviceProvider.GetService<IAutonomousFedSpaceFastStartProvider>(),
+                teamStore: serviceProvider.GetRequiredService<IAgentTeamStore>(),
+                teamId: autonomousTestTeamId,
+                sessionName: autonomousTestSessionName,
+                loginIdentityProvider: serviceProvider.GetService<IAutonomousLoginIdentityProvider>(),
+                loginCredentialStore: serviceProvider.GetService<AutonomousLoginCredentialStore>(),
+                trajectoryRecorder: serviceProvider.GetService<ITrajectoryRecorder>(),
+                episodeSupervisor: episodeOptions is null
+                    ? null
+                    : new EpisodeSupervisor(
+                        episodeOptions,
+                        serviceProvider.GetRequiredService<ITrajectoryRecorder>(),
+                        serviceProvider.GetService<IShipCapacityProvider>(),
+                        serviceProvider.GetRequiredService<ILogger<EpisodeSupervisor>>()),
+                episodeCompletionHandler: episodeOptions is null
+                    ? null
+                    : serviceProvider.GetService<IEpisodeCompletionHandler>() ??
+                      (episodeOptions.ResultPath is { } resultPath
+                          ? new EpisodeResultFileWriter(resultPath, serviceProvider.GetRequiredService<ITrajectoryStore>())
+                          : null),
+                identityModelName: reactiveModel);
         }
 
         if (autonomousTestingAutoStart)
@@ -382,9 +424,6 @@ public static class DashboardApplication
                 maximumLength: 128);
         }
 
-        builder.Services.AddHttpClient<IAutonomousLoginIdentityProvider, OllamaAutonomousLoginIdentityProvider>(
-            client => client.Timeout = TimeSpan.FromSeconds(30));
-        builder.Services.AddSingleton(new AutonomousLoginCredentialStore(loginProfilePath));
         builder.Services.AddHostedService<AutonomousLoginWorker>(serviceProvider =>
             new AutonomousLoginWorker(
                 loginListener,
@@ -446,6 +485,7 @@ public static class DashboardApplication
         var app = builder.Build();
         var agentStore = app.Services.GetRequiredService<IAgentStore>();
         await agentStore.InitializeAsync();
+        await app.Services.GetRequiredService<IAgentTeamStore>().InitializeAsync();
         await app.Services.GetRequiredService<IWorldStateStore>().InitializeAsync();
         await app.Services.GetRequiredService<IMacroTelemetryStore>().InitializeAsync();
         await app.Services.GetRequiredService<IKnowledgeStore>().InitializeAsync();
@@ -459,22 +499,42 @@ public static class DashboardApplication
         await app.Services.GetRequiredService<IStrategicReviewStore>().InitializeAsync();
         await app.Services.GetRequiredService<IReactiveEventStore>().InitializeAsync();
 
-        var agents = await agentStore.GetAgentsAsync();
-        if (agents.All(agent => agent.AgentId != "meridian"))
+        var activeAgent = await agentStore.GetAgentAsync(autonomousTestAgentId);
+        if (activeAgent is null)
         {
-        var meridian = new AgentContainer
+            activeAgent = new AgentContainer
+            {
+                AgentId = autonomousTestAgentId,
+                DisplayName = string.Equals(
+                    autonomousTestAgentId,
+                    "meridian",
+                    StringComparison.OrdinalIgnoreCase)
+                        ? "Meridian"
+                        : autonomousTestAgentId,
+                Description = "Persistent TradeWars player",
+                PreferredProvider = "Ollama",
+                PreferredModel = "qwen3:4b"
+            };
+            activeAgent.Journal.Add(new AgentJournalEntry(
+                DateTimeOffset.UtcNow,
+                "System",
+                "Agent identity created."));
+            await agentStore.SaveAgentAsync(activeAgent);
+        }
+        else if (activeAgent.Status != AgentStatus.Offline)
         {
-            AgentId = "meridian",
-            DisplayName = "Meridian",
-            Description = "Persistent TradeWars player",
-            PreferredProvider = "Ollama",
-            PreferredModel = "qwen3:4b"
-        };
-        meridian.Journal.Add(new AgentJournalEntry(
-            DateTimeOffset.UtcNow,
-            "System",
-            "Agent identity created."));
-        await agentStore.SaveAgentAsync(meridian);
+            activeAgent.Status = AgentStatus.Offline;
+            await agentStore.SaveAgentAsync(activeAgent);
+        }
+        if (EpisodeOptionsConfiguration.Read(app.Configuration)?.PilotModel is { } episodePilotModel &&
+            !string.Equals(
+                activeAgent.Configuration.GetValueOrDefault("Brains:Pilot:Model"),
+                episodePilotModel,
+                StringComparison.Ordinal))
+        {
+            activeAgent.PreferredModel = episodePilotModel;
+            activeAgent.Configuration["Brains:Pilot:Model"] = episodePilotModel;
+            await agentStore.SaveAgentAsync(activeAgent);
         }
 
         if (!app.Environment.IsDevelopment())
@@ -503,6 +563,33 @@ public static class DashboardApplication
 
         if (gameEventLogPaths.Count > 0)
         {
+        app.MapGet(
+            "/api/learning/episodes",
+            async (HttpContext context, ITrajectoryStore trajectoryStore, string? agentId, int? limit) =>
+            {
+                if (context.Connection.RemoteIpAddress is not { } remoteAddress ||
+                    !System.Net.IPAddress.IsLoopback(remoteAddress))
+                {
+                    return Results.StatusCode(StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(await trajectoryStore.GetRecentEpisodesAsync(
+                    string.IsNullOrWhiteSpace(agentId) ? null : agentId,
+                    Math.Clamp(limit ?? 50, 1, 1000),
+                    context.RequestAborted));
+            });
+        app.MapGet(
+            "/api/learning/episodes/{episodeId}/steps",
+            async (HttpContext context, ITrajectoryStore trajectoryStore, string episodeId) =>
+            {
+                if (context.Connection.RemoteIpAddress is not { } remoteAddress ||
+                    !System.Net.IPAddress.IsLoopback(remoteAddress))
+                {
+                    return Results.StatusCode(StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(await trajectoryStore.GetStepsAsync(episodeId, context.RequestAborted));
+            });
         app.MapGet(
             "/api/autonomous/moves/pending",
             (HttpContext context, IAutonomousMoveApprovalGate approvalGate) =>

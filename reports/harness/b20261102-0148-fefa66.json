@@ -1,0 +1,99 @@
+{
+  "batchId": "b20261102-0148-fefa66",
+  "generatedAt": "2026-11-02T08:48:46.6876755+00:00",
+  "baseProfile": "exiledTWGS  - Game E.json",
+  "goal": "FullyUpgradedShip",
+  "parallel": 1,
+  "wallClockMinutes": 15,
+  "episodes": 1,
+  "stateCounts": {
+    "Error": 1
+  },
+  "completionRate": 0,
+  "shipLossRate": 0,
+  "medianNetWorthPerTurn": null,
+  "meanReward": 0,
+  "decisionSources": {
+    "Policy": 0,
+    "Pilot": 0,
+    "PilotFallbackToPolicy": 0,
+    "PilotOverriddenByPolicy": 0
+  },
+  "verifiedStepRate": null,
+  "funnel": [
+    {
+      "milestone": "ReachedStarDock",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "DensityScanner",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "FirstProfitableTrade",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "HoloScanner",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxHolds",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxFighters",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxShields",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "FullyUpgraded",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    }
+  ],
+  "rows": [
+    {
+      "episodeId": "b20261102-0148-fefa66-01",
+      "agentId": "learner-fefa66-01",
+      "profileFileName": "exiledTWGS  - Game E - learner-fefa66-01.json",
+      "state": "Error",
+      "segments": 1,
+      "steps": 0,
+      "milestones": 0,
+      "totalReward": 0,
+      "netWorthDelta": null,
+      "turnsUsed": null,
+      "netWorthPerTurn": null,
+      "pilotShare": null,
+      "shipLost": false,
+      "endReason": "Login blocked: The login flow received an unexpected or repeated \u0027Menu\u0027 prompt."
+    }
+  ]
+}

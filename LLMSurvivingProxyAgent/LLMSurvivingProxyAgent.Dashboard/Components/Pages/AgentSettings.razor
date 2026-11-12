@@ -66,6 +66,26 @@ else
         <section class="surface-card">
             <div class="section-heading">
                 <div>
+                    <p class="eyebrow">SESSION STARTUP</p>
+                    <h2>Automatic launch</h2>
+                </div>
+            </div>
+            <div class="form-check">
+                <InputCheckbox id="agent-auto-start"
+                               class="form-check-input"
+                               @bind-Value="_form.AutoStart" />
+                <label class="form-check-label" for="agent-auto-start">
+                    Start this agent automatically when its MTC session launches
+                </label>
+                <small class="d-block text-secondary">
+                    When disabled, the game session will not connect or start this agent automatically. This will not stop an agent already running; you can still start it manually from Agent Runtime.
+                </small>
+            </div>
+        </section>
+
+        <section class="surface-card">
+            <div class="section-heading">
+                <div>
                     <p class="eyebrow">BRAIN MODELS</p>
                     <h2>Independent model roles</h2>
                 </div>
@@ -131,6 +151,7 @@ else
         {
             DisplayName = _agent.DisplayName,
             Description = _agent.Description,
+            AutoStart = AgentSessionStartupSettings.IsAutoStartEnabled(_agent),
             PreferredProvider = _agent.PreferredProvider,
             PreferredModel = _agent.PreferredModel,
             PilotModel = _agent.Configuration.GetValueOrDefault(
@@ -156,6 +177,7 @@ else
         _agent.Description = _form.Description.Trim();
         _agent.PreferredProvider = _form.PreferredProvider.Trim();
         _agent.PreferredModel = _form.PreferredModel.Trim();
+        AgentSessionStartupSettings.SetAutoStartEnabled(_agent, _form.AutoStart);
         _agent.Configuration["Brains:Pilot:Model"] = _form.PilotModel.Trim();
         _agent.Configuration["Brains:Reactive:Model"] = _form.ReactiveModel.Trim();
         _agent.Configuration["Brains:Strategic:Model"] = _form.StrategicModel.Trim();
@@ -170,6 +192,8 @@ else
 
         [StringLength(1000)]
         public string Description { get; set; } = string.Empty;
+
+        public bool AutoStart { get; set; } = true;
 
         [Required, StringLength(80)]
         public string PreferredProvider { get; set; } = string.Empty;

@@ -1,0 +1,99 @@
+{
+  "batchId": "b20261102-0319-61a911",
+  "generatedAt": "2026-11-02T10:45:08.2414609+00:00",
+  "baseProfile": "exiledTWGS  - Game E.json",
+  "goal": "FullyUpgradedShip",
+  "parallel": 1,
+  "wallClockMinutes": 25,
+  "episodes": 1,
+  "stateCounts": {
+    "TimedOut": 1
+  },
+  "completionRate": 0,
+  "shipLossRate": 0,
+  "medianNetWorthPerTurn": 6.19,
+  "meanReward": 3.131,
+  "decisionSources": {
+    "Policy": 3,
+    "Pilot": 116,
+    "PilotFallbackToPolicy": 3,
+    "PilotOverriddenByPolicy": 0
+  },
+  "verifiedStepRate": 0.992,
+  "funnel": [
+    {
+      "milestone": "ReachedStarDock",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "DensityScanner",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "FirstProfitableTrade",
+      "episodesReached": 1,
+      "reachedRate": 1,
+      "medianTurnsUsed": 23,
+      "medianMinutes": 2.1
+    },
+    {
+      "milestone": "HoloScanner",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxHolds",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxFighters",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "MaxShields",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    },
+    {
+      "milestone": "FullyUpgraded",
+      "episodesReached": 0,
+      "reachedRate": 0,
+      "medianTurnsUsed": null,
+      "medianMinutes": null
+    }
+  ],
+  "rows": [
+    {
+      "episodeId": "b20261102-0319-61a911-01",
+      "agentId": "learner-61a911-01",
+      "profileFileName": "exiledTWGS  - Game E - learner-61a911-01.json",
+      "state": "TimedOut",
+      "segments": 1,
+      "steps": 122,
+      "milestones": 1,
+      "totalReward": 3.131,
+      "netWorthDelta": 2161,
+      "turnsUsed": 349,
+      "netWorthPerTurn": 6.19,
+      "pilotShare": 0.951,
+      "shipLost": false,
+      "endReason": "The 25-minute wall-clock cap was reached."
+    }
+  ]
+}

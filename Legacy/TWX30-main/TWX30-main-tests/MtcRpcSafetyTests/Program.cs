@@ -77,7 +77,8 @@ Core.ModDatabase CreateMultiHopFundingDatabase()
             Number = 172,
             Warp = [(ushort)551],
             SectorPort = new Core.Port { ClassIndex = 3 },
-            Update = DateTime.Now
+            Update = DateTime.Now,
+            Explored = Core.ExploreType.Yes
         },
         new Core.SectorData
         {
@@ -97,7 +98,8 @@ Core.ModDatabase CreateMultiHopFundingDatabase()
             Number = 750,
             Warp = [(ushort)600],
             SectorPort = new Core.Port { ClassIndex = 8 },
-            Update = DateTime.Now
+            Update = DateTime.Now,
+            Explored = Core.ExploreType.Yes
         }
     })
     {
@@ -105,6 +107,70 @@ Core.ModDatabase CreateMultiHopFundingDatabase()
     }
 
     return database;
+}
+
+string quickLoadCatalogRoot = Path.Combine(
+    Path.GetTempPath(),
+    $"mtc-quickload-catalog-{Guid.NewGuid():N}");
+try
+{
+    string utilitiesDirectory = Path.Combine(quickLoadCatalogRoot, "utilities");
+    string includesDirectory = Path.Combine(quickLoadCatalogRoot, "includes");
+    Directory.CreateDirectory(utilitiesDirectory);
+    Directory.CreateDirectory(includesDirectory);
+    File.WriteAllText(Path.Combine(utilitiesDirectory, "tool-old.ts"), "old");
+    File.WriteAllText(Path.Combine(utilitiesDirectory, "tool-new.ts"), "new");
+    File.WriteAllText(Path.Combine(utilitiesDirectory, "custom.ts"), "custom");
+    File.WriteAllText(Path.Combine(includesDirectory, "helper.ts"), "helper");
+    File.WriteAllText(Path.Combine(quickLoadCatalogRoot, "root-script.ts"), "root");
+    File.WriteAllText(
+        Path.Combine(quickLoadCatalogRoot, "catalog.json"),
+        """
+        {
+          "library": "LLMProxyScripts",
+          "entries": [
+            {
+              "file": "utilities/tool-old.ts",
+              "variant_group": "tool",
+              "preferred_variant": false
+            },
+            {
+              "file": "utilities/tool-new.ts",
+              "variant_group": "tool",
+              "preferred_variant": true
+            }
+          ]
+        }
+        """);
+
+    IReadOnlyList<Core.QuickLoadGroup> quickLoadGroups =
+        Core.ProxyMenuCatalog.BuildQuickLoadGroups(quickLoadCatalogRoot, quickLoadCatalogRoot);
+    var scriptMenuMetadata =
+        Core.ProxyMenuCatalog.ReadScriptMenuMetadata(quickLoadCatalogRoot);
+    Core.QuickLoadEntry[] quickLoadEntries = quickLoadGroups
+        .SelectMany(group => group.Entries)
+        .ToArray();
+    Check(
+        !quickLoadGroups.Any(group => group.Name.Equals("includes", StringComparison.OrdinalIgnoreCase)) &&
+        quickLoadEntries.All(entry => !entry.RelativePath.Equals(
+            "utilities/tool-old.ts",
+            StringComparison.OrdinalIgnoreCase)) &&
+        quickLoadEntries.Any(entry =>
+            entry.RelativePath.Equals("utilities/tool-new.ts", StringComparison.OrdinalIgnoreCase) &&
+            entry.DisplayName == "tool") &&
+        scriptMenuMetadata.TryGetValue("utilities/tool-old.ts", out var oldScriptMetadata) &&
+        oldScriptMetadata.IsNonPreferredVariant &&
+        scriptMenuMetadata.TryGetValue("utilities/tool-new.ts", out var newScriptMetadata) &&
+        !newScriptMetadata.IsNonPreferredVariant &&
+        newScriptMetadata.DisplayName == "tool" &&
+        quickLoadEntries.Any(entry => entry.RelativePath == "utilities/custom.ts") &&
+        quickLoadEntries.Any(entry => entry.RelativePath == "root-script.ts"),
+        "script menus hide nonpreferred variants and retain local additions");
+}
+finally
+{
+    if (Directory.Exists(quickLoadCatalogRoot))
+        Directory.Delete(quickLoadCatalogRoot, recursive: true);
 }
 
 DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -173,6 +239,79 @@ Check(
         TradeSector: null
     },
     "plans a compatible three-hop FedSpace port pair");
+Core.ModDatabase followUpDatabase = new();
+followUpDatabase.ReplaceHeader(new Core.DataHeader { Sectors = 30, StarDock = 30, LastPortCIM = DateTime.Now });
+foreach (Core.SectorData sector in new[]
+{
+    // Sector 20 buys Fuel Ore and sells Equipment; the only Equipment buyer is two hops away in sector 22.
+    new Core.SectorData { Number = 20, Warp = [(ushort)21], SectorPort = new Core.Port { ClassIndex = 1 }, Update = DateTime.Now, Explored = Core.ExploreType.Yes },
+    new Core.SectorData { Number = 21, Warp = [(ushort)20, (ushort)22], Update = DateTime.Now, Explored = Core.ExploreType.Yes },
+    new Core.SectorData { Number = 22, Warp = [(ushort)21], SectorPort = new Core.Port { ClassIndex = 4 }, Update = DateTime.Now, Explored = Core.ExploreType.Yes }
+})
+{
+    followUpDatabase.SaveSector(sector);
+}
+AutonomousPortTradeOpportunity? saleWithFollowUp =
+    await new MtcFreshAdjacentSectorProvider(() => followUpDatabase).GetOpportunityAsync(
+        20,
+        null,
+        null,
+        new GameSnapshot(20, 900, 20, null, now)
+        {
+            HoldsEmpty = 0,
+            HoldsTotal = 20,
+            FuelOre = 20,
+            Organics = 0,
+            Equipment = 0,
+            DensityScannerInstalled = true
+        });
+Check(
+    saleWithFollowUp is
+    {
+        Product: TradeProduct.FuelOre,
+        SellingExistingCargo: true,
+        FollowUpBuyProduct: TradeProduct.Equipment,
+        FollowUpPartnerSector: 22
+    },
+    "after selling Fuel Ore, plans an Equipment buy for a buyer port two hops away");
+
+Core.ModDatabase roundTripDatabase = new();
+roundTripDatabase.ReplaceHeader(new Core.DataHeader { Sectors = 40, StarDock = 40, LastPortCIM = DateTime.Now });
+foreach (Core.SectorData sector in new[]
+{
+    // 30 (class 5, SBS) and 32 (class 2, BSB): Equipment one way, Organics back - the bidirectional pair.
+    new Core.SectorData { Number = 30, Warp = [(ushort)31], SectorPort = new Core.Port { ClassIndex = 5 }, Update = DateTime.Now, Explored = Core.ExploreType.Yes },
+    new Core.SectorData { Number = 31, Warp = [(ushort)30, (ushort)32], Update = DateTime.Now, Explored = Core.ExploreType.Yes },
+    new Core.SectorData { Number = 32, Warp = [(ushort)31], SectorPort = new Core.Port { ClassIndex = 2 }, Update = DateTime.Now, Explored = Core.ExploreType.Yes }
+})
+{
+    roundTripDatabase.SaveSector(sector);
+}
+AutonomousPortTradeOpportunity? organicsSaleFollowUp =
+    await new MtcFreshAdjacentSectorProvider(() => roundTripDatabase).GetOpportunityAsync(
+        30,
+        null,
+        null,
+        new GameSnapshot(30, 1_500, 20, null, now)
+        {
+            HoldsEmpty = 0,
+            HoldsTotal = 20,
+            FuelOre = 0,
+            Organics = 20,
+            Equipment = 0,
+            DensityScannerInstalled = true
+        },
+        excludedTradeSectors: new HashSet<int> { 32 });
+Check(
+    organicsSaleFollowUp is
+    {
+        Product: TradeProduct.Organics,
+        SellingExistingCargo: true,
+        FollowUpBuyProduct: TradeProduct.Equipment,
+        FollowUpPartnerSector: 32
+    },
+    "after selling Organics, buys Equipment for the port it just traded at (bidirectional pair)");
+
 var multiHopFundingProvider = new MtcFreshAdjacentSectorProvider(
     CreateMultiHopFundingDatabase);
 AutonomousPortTradeOpportunity? multiHopFundingPlan =
@@ -183,7 +322,8 @@ AutonomousPortTradeOpportunity? multiHopFundingPlan =
         new GameSnapshot(551, 1, 20, null, now)
         {
             HoldsEmpty = 20,
-            HoldsTotal = 20
+            HoldsTotal = 20,
+            DensityScannerInstalled = true
         });
 Check(
     multiHopFundingPlan is
@@ -195,6 +335,40 @@ Check(
         SellingExistingCargo: false
     },
     "finds a fresh three-hop non-FedSpace funding pair from StarDock");
+AutonomousPortTradeOpportunity? scannerlessUnsafePair =
+    await multiHopFundingProvider.GetOpportunityAsync(
+        551,
+        null,
+        null,
+        new GameSnapshot(551, 1, 20, null, now)
+        {
+            HoldsEmpty = 20,
+            HoldsTotal = 20
+        });
+Check(
+    scannerlessUnsafePair is null,
+    "rejects a scannerless pair whose route crosses an unexplored intermediate sector");
+Check(
+    MtcGameCommandSender.GetAutonomousPortTradeQuantity(20) == 20,
+    "fills the available holds when buying an autonomous port-trade product");
+Check(
+    MtcGameCommandSender.GetAutonomousPortTradeQuantity(0) == 0,
+    "does not request cargo when the port reports no available hold capacity");
+Check(
+    MtcGameCommandSender.GetAutonomousPortTradeQuantity(13, isSale: false, emptyHolds: 20) == 11,
+    "buys fewer units than a credit-limited default so the negotiated quote stays affordable");
+Check(
+    MtcGameCommandSender.GetAutonomousPortTradeQuantity(20, isSale: false, emptyHolds: 20) == 20,
+    "fills every empty hold when holds, not credits, limit the purchase");
+Check(
+    MtcGameCommandSender.GetAutonomousPortTradeQuantity(20, isSale: true, emptyHolds: null) == 20,
+    "sells the full quantity offered");
+Check(
+    MtcGameCommandSender.GetAutonomousPortTradeQuantity(1, isSale: false, emptyHolds: 20) == 1,
+    "still buys a single affordable unit");
+Check(
+    MtcGameCommandSender.GetAutonomousPortTradeQuantity(15, isSale: false, emptyHolds: null) == 15,
+    "keeps the server default when the empty-hold count was not observed");
 AutonomousPortTradeOpportunity? routedThreeHopPair =
     await threeHopPairProvider.GetFedSpaceTradeOpportunityAsync(
         1,
@@ -231,14 +405,152 @@ AutonomousPortTradeOpportunity? outOfRangePair =
 Check(outOfRangePair is null, "excludes port pairs with endpoints outside sectors 2-10");
 
 bool worldTradeToolParsed = GameAgentToolRegistry.TryParseModelAction(
-    """{"tool_call":{"name":"run_script","arguments":{"script":"Pack1/1_Trade.ts"}}}""",
+    """{"tool_call":{"name":"run_script","arguments":{"script":"trading-cashing/2-worldtrade.ts"}}}""",
     out GameAgentToolAction? worldTradeTool,
     out _);
 Check(
     worldTradeToolParsed &&
     worldTradeTool?.Kind == GameAgentToolActionKind.RunScript &&
-    worldTradeTool.ScriptReference == "Pack1/1_Trade.ts",
+    worldTradeTool.ScriptReference == "trading-cashing/2-worldtrade.ts",
     "parses the reviewed World Trade script action");
+var worldTradeMenu = new Core.MenuManager();
+var worldTradeMenuOwner = new object();
+worldTradeMenu.AddCustomMenu(
+    "",
+    "WorldTrade",
+    "World Trade Settings",
+    "",
+    "Main",
+    '.',
+    false,
+    worldTradeMenuOwner);
+worldTradeMenu.AddCustomMenu(
+    "WorldTrade",
+    "GO",
+    "GO!",
+    ":MENU_GO",
+    "",
+    'G',
+    true,
+    worldTradeMenuOwner);
+worldTradeMenu.OpenMenu("WorldTrade", 0);
+Check(
+    !worldTradeMenu.TryHandleMenuOption(new object(), "WORLDTRADE", "GO") &&
+    worldTradeMenu.IsMenuOpen(),
+    "rejects script-menu selection from a different script owner");
+Check(
+    !worldTradeMenu.TryHandleMenuOption(worldTradeMenuOwner, "OTHER", "GO") &&
+    worldTradeMenu.IsMenuOpen(),
+    "rejects script-menu selection outside the expected current menu");
+Check(
+    worldTradeMenu.TryHandleMenuOption(worldTradeMenuOwner, "WORLDTRADE", "GO"),
+    "selects an exact script-owned WorldTrade GO menu option");
+Check(
+    WorldTradeScriptStartPolicy.IsWorldTradeScriptReference(
+        "trading-cashing/2-worldtrade.ts") &&
+    !WorldTradeScriptStartPolicy.IsWorldTradeScriptReference(
+        "unreviewed/2-worldtrade.ts"),
+    "limits autonomous menu startup to the approved WorldTrade script path");
+Check(
+    WorldTradeScriptStartPolicy.IsDensityOnlyScanner(
+        CreateWorldTradeContext(551, "Dens", now),
+        now) &&
+    !WorldTradeScriptStartPolicy.IsDensityOnlyScanner(
+        CreateWorldTradeContext(551, "Holo", now),
+        now),
+    "identifies Density-only scanner ownership for WorldTrade command selection");
+Check(
+    GameAgentScanPolicy.TrySelectScanType(
+        "H",
+        "Density Scanner",
+        out string densityFallback,
+        out bool densityNeedsChoice) &&
+    densityFallback == "D" &&
+    !densityNeedsChoice,
+    "uses S directly for Density-only scans instead of expecting a scanner-choice prompt");
+Check(
+    !GameAgentScanPolicy.TrySelectScanType("H", "None", out _, out _),
+    "blocks holo-scan selection when no scanner is verified");
+Check(
+    GameAgentScanPolicy.TrySelectScanType(
+        "H",
+        "Holo Scanner",
+        out string holoSelection,
+        out bool holoNeedsChoice) &&
+    holoSelection == "H" &&
+    holoNeedsChoice,
+    "opens the scanner-choice prompt when Holo Scanner ownership is verified");
+Check(
+    GameAgentScanPolicy.TrySelectScanType(
+        "D",
+        "Holo Scanner",
+        out string densityWithHolo,
+        out bool holoNeedsDensityChoice) &&
+    densityWithHolo == "D" &&
+    holoNeedsDensityChoice,
+    "selects D from the scanner-choice prompt when a Holo Scanner is installed");
+GameAgentContextSnapshot CreateWorldTradeContext(
+    int currentSector,
+    string scannerType,
+    DateTimeOffset statusAt) =>
+    new()
+{
+    Connected = true,
+    CurrentPrompt = "Command",
+    CurrentSector = currentSector,
+    RecentEvents =
+    [
+        new GameAgentEvent
+        {
+            Timestamp = statusAt,
+            Kind = GameAgentEventKind.SynchronizedShipStatus,
+            CurrentSector = currentSector,
+            Metadata = new Dictionary<string, string> { ["scannerType"] = scannerType }
+        }
+    ]
+};
+Check(
+    WorldTradeScriptStartPolicy.GetBlockReason(
+        "trading-cashing/2-worldtrade.ts",
+        CreateWorldTradeContext(172, "Density", now),
+        551,
+        now)?.Contains("StarDock", StringComparison.OrdinalIgnoreCase) == true,
+    "blocks World Trade outside the verified StarDock sector");
+Check(
+    WorldTradeScriptStartPolicy.GetBlockReason(
+        "trading-cashing/2-worldtrade.ts",
+        CreateWorldTradeContext(551, "None", now),
+        551,
+        now)?.Contains("Scanner", StringComparison.OrdinalIgnoreCase) == true,
+    "blocks World Trade until scanner ownership is verified");
+Check(
+    WorldTradeScriptStartPolicy.GetBlockReason(
+        "trading-cashing/2-worldtrade.ts",
+        CreateWorldTradeContext(551, "Density", now - TimeSpan.FromMinutes(1)),
+        551,
+        now)?.Contains("fresh", StringComparison.OrdinalIgnoreCase) == true,
+    "blocks World Trade when synchronized scanner status is stale");
+Check(
+    WorldTradeScriptStartPolicy.GetBlockReason(
+        "trading-cashing/2-worldtrade.ts",
+        CreateWorldTradeContext(551, "Density", now),
+        551,
+        now) is null,
+    "allows World Trade at StarDock with fresh Density Scanner status");
+Check(
+    WorldTradeScriptStartPolicy.GetBlockReason(
+        "trading-cashing/2-worldtrade.ts",
+        CreateWorldTradeContext(551, "Dens", now),
+        551,
+        now) is null,
+    "allows World Trade at StarDock with abbreviated Density Scanner status");
+Check(
+    WorldTradeScriptStartPolicy.GetBlockReason(
+        "trading-cashing/2-worldtrade.ts",
+        CreateWorldTradeContext(551, "Holo", now),
+        551,
+        now) is null,
+    "allows World Trade with a verified Holo Scanner");
 Check(
     !GameAgentToolRegistry.TryParseModelAction(
         """{"tool_call":{"name":"run_script","arguments":{"script":"../unreviewed.ts"}}}""",
@@ -255,7 +567,7 @@ Check(
     "parses stop requests by interpreter script id");
 Check(
     GameAgentToolRegistry.IsApprovedRunningScriptReference(
-        @"C:\Games\TWX\scripts\Pack1\1_Trade.ts") &&
+        @"C:\Games\TWX\scripts\trading-cashing\2-worldtrade.ts") &&
     !GameAgentToolRegistry.IsApprovedRunningScriptReference(
         @"C:\Games\TWX\scripts\unsafe\other.ts"),
     "matches only reviewed script references in the active interpreter");
@@ -379,7 +691,7 @@ Check(
 Check(
     MainWindow.RequiresTradeWarsCommandPrompt(@"utilities\MTC_PortCIM.ts") &&
     MainWindow.RequiresTradeWarsCommandPrompt("MTC_WarpCIM.ts") &&
-    !MainWindow.RequiresTradeWarsCommandPrompt("Pack1/1_Trade.ts"),
+    !MainWindow.RequiresTradeWarsCommandPrompt("trading-cashing/2-worldtrade.ts"),
     "requires the authenticated TradeWars command prompt for CIM scripts only");
 string cimScriptsRoot = Path.GetFullPath(
     Path.Combine(Path.GetTempPath(), "twx-script-root"));
@@ -391,6 +703,39 @@ Check(
     MainWindow.ResolveCimScriptPath("MTC_WarpCIM.ts", cimScriptsRoot) ==
     Path.Combine(cimScriptsRoot, "utilities", "MTC_WarpCIM.ts"),
     "resolves fixed CIM scripts from the configured scripts root after nested script execution");
+string worldTradeResolutionRoot = Path.Combine(
+    Path.GetTempPath(),
+    $"mtc-worldtrade-resolution-{Guid.NewGuid():N}");
+try
+{
+    string categoryScriptsRoot = Path.Combine(worldTradeResolutionRoot, "LLMProxyScripts");
+    string worldTradeFromRoot = Path.Combine(
+        categoryScriptsRoot,
+        "trading-cashing",
+        "2-worldtrade.ts");
+    Directory.CreateDirectory(Path.GetDirectoryName(worldTradeFromRoot)!);
+    File.WriteAllText(worldTradeFromRoot, "root");
+    Check(
+        MainWindow.ResolveWorldTradeScriptPath(
+            "trading-cashing/2-worldtrade.ts",
+            categoryScriptsRoot) == worldTradeFromRoot,
+        "resolves WorldTrade from the configured scripts root");
+
+    string categoryDirectory = Path.Combine(categoryScriptsRoot, "trading-cashing");
+    string worldTradeFromCategory = Path.Combine(categoryDirectory, "2-worldtrade.ts");
+    Check(
+        MainWindow.ResolveWorldTradeScriptPath(
+            "trading-cashing/2-worldtrade.ts",
+            categoryDirectory) == worldTradeFromCategory,
+        "does not duplicate the WorldTrade category when the configured root is already that category");
+}
+finally
+{
+    if (Directory.Exists(worldTradeResolutionRoot))
+    {
+        Directory.Delete(worldTradeResolutionRoot, recursive: true);
+    }
+}
 Check(
     MainWindow.IsRequestedScriptActive(
         [
@@ -448,13 +793,19 @@ Check(
     "waits for port and warp CIM script completion before reporting refresh complete");
 
 var dockShopperScripts = new List<string>();
-var dockShopperInputs = new List<(string Input, bool AppendEnter)>();
+var dockShopperGameCommands = new List<(string Input, bool AppendEnter)>();
+var dockShopperInputs = new List<string>();
+GameScriptInputPrompt dockShopperPrompt = new(
+    "ls-dock-shopper-v33.ts",
+    "R - Long Range Scanners",
+    SingleKey: true,
+    ObservedAt: now);
 var dockShopperCommandSender = new MtcGameCommandSender(
     "meridian",
     (input, appendEnter) =>
     {
-        dockShopperInputs.Add((input, appendEnter));
-        return Task.FromResult(MtcRpcActionResult.Ok("input sent"));
+        dockShopperGameCommands.Add((input, appendEnter));
+        return Task.FromResult(MtcRpcActionResult.Ok("game command sent"));
     },
     _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
     _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
@@ -470,9 +821,21 @@ var dockShopperCommandSender = new MtcGameCommandSender(
         dockShopperScripts.Add(script);
         return Task.FromResult(MtcRpcActionResult.Ok("Dock Shopper started"));
     },
-    isDockShopperRunning: () => Task.FromResult(true));
+    isDockShopperRunning: () => Task.FromResult(true),
+    getCurrentScriptInputPrompt: () => dockShopperPrompt,
+    submitScriptInput: (prompt, response) =>
+    {
+        dockShopperInputs.Add(response);
+        dockShopperPrompt = response switch
+        {
+            "R" => prompt with { Text = "D - Density", ObservedAt = now.AddTicks(1) },
+            "D" => prompt with { Text = "X - Execute", ObservedAt = now.AddTicks(2) },
+            _ => prompt with { Text = "Purchase submitted", ObservedAt = now.AddTicks(3) }
+        };
+        return Task.FromResult(MtcRpcActionResult.Ok("input delivered to script"));
+    });
 await dockShopperCommandSender.StartStarDockShopperAsync("meridian");
-foreach (char input in new[] { 'R', 'Y', 'X' })
+foreach (char input in new[] { 'R', 'D', 'X' })
 {
     await dockShopperCommandSender.SendStarDockShopperInputAsync("meridian", input);
 }
@@ -487,9 +850,49 @@ catch (ArgumentOutOfRangeException exception)
 }
 Check(
     dockShopperScripts.SequenceEqual(["ship-upgrades/ls-dock-shopper-v33.ts"]) &&
-    dockShopperInputs.SequenceEqual([("R", false), ("Y", false), ("X", false)]) &&
+    dockShopperInputs.SequenceEqual(["R", "D", "X"]) &&
+    dockShopperGameCommands.Count == 0 &&
     invalidDockShopperInputError is not null,
-    "runs only the allowlisted Dock Shopper and sends its three single-key scanner inputs without Enter");
+    "routes only current, visible Dock Shopper choices directly to the script without sending game commands");
+
+var genericPrompt = new GameScriptInputPrompt(
+    "ls-dock-shopper-v33.ts",
+    "X - Execute",
+    SingleKey: true,
+    ObservedAt: now);
+var genericScriptInputs = new List<string>();
+var genericGameCommands = new List<(string Input, bool AppendEnter)>();
+var genericScriptInputSender = new MtcGameCommandSender(
+    "meridian",
+    (input, appendEnter) =>
+    {
+        genericGameCommands.Add((input, appendEnter));
+        return Task.FromResult(MtcRpcActionResult.Ok("game command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => true,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => [],
+    () => true,
+    commandsApproved: true,
+    isDockShopperRunning: () => Task.FromResult(true),
+    getCurrentScriptInputPrompt: () => genericPrompt,
+    submitScriptInput: (_, response) =>
+    {
+        genericScriptInputs.Add(response);
+        return Task.FromResult(MtcRpcActionResult.Ok("input delivered to script"));
+    });
+await genericScriptInputSender.SendScriptInputResponseAsync(
+    "meridian",
+    genericPrompt,
+    "X");
+Check(
+    genericScriptInputs.SequenceEqual(["X"]) &&
+    genericGameCommands.Count == 0,
+    "routes a validated generic script-prompt response directly to its script");
 
 var incompleteCimScriptCalls = new List<string>();
 var incompleteCimCommandSender = new MtcGameCommandSender(
@@ -572,7 +975,9 @@ Check(
     "refreshes ship information and quick stats without appending Enter");
 
 var portTradeCommands = new List<(string Command, bool AppendEnter)>();
+var portTradeHaggleStates = new List<(string Command, bool HaggleEnabled)>();
 var portTradePrompts = new List<MtcServerPrompt>();
+bool portTradeHaggleEnabled = true;
 portTradePrompts.Add(new MtcServerPrompt(
     DateTimeOffset.UtcNow.AddSeconds(-1),
     "Command [TL=00:00:00]:[35]"));
@@ -582,6 +987,7 @@ var portTradeSender = new MtcGameCommandSender(
     (command, appendEnter) =>
     {
         portTradeCommands.Add((command, appendEnter));
+        portTradeHaggleStates.Add((command, portTradeHaggleEnabled));
         DateTimeOffset timestamp = DateTimeOffset.UtcNow.AddTicks(portTradePrompts.Count + 1);
         if (command == "P")
         {
@@ -610,10 +1016,16 @@ var portTradeSender = new MtcGameCommandSender(
         {
             portTradePrompts.Add(new MtcServerPrompt(timestamp, "Your offer [542] ?"));
             portTradePrompts.Add(new MtcServerPrompt(
-                timestamp.AddTicks(1),
-                "Command [TL=00:00:00]:[35]"));
+                timestamp.AddMilliseconds(10),
+                "PortTradeOffer",
+                IsPresenceHeartbeat: true,
+                PromptObservedAt: timestamp,
+                IsCurrentPromptConfirmed: true));
+        }
+        else if (command == "542")
+        {
             portTradePrompts.Add(new MtcServerPrompt(
-                timestamp.AddTicks(2),
+                timestamp,
                 "How many holds of Equipment do you want to buy [2]?"));
         }
 
@@ -626,11 +1038,15 @@ var portTradeSender = new MtcGameCommandSender(
     () => DateTime.MinValue,
     (_, _) => Task.CompletedTask,
     () => portTradePrompts.ToArray(),
-    () => true,
-    commandsApproved: true);
+    () => portTradeHaggleEnabled,
+    commandsApproved: true,
+    setNativeHaggleEnabled: enabled => portTradeHaggleEnabled = enabled);
 await portTradeSender.SendAsync(
     "meridian",
-    new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.Organics));
+    new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.Organics)
+    {
+        AvailableCredits = 600
+    });
 Check(
     portTradeCommands.SequenceEqual(
     [
@@ -638,10 +1054,371 @@ Check(
         ("T", false),
         ("0", true),
         ("15", true),
+        ("542", true),
         ("0", true),
     ]),
-    "continues through an intermediate Command prompt and completes only the requested product trade");
+    "fills all available holds for the requested product, accepts its quote, and skips unrelated products");
+Check(
+    portTradeHaggleStates.All(state => !state.HaggleEnabled) && portTradeHaggleEnabled,
+    "restores native haggling after the port trade completes");
 
+var creditLimitedCommands = new List<string>();
+var creditLimitedPrompts = new List<MtcServerPrompt> { new(DateTimeOffset.UtcNow.AddSeconds(-1), "Command [TL=00:00:00]:[950]") };
+var creditLimitedLines = new List<MtcServerPrompt>();
+bool creditLimitedHaggle = false;
+var creditLimitedSender = new MtcGameCommandSender(
+    "meridian",
+    (command, _) =>
+    {
+        creditLimitedCommands.Add(command);
+        DateTimeOffset timestamp = DateTimeOffset.UtcNow.AddTicks(creditLimitedPrompts.Count + 1);
+        if (command == "P")
+        {
+            creditLimitedPrompts.Add(new MtcServerPrompt(timestamp, "Enter your choice [T] ?"));
+        }
+        else if (command == "T")
+        {
+            creditLimitedLines.Add(new MtcServerPrompt(timestamp, "You have 900 credits and 20 empty cargo holds."));
+            creditLimitedPrompts.Add(new MtcServerPrompt(timestamp, "How many holds of Equipment do you want to buy [13]?"));
+        }
+        else if (command == "11")
+        {
+            creditLimitedPrompts.Add(new MtcServerPrompt(timestamp, "Your offer [850] ?"));
+        }
+        else if (command == "850")
+        {
+            creditLimitedPrompts.Add(new MtcServerPrompt(timestamp, "Command [TL=00:00:00]:[950]"));
+        }
+
+        return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => true,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => creditLimitedPrompts.ToArray(),
+    () => creditLimitedHaggle,
+    commandsApproved: true,
+    getRecentServerLines: () => creditLimitedLines.ToArray(),
+    setNativeHaggleEnabled: enabled => creditLimitedHaggle = enabled);
+await creditLimitedSender.SendAsync(
+    "meridian",
+    new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.Equipment)
+    {
+        AvailableCredits = 900
+    });
+Check(
+    creditLimitedCommands.SequenceEqual(["P", "T", "11", "850"]),
+    "buys below a credit-limited default and accepts the affordable quote");
+
+var nativeHaggleEngine = new Core.NativeHaggleEngine();
+nativeHaggleEngine.SetEnabled(true);
+nativeHaggleEngine.SetEnabled(false);
+Check(
+    !nativeHaggleEngine.Enabled &&
+    nativeHaggleEngine.HandleLine("We'll sell them for 7 credits.") is null,
+    "native haggling stays suppressed after the trade worker disables it");
+
+var failedSuppressionCommands = new List<(string Command, bool AppendEnter)>();
+var failedSuppressionPrompts = new List<MtcServerPrompt>
+{
+    new(DateTimeOffset.UtcNow, "Command [TL=00:00:00]:[35]")
+};
+var failedSuppressionSender = new MtcGameCommandSender(
+    "meridian",
+    (command, appendEnter) =>
+    {
+        failedSuppressionCommands.Add((command, appendEnter));
+        return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => true,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => failedSuppressionPrompts,
+    () => true,
+    commandsApproved: true,
+    setNativeHaggleEnabled: _ => { });
+bool failedSuppressionRejected = false;
+try
+{
+    await failedSuppressionSender.SendAsync(
+        "meridian",
+        new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.Organics));
+}
+catch (InvalidOperationException exception) when (
+    exception.Message.Contains("native haggling could not be disabled", StringComparison.Ordinal))
+{
+    failedSuppressionRejected = true;
+}
+Check(
+    failedSuppressionRejected && failedSuppressionCommands.Count == 0,
+    "blocks a port trade when native haggling remains enabled");
+
+var staleQuoteCommands = new List<(string Command, bool AppendEnter)>();
+var staleQuotePrompts = new List<MtcServerPrompt>
+{
+    new(DateTimeOffset.UtcNow.AddSeconds(-1), "Command [TL=00:00:00]:[35]")
+};
+var staleQuoteSender = new MtcGameCommandSender(
+    "meridian",
+    (command, appendEnter) =>
+    {
+        staleQuoteCommands.Add((command, appendEnter));
+        DateTimeOffset timestamp = DateTimeOffset.UtcNow.AddTicks(staleQuotePrompts.Count + 1);
+        if (command == "P")
+        {
+            staleQuotePrompts.Add(new MtcServerPrompt(timestamp, "Enter your choice [T] ?"));
+        }
+        else if (command == "T")
+        {
+            staleQuotePrompts.Add(new MtcServerPrompt(
+                timestamp,
+                "How many holds of Fuel Ore do you want to buy [20]?"));
+        }
+        else if (command == "20")
+        {
+            staleQuotePrompts.Add(new MtcServerPrompt(timestamp, "Your offer [542] ?"));
+            staleQuotePrompts.Add(new MtcServerPrompt(
+                timestamp.AddTicks(1),
+                "Command [TL=00:00:00]:[35]"));
+        }
+
+        return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => true,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => staleQuotePrompts.ToArray(),
+    () => false,
+    commandsApproved: true);
+bool staleQuoteRejected = false;
+try
+{
+    await staleQuoteSender.SendAsync(
+        "meridian",
+        new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.FuelOre));
+}
+catch (InvalidDataException exception) when (
+    exception.Message.Contains("multiple new port-trade prompts", StringComparison.Ordinal))
+{
+    staleQuoteRejected = true;
+}
+Check(
+    staleQuoteRejected &&
+    staleQuoteCommands.SequenceEqual([("P", false), ("T", false), ("20", true)]),
+    "does not send a stale quoted price after a newer Command prompt has arrived");
+
+async Task<List<(string Command, bool AppendEnter)>> RunUnaffordableQuoteScenarioAsync(
+    long availableCredits,
+    string? quoteAfterCounterOffer)
+{
+    var commands = new List<(string Command, bool AppendEnter)>();
+    var prompts = new List<MtcServerPrompt>
+    {
+        new(DateTimeOffset.UtcNow.AddSeconds(-1), "Command [TL=00:00:00]:[35]")
+    };
+    var sender = new MtcGameCommandSender(
+        "meridian",
+        (command, appendEnter) =>
+        {
+            commands.Add((command, appendEnter));
+            DateTimeOffset timestamp = DateTimeOffset.UtcNow.AddTicks(prompts.Count + 1);
+            if (command == "P")
+            {
+                prompts.Add(new MtcServerPrompt(timestamp, "Enter your choice [T] ?"));
+            }
+            else if (command == "T")
+            {
+                prompts.Add(new MtcServerPrompt(timestamp, "How many holds of Fuel Ore do you want to buy [20]?"));
+            }
+            else if (command == "20")
+            {
+                prompts.Add(new MtcServerPrompt(timestamp, "Your offer [501] ?"));
+            }
+            else if (command == availableCredits.ToString(System.Globalization.CultureInfo.InvariantCulture) && quoteAfterCounterOffer is not null)
+            {
+                prompts.Add(new MtcServerPrompt(timestamp, quoteAfterCounterOffer));
+            }
+            else
+            {
+                prompts.Add(new MtcServerPrompt(timestamp, "Command [TL=00:00:00]:[35]"));
+            }
+
+            return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+        },
+        _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+        _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+        () => Task.FromResult(false),
+        () => true,
+        () => DateTime.MinValue,
+        (_, _) => Task.CompletedTask,
+        () => prompts.ToArray(),
+        () => false,
+        commandsApproved: true);
+    await sender.SendAsync(
+        "meridian",
+        new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.FuelOre)
+        {
+            AvailableCredits = availableCredits
+        });
+    return commands;
+}
+
+Check(
+    (await RunUnaffordableQuoteScenarioAsync(500, quoteAfterCounterOffer: null)).SequenceEqual(
+        [("P", false), ("T", false), ("20", true), ("500", true)]),
+    "counter-offers every verified credit when a quote is slightly above the balance instead of offering 0");
+Check(
+    (await RunUnaffordableQuoteScenarioAsync(500, "Your offer [505] ?")).SequenceEqual(
+        [("P", false), ("T", false), ("20", true), ("500", true), ("0", true)]),
+    "declines a second unaffordable quote after one counter-offer");
+Check(
+    (await RunUnaffordableQuoteScenarioAsync(400, quoteAfterCounterOffer: null)).SequenceEqual(
+        [("P", false), ("T", false), ("20", true), ("0", true)]),
+    "declines a quote far above the balance without submitting the quoted price");
+
+var coursePlotCommands = new List<(string Command, bool AppendEnter)>();
+var coursePlotPrompts = new List<MtcServerPrompt>
+{
+    new(DateTimeOffset.UtcNow.AddSeconds(-1), "Command [TL=00:00:00]:[35] (?=Help)? :")
+};
+var coursePlotLines = new List<MtcServerPrompt>();
+var coursePlotSender = new MtcGameCommandSender(
+    "meridian",
+    (command, appendEnter) =>
+    {
+        coursePlotCommands.Add((command, appendEnter));
+        DateTimeOffset timestamp = DateTimeOffset.UtcNow.AddTicks(coursePlotPrompts.Count + 1);
+        switch (command)
+        {
+            case "C":
+                coursePlotPrompts.Add(new MtcServerPrompt(timestamp, "Computer command [TL=00:00:00]:[35] (?=Help)? :"));
+                break;
+            case "F":
+                coursePlotPrompts.Add(new MtcServerPrompt(timestamp, "What is the starting sector ? [35]"));
+                break;
+            case "":
+                coursePlotPrompts.Add(new MtcServerPrompt(timestamp, "What is the destination sector ?"));
+                break;
+            case "2909":
+                coursePlotLines.Add(new MtcServerPrompt(timestamp, "The shortest path (2 hops, 6 turns) from sector 35 to sector 2909 is:"));
+                coursePlotLines.Add(new MtcServerPrompt(timestamp.AddTicks(1), "35 > (400) > 2909"));
+                coursePlotPrompts.Add(new MtcServerPrompt(timestamp.AddTicks(2), "Computer command [TL=00:00:00]:[35] (?=Help)? :"));
+                break;
+            case "Q":
+                coursePlotPrompts.Add(new MtcServerPrompt(timestamp, "Command [TL=00:00:00]:[35] (?=Help)? :"));
+                break;
+        }
+
+        return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => true,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => coursePlotPrompts.ToArray(),
+    () => false,
+    commandsApproved: true,
+    getRecentServerLines: () => coursePlotLines.ToArray());
+await coursePlotSender.SendAsync(
+    "meridian",
+    new GameCommandRequest(GameCommand.PlotCourseToSector, 2909));
+Check(
+    coursePlotCommands.SequenceEqual(
+        [("C", false), ("F", false), ("", true), ("2909", true), ("Q", false)]),
+    "plots a course with the ship computer and returns to the Command prompt");
+async Task<(List<(string Command, bool AppendEnter)> Commands, bool Rejected)> RunContinuePauseScenarioAsync(string latestPrompt)
+{
+    var commands = new List<(string Command, bool AppendEnter)>();
+    var prompts = new List<MtcServerPrompt> { new(DateTimeOffset.UtcNow.AddSeconds(-1), latestPrompt) };
+    var sender = new MtcGameCommandSender(
+        "meridian",
+        (command, appendEnter) =>
+        {
+            commands.Add((command, appendEnter));
+            return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+        },
+        _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+        _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+        () => Task.FromResult(false),
+        () => false,
+        () => DateTime.MinValue,
+        (_, _) => Task.CompletedTask,
+        () => prompts.ToArray(),
+        () => false,
+        commandsApproved: true);
+    try
+    {
+        await sender.SendAsync("meridian", new GameCommandRequest(GameCommand.ContinuePausePrompt));
+        return (commands, false);
+    }
+    catch (InvalidOperationException)
+    {
+        return (commands, true);
+    }
+}
+
+var pauseContinued = await RunContinuePauseScenarioAsync("[Pause] - [Press Space or Enter to continue]");
+Check(
+    !pauseContinued.Rejected && pauseContinued.Commands.SequenceEqual([("", true)]),
+    "continues a live pause prompt with Enter");
+var nonPauseRejected = await RunContinuePauseScenarioAsync("Command [TL=00:00:00]:[2909] (?=Help)? :");
+Check(
+    nonPauseRejected.Rejected && nonPauseRejected.Commands.Count == 0,
+    "refuses to send a pause continuation when the latest prompt is not a pause");
+async Task<List<(string Command, bool AppendEnter)>> RunFighterEncounterScenarioAsync(bool tollFighters)
+{
+    var commands = new List<(string Command, bool AppendEnter)>();
+    DateTimeOffset encounterAt = DateTimeOffset.UtcNow.AddMilliseconds(-50);
+    string optionPrompt = tollFighters ? "Option? (A,D,I,R,P,S,?):? " : "Option? (A,D,I,R,S,?):? ";
+    var prompts = new List<MtcServerPrompt> { new(encounterAt, optionPrompt) };
+    var lines = new List<MtcServerPrompt>
+    {
+        new(encounterAt.AddMilliseconds(-1), tollFighters
+            ? "You have to destroy the fighters or pay their toll to remain in this sector."
+            : "You have to destroy the fighters to remain in this sector.")
+    };
+    var sender = new MtcGameCommandSender(
+        "meridian",
+        (command, appendEnter) =>
+        {
+            commands.Add((command, appendEnter));
+            DateTimeOffset timestamp = DateTimeOffset.UtcNow.AddTicks(prompts.Count + 1);
+            prompts.Add(command == "P"
+                ? new MtcServerPrompt(timestamp, "Do you want to pay it?")
+                : new MtcServerPrompt(timestamp, "Command [TL=00:00:00]:[2627] (?=Help)? :"));
+            return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+        },
+        _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+        _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+        () => Task.FromResult(false),
+        () => false,
+        () => DateTime.MinValue,
+        (_, _) => Task.CompletedTask,
+        () => prompts.ToArray(),
+        () => false,
+        commandsApproved: true,
+        getRecentServerLines: () => lines.ToArray());
+    await sender.SendAsync("meridian", new GameCommandRequest(GameCommand.ResolveFighterEncounter));
+    return commands;
+}
+
+Check(
+    (await RunFighterEncounterScenarioAsync(tollFighters: true)).SequenceEqual([("P", false), ("Y", false)]),
+    "pays a toll-fighter toll and confirms it instead of attacking");
+Check(
+    (await RunFighterEncounterScenarioAsync(tollFighters: false)).SequenceEqual([("R", false)]),
+    "retreats from non-toll hostile fighters instead of attacking");
 var autopilotTradeCommands = new List<(string Command, bool AppendEnter)>();
 var autopilotTradePrompts = new List<MtcServerPrompt>
 {
@@ -721,6 +1498,7 @@ Check(
 
 var saleTradeCommands = new List<(string Command, bool AppendEnter)>();
 var saleTradePrompts = new List<MtcServerPrompt>();
+bool saleTradeHaggleEnabled = true;
 saleTradePrompts.Add(new MtcServerPrompt(
     DateTimeOffset.UtcNow.AddSeconds(-1),
     "Command [TL=00:00:00]:[35]"));
@@ -764,8 +1542,9 @@ var saleTradeSender = new MtcGameCommandSender(
     () => DateTime.MinValue,
     (_, _) => Task.CompletedTask,
     () => saleTradePrompts.ToArray(),
-    () => true,
-    commandsApproved: true);
+    () => saleTradeHaggleEnabled,
+    commandsApproved: true,
+    setNativeHaggleEnabled: enabled => saleTradeHaggleEnabled = enabled);
 await saleTradeSender.SendAsync(
     "meridian",
     new GameCommandRequest(GameCommand.TradeAtCurrentPort, Product: TradeProduct.Organics)
@@ -784,6 +1563,7 @@ Check(
 
 var recoveryTradeCommands = new List<(string Command, bool AppendEnter)>();
 var recoveryTradePrompts = new List<MtcServerPrompt>();
+bool recoveryTradeHaggleEnabled = true;
 DateTimeOffset recoveryPromptAt = DateTimeOffset.UtcNow;
 recoveryTradePrompts.Add(new MtcServerPrompt(
     recoveryPromptAt,
@@ -816,12 +1596,237 @@ var recoveryTradeSender = new MtcGameCommandSender(
     () => DateTime.MinValue,
     (_, _) => Task.CompletedTask,
     () => recoveryTradePrompts.ToArray(),
-    () => true,
-    commandsApproved: true);
+    () => recoveryTradeHaggleEnabled,
+    commandsApproved: true,
+    setNativeHaggleEnabled: enabled => recoveryTradeHaggleEnabled = enabled);
 await recoveryTradeSender.RecoverUntrackedPortTradeAsync("meridian", recoveryPromptAt);
 Check(
     recoveryTradeCommands.SequenceEqual([("0", true), ("0", true)]),
     "declines each quantity in an untracked port trade and waits for Command");
+
+var affordableRecoveryCommands = new List<(string Command, bool AppendEnter)>();
+var affordableRecoveryPrompts = new List<MtcServerPrompt>();
+DateTimeOffset affordableRecoveryPromptAt = DateTimeOffset.UtcNow;
+affordableRecoveryPrompts.Add(new MtcServerPrompt(
+    affordableRecoveryPromptAt,
+    "How many holds of Fuel Ore do you want to buy [20]?"));
+var affordableRecoverySender = new MtcGameCommandSender(
+    "meridian",
+    (command, appendEnter) =>
+    {
+        affordableRecoveryCommands.Add((command, appendEnter));
+        DateTimeOffset timestamp = DateTimeOffset.UtcNow.AddTicks(affordableRecoveryPrompts.Count + 1);
+        if (command == "20")
+        {
+            affordableRecoveryPrompts.Add(new MtcServerPrompt(timestamp, "Your offer [500] ?"));
+        }
+        else if (command == "500")
+        {
+            affordableRecoveryPrompts.Add(new MtcServerPrompt(
+                timestamp,
+                "Command [TL=00:00:00]:[35]"));
+        }
+
+        return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => false,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => affordableRecoveryPrompts.ToArray(),
+    () => false,
+    commandsApproved: true);
+await affordableRecoverySender.RecoverUntrackedPortTradeAsync(
+    "meridian",
+    affordableRecoveryPromptAt,
+    followUpBuyProduct: TradeProduct.FuelOre,
+    availableCredits: 500);
+Check(
+    affordableRecoveryCommands.SequenceEqual([("20", true), ("500", true)]),
+    "uses verified credits to fill affordable holds, including an exact-balance quote");
+
+var requestedRecoveryCommands = new List<(string Command, bool AppendEnter)>();
+var requestedRecoveryPrompts = new List<MtcServerPrompt>();
+DateTimeOffset requestedRecoveryPromptAt = DateTimeOffset.UtcNow;
+requestedRecoveryPrompts.Add(new MtcServerPrompt(
+    requestedRecoveryPromptAt,
+    "How many holds of Organics do you want to buy [20]?"));
+var requestedRecoverySender = new MtcGameCommandSender(
+    "meridian",
+    (command, appendEnter) =>
+    {
+        requestedRecoveryCommands.Add((command, appendEnter));
+        DateTimeOffset timestamp = DateTimeOffset.UtcNow.AddTicks(requestedRecoveryPrompts.Count + 1);
+        if (command == "20")
+        {
+            requestedRecoveryPrompts.Add(new MtcServerPrompt(timestamp, "Your offer [500] ?"));
+        }
+        else if (command == "500")
+        {
+            requestedRecoveryPrompts.Add(new MtcServerPrompt(
+                timestamp,
+                "Command [TL=00:00:00]:[35]"));
+        }
+
+        return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => false,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => requestedRecoveryPrompts.ToArray(),
+    () => false,
+    commandsApproved: true);
+await requestedRecoverySender.RecoverUntrackedPortTradeAsync(
+    "meridian",
+    requestedRecoveryPromptAt,
+    availableCredits: 500,
+    requestedProduct: TradeProduct.Organics);
+Check(
+    requestedRecoveryCommands.SequenceEqual([("20", true), ("500", true)]),
+    "preserves the requested purchase product and fills all available holds during recovery");
+
+var correlatedOfferCommands = new List<(string Command, bool AppendEnter)>();
+DateTimeOffset correlatedQuantityPromptAt = DateTimeOffset.UtcNow.AddSeconds(-35);
+DateTimeOffset correlatedOfferPromptAt = correlatedQuantityPromptAt.AddSeconds(1);
+var correlatedOfferPrompts = new List<MtcServerPrompt>
+{
+    new(
+        correlatedQuantityPromptAt,
+        "How many holds of Fuel Ore do you want to buy [20]?"),
+    new(
+        correlatedOfferPromptAt,
+        "Your offer [107] ?"),
+    new(
+        correlatedOfferPromptAt.AddMilliseconds(10),
+        "PortTradeOffer",
+        IsPresenceHeartbeat: true,
+        PromptObservedAt: correlatedOfferPromptAt,
+        IsCurrentPromptConfirmed: true)
+};
+var correlatedOfferSender = new MtcGameCommandSender(
+    "meridian",
+    (command, appendEnter) =>
+    {
+        correlatedOfferCommands.Add((command, appendEnter));
+        if (command == "107")
+        {
+            correlatedOfferPrompts.Add(new MtcServerPrompt(
+                DateTimeOffset.UtcNow,
+                "Command [TL=00:00:00]:[35]"));
+        }
+
+        return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => true,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => correlatedOfferPrompts.ToArray(),
+    () => false,
+    commandsApproved: true);
+await correlatedOfferSender.RecoverUntrackedPortTradeAsync(
+    "meridian",
+    correlatedQuantityPromptAt,
+    followUpBuyProduct: TradeProduct.FuelOre,
+    availableCredits: 500);
+Check(
+    correlatedOfferCommands.SequenceEqual([("107", true)]),
+    "recovers an affordable quote across a presence heartbeat within the freshness window");
+
+var echoedTradeCommands = new List<(string Command, bool AppendEnter)>();
+DateTimeOffset echoedTradePromptAt = DateTimeOffset.UtcNow;
+var echoedTradePrompts = new List<MtcServerPrompt>
+{
+    new(echoedTradePromptAt, "How many holds of Organics do you want to sell [20]?")
+};
+var echoedTradeSender = new MtcGameCommandSender(
+    "meridian",
+    (command, appendEnter) =>
+    {
+        echoedTradeCommands.Add((command, appendEnter));
+        DateTimeOffset timestamp = DateTimeOffset.UtcNow.AddTicks(echoedTradePrompts.Count + 1);
+        if (command == "20")
+        {
+            echoedTradePrompts.Add(new MtcServerPrompt(
+                timestamp,
+                "How many holds of Organics do you want to sell [20]? 20"));
+            echoedTradePrompts.Add(new MtcServerPrompt(timestamp.AddTicks(1), "Your offer [1,690] ?"));
+        }
+        else if (command == "1690")
+        {
+            echoedTradePrompts.Add(new MtcServerPrompt(
+                timestamp,
+                "Your offer [1,690] ? 1690"));
+            echoedTradePrompts.Add(new MtcServerPrompt(
+                timestamp.AddTicks(1),
+                "Command [TL=00:00:00]:[35]"));
+        }
+
+        return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => false,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => echoedTradePrompts.ToArray(),
+    () => false,
+    commandsApproved: true);
+await echoedTradeSender.RecoverUntrackedPortTradeAsync(
+    "meridian",
+    echoedTradePromptAt,
+    availableCredits: 1_325,
+    requestedProduct: TradeProduct.Organics,
+    sellingExistingCargo: true);
+Check(
+    echoedTradeCommands.SequenceEqual([("20", true), ("1690", true)]),
+    "ignores echoed quantity and quote inputs while completing a bounded sale autonomously");
+
+var unmatchedOfferCommands = new List<(string Command, bool AppendEnter)>();
+var unmatchedOfferPrompts = new List<MtcServerPrompt>
+{
+    new(DateTimeOffset.UtcNow, "Your offer [107] ?")
+};
+var unmatchedOfferSender = new MtcGameCommandSender(
+    "meridian",
+    (command, appendEnter) =>
+    {
+        unmatchedOfferCommands.Add((command, appendEnter));
+        return Task.FromResult(MtcRpcActionResult.Ok("command sent"));
+    },
+    _ => Task.FromResult(MtcRpcActionResult.Ok("world trade started")),
+    _ => Task.FromResult(MtcRpcActionResult.Ok("script loaded")),
+    () => Task.FromResult(false),
+    () => false,
+    () => DateTime.MinValue,
+    (_, _) => Task.CompletedTask,
+    () => unmatchedOfferPrompts.ToArray(),
+    () => false,
+    commandsApproved: true);
+bool unmatchedOfferRejected = false;
+try
+{
+    await unmatchedOfferSender.RecoverUntrackedPortTradeAsync(
+        "meridian",
+        unmatchedOfferPrompts[0].Timestamp,
+        availableCredits: 500);
+}
+catch (InvalidOperationException exception) when (
+    exception.Message.Contains("no response was sent", StringComparison.Ordinal))
+{
+    unmatchedOfferRejected = true;
+}
+Check(
+    unmatchedOfferRejected && unmatchedOfferCommands.Count == 0,
+    "leaves an unmatched untracked quote unanswered instead of sending zero");
 
 var autopilotDeclineCommands = new List<(string Command, bool AppendEnter)>();
 var autopilotDeclinePrompts = new List<MtcServerPrompt>
@@ -1470,6 +2475,28 @@ finally
 
 await RunRpcServerRegressions(Check);
 await RunEmbeddedDashboardRegression(Check);
+
+// The two reviewed autonomous scripts must compile with the live TWX compiler, so a script edit cannot break them
+// silently until a live run.
+string repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "..", ".."));
+foreach (string reviewedScript in new[] { @"trading-cashing\2-worldtrade.ts", @"ship-upgrades\ls-dock-shopper-v33.ts" })
+{
+    string scriptPath = Path.Combine(repositoryRoot, "LLMProxyScripts", reviewedScript);
+    string? compileError = null;
+    try
+    {
+        using var compiler = new Core.ScriptCmp(null, Path.GetDirectoryName(scriptPath)!);
+        compiler.CompileFromFile(scriptPath, string.Empty);
+    }
+    catch (Exception exception)
+    {
+        compileError = exception.Message;
+    }
+
+    Check(
+        File.Exists(scriptPath) && compileError is null,
+        $"reviewed script {reviewedScript} compiles{(compileError is null ? string.Empty : $": {compileError}")}");
+}
 
 Console.WriteLine(failures == 0 ? "All MTC RPC safety and dashboard regressions passed." : $"{failures} MTC RPC safety/dashboard regression(s) failed.");
 return failures == 0 ? 0 : 1;

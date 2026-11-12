@@ -1,0 +1,2419 @@
+A Survey on Large Language Model-Based Game Agents
+SIHAO HU,Georgia Institute of Technology, USA
+TIANSHENG HUANG,GeorgiaInstitute of Technology, USA
+GAOWEN LIU,CiscoResearch, USA
+arXiv:2404.02039v5  [cs.AI]  8 Jun 2026
+RAMANA RAOKOMPELLA,CiscoResearch,USA
+FATIH ILHAN,Georgia Institute of Technology, USA
+SELIM FURKAN TEKIN,GeorgiaInstitute of Technology, USA
+YICHANG XU,GeorgiaInstitute of Technology, USA
+ZACHARY YAHN,GeorgiaInstitute of Technology, USA
+LING LIU,Georgia Institute of Technology, USA
+Game environments provide rich, controllable settings that simulate many aspects of real-world complex
+ity. As such, game agents offer a valuable testbed for exploring capabilities relevant to Artificial General
+Intelligence [226]. Recently, the emergence of Large Language Models (LLMs) provides new opportunities to
+endow these agents with generalizable reasoning, memory, and adaptability in complex game environments.
+This survey offers an up-to-date review of LLM-based game agents (LLMGAs) through a unified reference
+architecture. At the single-agent level, we synthesize existing studies around three core components: memory,
+reasoning, and perception–action interfaces, which jointly characterize how language enables agents to
+perceive, think, and act. At the multi-agent level, we outline how communication protocols and organizational
+models support coordination, role differentiation, and large-scale social behaviors. To contextualize these
+designs, we introduce a challenge-centered taxonomy linking six major game genres to their dominant agent
+requirements, from low-latency response in action games to open-ended goal formation in sandbox worlds.
+We will continuously update the survey to track new developments, and we maintain a continuously updated
+list of related papers at: https://github.com/git-disl/awesome-LLM-game-agent-papers.
+CCS Concepts: • Computing methodologies → Artificial intelligence; Natural language processing;
+Intelligent agents; • Software and its engineering → Interactive games.
+1 Introduction
+By scaling model capacity and training on massive, diverse text corpora, large language models
+(LLMs) havedemonstratedstrong capabilities in language understanding, knowledge generalization,
+and conversational dialogue [4, 19, 138]. Despite these advances, current LLMs are primarily opti
+mized on fixed, static text corpora. Human intelligence, in contrast, develops through continuous
+sensorimotor engagement with the environment [169], for example, by forming perceptual repre
+sentations from repeated interactions that capture the structure and dynamics of the world [12],
+and by adjusting behavior in response to feedback from action outcomes that gradually improves
+performance [32]. In general, the literature on embodied cognition emphasizes that human intelli
+gence arises from situated interaction with the environment rather than from disembodied symbol
+manipulation [31, 169, 189].
+Unlike humans, LLM-based agents lack a physical body, making deep participation in real
+world interactions difficult and costly. In contrast, game environments provide a natural testbed for
+realizing the coupling between agent and environment,andofferaricher,moreembodiedalternative
+compared to typical settings of current LLM-based agents, such as dialogue, web navigation, or API
+Authors’ Contact Information: Sihao Hu, sihaohu@gatech.edu, Georgia Institute of Technology, USA; Tiansheng Huang,
+thuang@gatech.edu, Georgia Institute of Technology, USA; Gaowen Liu, gaoliu@cisco.com, Cisco Research, USA; Ramana
+Rao Kompella, rkompell@cisco.com, Cisco Research, USA; Fatih Ilhan, filhan@gatech.edu, Georgia Institute of Technology,
+USA; Selim Furkan Tekin, stekin6@gatech.edu, Georgia Institute of Technology, USA; Yichang Xu, xuyichang@gatech.edu,
+Georgia Institute of Technology, USA; Zachary Yahn, zachary.yahn@gatech.edu, Georgia Institute of Technology, USA;
+Ling Liu, ling.liu@cc.gatech.edu, Georgia Institute of Technology, USA.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+2
+Hu et al.
+tool use [193]. By granting avatars to agents in the interactive world with perception and action
+modules, digital games approximate aspects of real-world while remaining safe, controllable, and
+cost-effective. In addition, they are reproducible and span a wide range of complexity, making them
+an effective platform for advancing LLMs toward interactive intelligence.
+Traditional game agents follow a control-based paradigm, where decision-making is coupled
+through predefined or learned state–action mappings [226]. Finite state machines, behavior trees,
+and reinforcement learning agents [79, 178] exemplify this design. In contrast, language serves as
+a unified medium for LLM-based agents to represent goals, contexts, and interactions, enabling
+explicit reasoning, reflection, and communication beyond traditional systems.
+Existing surveys [57, 193] touch on the topic from different angles yet largely treat games as
+one of downstream applications alongside dialogue, tool use, or web automation. However, the
+complexity and openness of game environments distinguish them from narrowly defined tasks.
+For instance, while a web-based agent may complete a query or transaction through a handful of
+API calls, a sandbox game enables researchers to cultivate entire agent societies and allows agents
+to freely explore, interact, and build within physics-driven worlds. These game environments
+afford a degree of freedom that enables emergent behaviors far beyond constrained, task-oriented
+interactions. On the other hand, game-focused surveys [56, 179] emphasize areas such as game
+development, educational applications, or content generation, leaving the field of LLM-based game
+agents (LLMGAs) underexplored. As a result, a dedicated survey of LLMGAs as a distinct research
+area is in strong demand.
+To bridge this gap, this survey focuses exclusively on LLM-based game agents. Our contributions
+include (i) a referencearchitectureforanalyzingLLMGAsatbothsingle-agentandmulti-agentlevels,
+and (ii) a challenge-centered game taxonomy linking game genres to agent design requirements.
+Through these two lenses, we review existing studies and identify open challenges and future
+directions. The remainder of this paper is organized as follows. Section 2 describes our research
+methodology. Section 3 provides an overview of the LLMGA framework and game taxonomy.
+Section 4, Section 5, and Section 6 detail the three core single-agent components: memory system,
+reasoning mechanism, and perception-action interface. Section 7 covers the multi-agent framework.
+Section 8 applies the challenge-centered taxonomy to analyze design challenges and methods.
+Section 9 synthesizes the reviewed literature and identifies the open challenges. Section 10 concludes
+the survey.
+2 Research Methodology
+2.1 Research Objectives and Questions
+This survey is guided by two main objectives. The first objective is to clarify the architectural
+landscape of LLM-based agents in games and identify common design patterns across existing
+studies. The second objective is to analyze how contextual characteristics of games, such as game
+genre, relate to architectural design decisions in LLMGAs. Based on these objectives, this survey
+addresses the following research questions:
+(Q1) How are the core architectural components of LLMGA frameworks designed and implemented
+in existing studies?
+(Q2) How do different game genres influence architectural design requirements in LLMGAs?
+To answer Q1, we categorize existing LLMGA studies under a unified reference architecture that
+integrates two complementary perspectives. The first, the LLMGA framework, enables component
+level analysis of a single agent. It abstracts common design choices into three modules: a memory
+system that stores and retrieves past experience, a reasoning mechanism that plans and makes
+decisions, and a perception & action interface that connects the agent to the game environment.
+The second, the multi-LLMGA framework, examines how populations of agents interact and
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+3
+self-organize. It distinguishes two levels: agent-level communication, which governs how agents
+exchange messages and align their beliefs, and organization-level structure, which shapes how
+agents are coordinated and organized collectively.
+To answer Q2, we introduce a challenge-centered taxonomy that maps six representative game
+genres [101, 174] to the distinct demands they impose on agent design. For example, role-playing
+games center on the problem of role fidelity, i.e., how to encode and maintain consistent personas
+in memory so that dialogue and actions remain aligned with character identity over extended
+interactions. These genre–challenge mappings offer a structured lens on prior work and practical
+guidance for developing future LLMGAs. The broader aim of this survey is to position game
+environments as experimental grounds for examining whether sustained interaction between
+agents and their environments can foster more general and adaptive forms of intelligence.
+2.2 Source Retrieval Process
+We include papers that employ an LLM or vision language model (VLM) as a central decision
+making component and involve interaction with a game or game-like environment. The source
+retrieval process can be divided into three steps: In the first step, we conducted keyword searches
+with the Boolean query (“large language model” OR LLM) AND (game OR gaming) AND (agent)
+across four sources, including ACM Digital Library, IEEE Xplore, Google Scholar, and arXiv, cov
+ering publications from January 1, 2022 to June 1, 2026. In the second step, we used Rayyan1 to
+facilitate collaborative screening by six co-authors. Each co-author independently reviewed titles
+and abstracts in blind mode and labeled each record as included or excluded. Papers receiving at
+least two independent include votes were retained. We then conducted full-text screening by evenly
+assigning the papers to the same six co-authors, who labeled each paper as included or excluded
+based on its relevance to the survey scope. In the third step, we conducted backward snowballing
+by reviewing the recent references on LLMGAs. Identified candidates were subjected to the same
+collaborative full-text screening described in the second step, resulting in a final corpus analyzed
+in this survey.
+3 Overview
+3.1 LLM-based Game Agent(LLMGA)Framework
+Cognitive science views intelligence as an integrated system in which perception–action, memory,
+and reasoning processes interact to produce adaptive behavior [99, 136]. In line with this view, we
+find that existing studies on LLMGAs primarily introduce techniques that fall into three components:
+memory,reasoning,andperception–action[73,142,227].Buildingonthisperspective, wecategorize
+existing LLMGA studies under a unified framework that instantiates these cognitive principles
+through the three components. Figure 1(a) illustrates the overall architecture: a central LLM
+connects the three components in continuous interaction with the game environment. At each step
+of gameplay, the environment evolves and produces new observations, which the agent perceives,
+interprets, and acts upon, completing a closed perception-action loop.
+The perception interface transforms these observations into representations that the LLM can
+interpret [126]. In Section 6, we discuss how different modalities of observations, including textual,
+symbolic, and visual inputs, are handled by the agent.
+The memory system provides a temporal mechanism that links past, present, and future, allow
+ing information to persist across time and guide ongoing decisions. Following classic distinctions in
+cognitive psychology [10, 11], we divide it into working memory and long-term memory. Working
+1Rayyan is a web-based tool for collaborative screening in systematic reviews, supporting blinded inclusion/exclusion
+decisions. https://www.rayyan.ai/
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+4
+Hu et al.
+Fig. 1. (a) Single-agent framework for LLMGAs, consisting of a memory system, a reasoning mechanism,
+and interfaces for perception and action. These modules are connected through the central LLM, driving
+a continuous gameplay loop where the agent perceives the evolving environment and acts in response. (b)
+Multi-LLMGAframework thatextends the architecture to populations ofagents,including the communication
+protocol that governs message exchange and the organizational structure that determines topology, task
+allocation, and role differentiation.
+memory offers a short-term buffer that supports immediate processing and coordination across
+steps, with technical considerations centered on extending its capacity and maintaining consis
+tency over time. Long-term memory, by contrast, accumulates knowledge and experience across
+episodes. In Section 4, we will focus on how to decide when and what to consolidate from transient
+experiences into long-term memory, and how stored content can be structured and retrieved.
+Building on observations and memories, the reasoning mechanism defines how the LLM
+generates reasoning traces, such as plans, explanations, or self-critiques, that guide action propos
+als [166, 209, 227]. In cognitive science, reasoning is understood as constructing and operating on
+internal representations to draw inferences beyond the given information [47, 84]. In Section 5,
+we outline two complementary approaches: prompting strategies, which elicit diverse reasoning
+paths at inference time, ranging from single linear chains to multiple parallel explorations and
+iterative refinements; Training paradigms, which improve reasoning ability by learning from expert
+demonstrations and from trial-and-error interaction with the environment.
+Finally, the action interface functions as the agent’s hand and foot, translating language-based
+action proposals into concrete interactions with the environment [192]. In Section 6, we discuss
+how high-level, free-form language decisions are transformed into executable behaviors, including
+constrained natural language commands, symbolic actions, and sequences of low-level controls.
+These actions in turn alter the game state, producing new observations and completing the cycle of
+interaction.
+3.2 Multi-LLMGA Framework
+In games, agents interact not only with the environment but also with one another, which naturally
+calls for explicit mechanisms for coordination and communication. Game environments impose real
+istic constraints on information sharing: observations are distributed across agents, communication
+channels are often bandwidth-limited, and direct sharing of internal states or memories is typically
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+5
+disallowed or time-constrained. In such environments, communication between agents needs to
+be explicitly designed to operate under constrained channels [241]. Communication protocols
+therefore formalize what information is shared, when it is shared, and how it is interpreted by the
+receiver [149]. Without such protocols, directly transmitting raw observations is often inefficient,
+noisy, and prone to conflict with an agent’s local beliefs.
+When multiple agents act in a shared environment, decision conflicts, redundant actions, and
+inconsistent plans become unavoidable. We need explicit mechanisms to manage these challenges,
+such as introducing decision authority and responsibilities. Organizational structures are there
+fore necessary to manage, track and constrain how decisions are made and combined [109, 149]. By
+defining role assignments and coordination pathways, organizational structures reduce coordina
+tion complexity and prevent uncontrolled interaction among agents. Such organizational structures
+help prevent situations in which coordination overhead grows combinatorially with the number of
+agents, thereby reducing inefficiency in cooperative behavior.
+3.3 Game Taxonomy for LLMGA Design
+The way a game agent is designed cannot be isolated from the environment in which it operates:
+Different game genres foreground distinct capabilities and place different challenges on agent
+design. For example, action games like Street Fighter demand far quicker reactions than strategy
+games like Poker, while requiring much less reasoning. Therefore, a taxonomy that captures how
+these characteristics shape agent design is essential.
+Clarke et al. [33] critically examine how conventional video game genre classifications often mix
+orthogonal dimensions such as mechanics and player structures, thereby lacking conceptual clarity.
+Building on this insight, we ground our taxonomy in established game studies literature through a
+gameplay-oriented perspective, drawing on the top-level groupings from SteamDB [174] and the
+classification proposed by et al. [101]. To maintain coherence with existing LLMGA studies, we
+merge narrower categories (e.g., driving/racing, fighting) and additionally include sandbox games,
+resulting in six major genres as depicted in Table 1. Building on this categorization, we further
+introduce a challenge-centered view, where each genre is linked to the core design challenge that
+most strongly drives agent development.
+As shown in Table 1, we identify six representative game genres, each posing distinct design
+challenges for LLM-based agents. (1) Action games [1, 137] unfold in real time and emphasize
+reflexive control, such as aiming, dodging, or chaining combos under tight temporal constraints.
+The core challenge is low-latency response, which shapes agent design by requiring fast action and
+hybrid architectures that reconcile LLM reasoning with frame-level responsiveness; (2) Adventure
+games [68, 196] emphasize exploration and long-horizon quests, where progress depends on
+remembering locations, items, and unresolved preconditions. The challenge is stateful world
+modeling, pushing agents to develop memory structures that maintain coherent records of evolving
+environments and dependencies;(3) Role-playing games[48, 225] center oncharacter customization,
+where players assume predefined roles with distinct traits and narrative trajectories [96]. The key
+challenge is role fidelity, shaping agent design toward embedding role profiles into memory and
+reasoning so that dialogue and actions remain persona-consistent over extended horizons; (4)
+Strategy games [72, 126] involve multi-step planning against adaptive adversaries, ranging from
+fully observable board games to imperfect-information settings with hidden states. Their central
+challenge is opponent-aware planning, which requires agents to integrate multi-step reasoning with
+theory-of-mind style opponent modeling; (5) Simulation games [142] approximate real-world or
+systemic processes, fromindividual social life to the evolution of societies. The challenge is dynamics
+fidelity, shaping agent design to ensure that behaviors remain credible and human-like rather than
+drifting into unrealistic patterns; (6) Sandbox games [66, 131] offer open-ended environments where
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+6
+Hu et al.
+Table 1. Gameplay taxonomy: game genres, core challenges, and representative environments.
+Genre
+Core Challenge
+Representative Environments
+Actiongames
+Adventure games
+Low-latency response
+Stateful world modeling
+Role-playing games Role fidelity
+Strategy games
+Opponent-aware planning
+Simulation games
+Sandboxgames
+Dynamics fidelity
+Open-ended goal progression
+Atari 2600 games [1]; Procgen [35]; ViZDoom [92];
+DeepMind Lab [15]; Street Fighter [137]
+TextWorld [36]; Jericho [68]; ALFWorld [168];
+ScienceWorld [196]; Red Dead Redemption II [180]
+STARLING [13]
+AvalonBench [115]; Werewolf [224]; Diplomacy [48];
+Among Us [130]; SOTOPIA [255]; clembench [22]
+Chess/Go [52, 185]; Poker [65, 75];
+Pokémon Battles [73]; StarCraft II [126]
+Card Games [199]; LLM-PySC2 [111]
+Generative Agents [142]; Humanoid Agents [207];
+AgentSims [118]; LyfeGame [86]; CivRealm [148];
+Artificial Leviathan [40]
+IndoorWorld [210]; Moltbook [107]
+Minecraft [131]; MineDojo [50]; Crafter [66]
+Plancraft [39]; UnrealZoo [252]
+players set their own objectives, explore, and build. The challenge is open-ended goal progression,
+which drives designs where agents can generate self-directed goals, decompose them hierarchically,
+and accumulate reusable skills to sustain long-term play.
+4 Memory System of LLMGA
+LLMGAs require memory systems that encode and retain prior experience to ensure coherent and
+efficientinteraction. Followingclassicdistinctions in cognitive psychology[10,11],weconceptualize
+an agent’s memory as working memory and long-term memory.
+In cognitive psychology,workingmemoryfunctionsasatransientandlimited-capacitybufferthat
+temporarily stores and manipulates information needed for ongoing cognitive processing [10, 11].
+In LLMGAs, this role is fulfilled by the model’s short context window and auxiliary mechanisms
+that keep recent observations “in mind”. For working memory, we examine three key mechanisms.
+The first is context extension, which enlarges the effective context window so that recent events
+can be accommodated within short-term processing. The second is memory compression, which
+condenses lengthy inputs into compact representations, reducing capacity limits while preserving
+essential content. The third is active maintenance, which explicitly preserves recent bindings,
+plans, and intermediate states, preventing short-term drift and inconsistency caused by temporal
+decay.
+In contrast, long-term memory refers to the durable store of information that persists over
+extended periods beyond the limited span of working memory [173, 188]. An LLMGA operating
+over long horizons faces three fundamental challenges naturally. As the storage is limited and
+most observations are transient, noisy, or low-value, the agent needs mechanisms to decide not
+only what information should persist beyond the immediate context, but also when transient
+traces should be committed to durable storage, so that memory remains useful and tractable. This
+motivates the role of memory consolidation. Once memories are retained, raw observations
+alone are insufficient to support abstraction, generalization, or efficient access. This creates the
+need to organize experiences into structured representations, motivating memory structuring.
+Finally, because decision-making in a given situation typically depends on only a small subset of
+relevant past memories, the agent needs to selectively reactivate critical information into working
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+7
+memory, motivating memory retrieval. Figure 2 presents the structure of this section of different
+components within the memory system.
+Memory System
+Working Memory
+Context Extension
+Memory Compression
+Active Maintenance
+Consolidation
+Fig. 2. Overview of the memory system of LLMGAs.
+4.1 Working Memory
+Long-Term Memory
+Structuring
+Retrieval
+Recent studies can be grouped into three categories. First, capacity extension enlarges the effective
+span of working memory by expanding positional encodings or restructuring attention. Second,
+memory compression distills lengthy or redundant input into more salient representations, mirror
+ing the cognitive process of recoding multiple stimuli into higher-order units to overcome capacity
+limits [37]. Finally, active maintenance explicitly preserves variable bindings and states over short
+time scales, mirroring the human use of rehearsal to prevent rapid forgetting and inconsistency
+due to temporal decay [11, 37].
+ContextExtension. Context refers to the input tokens that the LLM can access when generating
+a newtoken, which is bounded by its context length [19]. To overcome this, recent research focuses
+on extending the effective scope of the context window without full retraining. In LLM, position
+refers to the relative order of tokens within this context, typically represented through positional
+encodings that allow the model to distinguish token order in a sequence [190]. Position-based
+approaches modify positional encodings to enable length extrapolation.
+Position Interpolation (PI) rescales Rotary Position Embeddings (RoPE) to support longer se
+quences with minimal fine-tuning. YaRN observes that uniform scaling distorts high-frequency
+positional components and instead applies non-uniform, frequency-aware interpolation that better
+preserves local token relationships [143]. LongRoPE further identifies that different RoPE dimen
+sions tolerate different amounts of extension and searches for per-dimension rescaling factors,
+scaling context to over 2M tokens [42]. Beyond positional scaling, several methods restructure
+attention over long inputs. For example, Parallel Context Windows (PCW) processes long se
+quences by dividing them into coordinated segments without retraining [155], while PoSE enables
+generalization to longer contexts via sparse positional encoding [257].
+MemoryCompression.Asinput length grows, LLM performance often degrades due to limited
+capacity to maintain and manipulate multiple information items simultaneously [60]. To alleviate
+this bottleneck, memory compression techniques aim to condense long contexts into compact
+representations that preserve salient information. One line of work introduces soft or virtual tokens
+that summarize longer text spans, allowing the model to condition on compressed representations
+rather than the full input [58, 102, 135]. Representative examples include AutoCompressor, which
+learns segment-level summary vectors [27], and GIST, which trains virtual tokens to encode the
+essential content of a prompt for reuse [135].
+Another direction focuses on hierarchical summarization, where long sequences are recursively
+condensed into higher-level abstractions. Methods such as chain-of-summarization [126] incremen
+tally condense game-state trajectories by segmenting the temporal sequence into short windows
+and recursively summarizing them into higher-level representations. Similarly, NUGGET [152]
+organizes long contexts into structured summaries, enabling efficient retrieval and reasoning while
+keeping inputs within the context window.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+8
+Hu et al.
+Fig. 3. Illustration of temporal inconsistency [72]: When facing a powerful opponent, the agent tends to
+switch different Pokémon in consecutive steps rather than taking attack.
+Active Maintenance. Active maintenance refers to preserving the contents of working memory
+over short intervals to ensure continuity in reasoning and action. In LLMGAs, failure to maintain
+such short-term state often leads to inconsistent decisions, even when recent events remain within
+the context window. A representative example is shown in PokéLLMon [72] (Figure 3), where
+agents repeatedly switch Pokémon in consecutive turns instead of attacking, and the issue is further
+exacerbated when chain-of-thought reasoning is adopted.
+From the perspective of generation, reasoning introduces cumulative stochasticity that can lead
+to divergent decisions. Self-Consistency CoT (SC-CoT) [201] attempts to mitigate this inconsistency
+by applying majority voting across reasoning paths in every step. One effective solution is Last
+Thoughts [72], which explicitly carries the reasoning trace from the previous step into the next
+prompt, anchoring decisions to prior deliberation and substantially improving consistency. Related
+approaches maintain short-term state by explicitly carrying compact summaries across steps. Belief
+state maintenance summarizes the agent’s current understanding for reuse [104], while MEM1 [256]
+andHiAgent[70]updateconcisesharedorsubgoal-levelmemorystatestoretainsalientinformation
+and improve short-horizon consistency. In a similar spirit, StateFlow conceptualizes an agent’s
+task-solving process as a state machine, explicitly tracking task state through states and transitions
+while delegating sub-tasks to actions [214].
+4.2 Long-Term Memory
+Recent agent architectures emphasize three fundamental processes in the design of long-term
+memorysystems. First, memory consolidation determines when and what to commit from transient
+buffers to durable storage. Second, memory structuring addresses how stored content is organized.
+Finally, memory retrieval specifies how past knowledge is re-activated to guide ongoing decision
+making. These components together ensure that long-term memory effectively archives past
+experience and supports future behavior.
+Consolidation. In cognitive psychology, the transfer of information from working memory
+into long-term memory is termed consolidation [10, 173]. For LLMGAs, the analogous process
+is to decide when and what to commit from transient buffers to durable storage so that memory
+remains useful and tractable. A common paradigm is signal-triggered consolidation, where specific
+signals determine whether new information should be committed. In Generative Agents [142],
+each incoming observation is assigned an importance score, and once the cumulative importance
+of recent events exceeds a threshold, the agent pauses to reflect, producing a summary that is
+then written into long-term memory. MemoryBank [253] applies a similar principle, committing
+experiences when their relevance to the goal surpasses a salience threshold. Voyager [192] instead
+uses task outcomes as signals: successful code executions are committed into a skill library, while
+failed attempts are excluded or down-weighted.
+More recent works extend write-back into more flexible learning-based schemes. For instance,
+CoALA[175]models“learning”asanexplicit internal action within the agent’s action space, leaving
+it to the control policy (e.g., LLM) to decide when to encodenewinformationintolong-termmemory.
+Self-Controlled Memory [191] introduces a trainable memory controller that adaptively decides
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+relation
+A Survey on Large Language Model-Based Game Agents
+9
+Entity 1
+Chunk 1
+Chunk 2
+Chunk 3
+(a) Chunks
+Metadata
+Metadata
+Metadata
+{
+{
+{
+Key 1
+Key 2
+Key 3
+: Value 1
+: Value 2
+: Value 3
+}
+}
+Root
+Summary
+A
+Summary
+B
+}
+Chunk 1 Chunk 2
+Chunk 3 Chunk 4
+relation
+Entity 2
+Entity 3
+Entity 5
+Entity 4
+(b) Key-value
+relation
+(c) Tree structure
+(d) Graph structure
+(e) Parametric storage
+Fig. 4. Illustration of representative memory structuring approaches.
+whether to write or use memory at each step. The controller is optimized jointly with the LLM
+through task-level supervision, such that memory updates are triggered only when they improve
+downstream performance. Continual-learning agents extend this idea: NeSyC pairs an LLM with
+symbolic reasoning and a contrastive generality-improvement scheme that iteratively hypothesizes,
+validates, and refines reusable action knowledge, with a memory-based monitor triggering updates
+as embodied agents transition across ALFWorld, VirtualHome, and Minecraft [28]. O3D mines large
+offline interaction logs to automatically discover reusable skills and distill generalizable knowledge,
+improving long-horizon decision-making [216].
+Structuring. Representative structures range from simple text fragments to highly organized
+graphs and implicit parametric storage, as shown in Figure 4. The most direct approach is to
+store observations as chunks [142]. To facilitate later retrieval, each chunk can be augmented with
+metadata such as timestamps, importance scores [142], or Q-values [239]. For example, MrSteve
+specializes such episodic chunks into a Place Event Memory that records what, where, and when
+each event occurred, enabling selective recall during Minecraft play [141]. Beyond raw fragments,
+many systems adopt a key–value representation, where keys encode identifiers or semantic descrip
+tors, and values store the corresponding content. This allows fast lookups and supports multimodal
+inputs: for example, Voyager represents keys as program descriptions paired with code snippets as
+values [192], while JARVIS-1 stores visual observations as keys and successful execution plans as
+values [206].
+To capture hierarchical relations, memories can be recursively clustered into a tree structure.
+Generative Agents [142], RAPTOR [159], and MemTree [157] all build memory trees where raw
+chunks form the leaves, and higher layers summarize increasingly abstract topics. Although the
+update mechanism differs, the underlying idea is to let new experiences traverse the tree, merging
+with existing nodes or forming new branches, while recursively updating parent summaries. Game
+agents adopt similar hierarchies: GLoW maintains a dual-scale world memory pairing a global tra
+jectory frontier of high-value discoveries with local multi-path reflection for hard-exploration text
+adventure games [95], while MACLA distills trajectories into an external hierarchical procedural
+memory whose entries are tracked by Bayesian reliability estimates and contrastively refined [55].
+An alternative design is to use graph-structured memory. In knowledge graph approaches, nodes
+correspond to entities and edges correspond to semantic relations, typically extracted as triplets
+from text chunks, emphasizing fact representation [9, 108]. A-MeM [223] organizes memory into
+a network of atomic notes enriched with tags and context, and edges represent semantic links
+between related notes, emphasizing interlinked note-taking and allowing updates to existing nodes.
+KLPEG structures game elements, task dependencies, and causal relations into such a graph for
+multi-hop reasoning over update logs [134], and Optimus-1 pairs a hierarchical directed knowl
+edge graph of world knowledge with a multimodal experience pool for long-horizon Minecraft
+tasks [112].
+Finally, some work explores parametric storage, where memory is encoded implicitly in the
+model’s parameters rather than as external data. This perspective aligns with human cognition,
+relation
+relation
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+10
+Hu et al.
+which does not store verbatim text but instead internalizes experience. Fine-tuning on domain
+knowledge or episodic data can thus endow LLMs with embedded semantic or procedural mem
+ory [53, 208]. For instance, CharacterLLM fine-tuned on synthetic character experiences can recall
+detailed knowledge of people, events, and objects in a role-consistent manner [164].
+Retrieval. Memory retrieval is the process of reactivating stored information to guide current
+reasoning and action. Human studies also highlight that retrieval is selective and subject to recency,
+salience, and interference effects [37, 46], which resonate with the design of LLMGAs. One com
+mon strategy is metadata-based retrieval, where memories are annotated with attributes such as
+timestamps, importance scores, or Q-values and ranked accordingly during retrieval [142, 239, 253].
+A second approach is semantic retrieval, where queries are embedded into a vector space and
+compared with stored representations. Generative Agents, for instance, compute cosine similarity
+between a self-instructed query and stored text memories [142]. In key–value settings, similarity
+is measured between the query and the key, with the associated value returned. This design
+allows flexibility across modalities: Voyager retrieves executable code by comparing program
+descriptions [192], while JARVIS-1 retrieves action plans from multimodal keys that combine
+task descriptions and visual observations [206]. Building on example-based retrieval, agents can
+curate a database of their own successful trajectories and retrieve them as in-context exemplars,
+improving sequential decision-making on the ALFWorld and Wordcraft games without manual
+prompt engineering [160].
+For more structured memories, retrieval can exploit graph or tree topologies. Graph-based
+retrieval begins by identifying relevant nodes using semantic or lexical cues, then traverses edges
+to explore multi-hop neighborhoods, finally synthesizing the resulting subgraph into a coherent
+narrative for the LLM to consume [9, 108]. For Minecraft, goal-oriented graphs apply this graph
+traversal to objectives, so that retrieving a goal recursively surfaces its prerequisites for coherent
+multi-step plans [103]. Tree-based retrieval instead performs hierarchical traversal: starting from the
+root, the agent selects top-𝑘 relevant nodes at each level based on similarity, gradually descending
+to finer-grained leaves. Some variants collapse the hierarchy into a flat pool of summaries and
+retrieve based purely on semantic similarity [157, 159].
+Finally, for parametric storage, knowledge is embedded implicitly in model weights rather than
+explicit structures. Such retrieval resembles implicit or procedural memory in humans, in which
+skills and habits are expressed without deliberate recall [164]. Table 2 summarizes representative
+LLMGAs by their memory design, showing the diversity of memory mechanisms across different
+game environments.
+5 Reasoning of LLMGA
+In cognitive science, reasoning is understood as the process of constructing and manipulating
+internal representations of known information to uncover implicit relations and abstract structures,
+thereby enabling conclusions that extend beyond what is explicitly given [47, 84]. In LLMGAs,
+reasoning serves as the central mechanism that transforms perceived and retrieved information into
+coherent plans, decisions, and explanations. It unfolds through language, by generating intermediate
+thought sequences that externalize internal deliberation and guide subsequent actions [98, 209].
+For instruction-guided reasoning, designed prompts elicit reasoning behavior directly at inference
+time. The first mechanism is chain-of-thought, which guides the model to articulate intermediate
+steps before arriving at an answer. The second is search-based reasoning, which explores multiple
+reasoning paths in parallel and selects among them to ensure consistency. The third is reflective
+reasoning, whichiteratively improves reasoning across steps by incorporating internal self-critique
+or external signals.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+11
+Table 2. Summary of representative LLMGAs in terms of memory design.
+LLMGA
+Environment
+Working Memory
+Long-Term Memory
+Reflexion [166]
+PokéLLMon [72]
+TextStarCraft [126]
+ALFWorld
+Pokémon Battles
+StarCraft II
+SuspicionAgent [63]
+Leduc Hold’em
+ProAgent [238]
+Voyager [192]
+GTIM [258]
+JARVIS-1 [206]
+GenerativeAgents [142]
+E2WM[215]
+LLMPlanner [170]
+Overcooked-AI
+Minecraft
+Minecraft
+Minecraft
+Small Village
+VirtualHome
+ALFRED
+CharacterLLM [164]
+Role-playing QA
+Optimus-1 [112]
+MrSteve [141]
+GLoW[95]
+MACLA[55]
+KLPEG [134]
+GoG [103]
+Minecraft
+Minecraft
+Jericho
+ALFWorld
+Overcooked, Minecraft
+Minecraft
+In-episode experience
+Active maintenance (last-step thoughts)
+Memory compression (chain-of-summarization)
+In-episode experience
+Active Maintenance (Intention and belief)
+Short-term code feedback
+Short-term action feedback
+Short-term situational context
+Memory compression (tree-based reflection)
+In-context dialogue
+In-episode experience
+In-context dialogue
+Short-term observation
+In-episode observation
+Local multi-path reflection
+In-episode experience
+Reflection on previous episodes
+External game knowledge for retrieval
+Reflection on previous episodes
+Past experience for retrieval
+Successful code for retrieval
+Successful plan for retrieval
+Successful multimodal plan for retrieval
+Streaming memory with metadata
+Exploration experience for fine-tuning
+Exemplar plan for retrieval
+Synthetic experience for fine-tuning
+Hybrid knowledge graph + experience pool
+Place Event Memory (what-where-when)
+Dual-scale world memory
+Hierarchical procedural memory
+Knowledge-graph memory
+Goal-oriented graph for retrieval
+For fine-tuning paradigms, reasoning abilities are improved through optimization on data or
+experience interacted with the game environments. The first mechanism is supervised fine
+tuning, where agents imitate expert demonstrations to acquire reasoning behaviors. The second
+is reinforcement learning, which updates policies or value models to optimize reasoning with
+task rewards. The third is preference optimization, which contrasts preferred and dispreferred
+generations to bias reasoning toward desirable outcomes. Figure 5 presents the structure of this
+section of different components within the reasoning mechanism.
+Reasoning
+Instruction-guided Reasoning
+Fine-tuning for Reasoning
+Chain-of-Thought
+Search-based Reasoning
+Reflective Reasoning
+Supervised Fine-tuning
+Reinforcement Learning
+Preference Optimization
+Fig. 5. Categorization of reasoning mechanisms of LLMGAs.
+5.1 Instruction-Guided Reasoning
+Prior studies have demonstrated that reasoning abilities can be elicited and amplified by deliberate
+prompting strategies at inference time, which guide models to externalize intermediate steps rather
+than relying solely on direct answer generation [98, 209]. We categorize existing methods into
+three groups. Chain-of-thought prompting elicits a single linear reasoning path, but is prone to
+error propagation. Search-based reasoning mitigates this by generating and organizing multiple
+trajectories to enhance robustness. Reflective reasoning emphasizes temporal refinement, where
+reasoning is iteratively improved using signals from prior experience or the environment.
+Chain-of-Thought. CoT [209] is the basic approach that prompts LLMs to conduct intermediate
+reasoning before generating the answers, as shown in Figure 6. Since generation can be seen
+as an auto-regressive process of searching the next token in the latent space, the introduction
+of intermediate reasoning enhances the ability to traverse greater distances in that latent space,
+making LLMs capable of addressing more complex tasks. The ReAct [227] agent interleaves CoT
+reasoning and actions using few-shot prompting in text-based games. In their approach, reasoning
+acts as a mechanism for the agent to periodically check its task progress and plan its next steps.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+12
+Hu et al.
+: observation
+Ot
+at
+In-Out Prompt
+Ot
+thg
+…
+thg
+at
+Chain-of-thought
+Ot
+Refine
+thg
+…
+thg
+at
+Self-Refine
+: thought/reflection
+Ot
+thg
+thg
+… 
+…
+thg
+: feedback : action
+Ot
+thg
+…
+thg
+thg
+…
+thg
+Ot-1
+…
+Ot
+…
+at-1 at
+…
+thg thg
+Majority
+voting 
+at
+thg
+thg
+at
+ft-1
+reft-1
+Self-Consistency CoT
+Tree-of-thought
+ft
+reft
+Reflexion
+Fig. 6. Illustration of representative instruction-guided reasoning approaches. 𝑂𝑡 denotes the observation at
+step 𝑡, 𝑎𝑡 denotes the action output at step 𝑡, and thg denotes an intermediate reasoning step. In Reflexion, 𝑓𝑡
+represents feedback and 𝑟𝑒𝑓𝑡 denotes the resulting reflection at step 𝑡.
+Intermediate reasoning introduces additional stochasticity, which can lead to inconsistent outputs.
+For instance, in Pokémon Battles, CoT may cause agents to panic-switch Pokémon in consecutive
+turns [72], as shown in Figure 3. Moreover, once an early step deviates, subsequent tokens may
+inherit and magnify the error [127]. Self-Refine [127], GPTLens [71] and RCI [93] aim to mitigate
+error propagation through self-criticism, first generating reasoning thoughts and then evaluating
+and refining them to improve the reasoning generation.
+Search-based Reasoning. A major limitation of single-path chain-of-thought is fragility: ran
+domness in sampling may yield inconsistent outputs, and early errors can propagate through
+the chain [127, 201]. Search-based methods mitigate this by generating multiple intermediate
+reasoning candidates and then selecting, aggregating, or revising them. As shown in Figure 6,
+Self-Consistency [201] alleviates inconsistency by prompting LLMs to generate multiple chains of
+thoughts independently, and conduct majority voting on the final answer to find the most consis
+tent reasoning path. Tree-of-Thoughts [2] focuses on preventing error propagation by proposing
+multiple intermediate thoughts and selecting the correct one. Specifically, it decomposes a task
+into multiple steps, generates candidate thoughts for each step, and selects the most promising one,
+making the reasoning process resemble traversing a tree of thoughts. THREAD frames generation as
+a thread of execution that dynamically spawns child threads for intermediate reasoning, improving
+adaptive decomposition [161]. For graph-based reasoning, Graph-of-Thoughts [17] aggregates
+thoughts across different reasoning paths, converting a tree structure into a directed acyclic graph
+(DAG). SPRING [213] constructs a template DAG in which each node corresponds to a question
+or instruction used to prompt LLMs for progressive reasoning. In their study, the authors prompt
+LLMs to summarize the Crafter paper [66] into a DAG and then progressively traverse the DAG
+to answer these questions, thereby guiding the model through a step-by-step reasoning process.
+AgentKit composes agent reasoning as a dynamic graph of modular natural-language nodes that
+support hierarchical planning and reflection in the Crafter sandbox game [212].
+Reflective Reasoning. Unlike generic LLM agents often evaluated on single-turn tasks, game
+agents operate within an observation–action–feedback loop, continuously perceiving the environ
+ment, taking actions, and adjusting decisions based on the resulting outcomes. Reflective reasoning
+builds on this loop by allowing agents to analyze the outcomes of their own actions and incorporate
+these reflections into future reasoning and behavior, as Reflexion [166] shown in Figure 6. This
+introduces a temporal dimension to reasoning, enabling the integration of experience over time.
+Studies have shown that such temporal interaction enables LLMGAs to evolve over time by
+integrating feedback from past trajectories. The most direct form is reflection on failure: when an
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+13
+action fails, the agent can reuse the error signal to avoid repeating the same mistake. For instance,
+environments may provide explicit feedback such as “I cannot make a stone shovel because I
+need 2 more sticks” in MineCraft, which agents like Voyager [192] and GTIM [258] exploit to
+iteratively refine their plans. Beyond explicit signals, reflective mechanisms such as Reflexion [166],
+DEPS[205], and ProAgent [238] guide agents to analyze their own chain-of-thought traces, identify
+where reasoning went wrong, and incorporate these insights into subsequent decisions. Even in
+environments with sparse feedback,agentscanstill benefitfromheuristicsignals [166]. Recent game
+agents broaden the corrective signal beyond self-generated critiques. DGAP trains a discriminator
+from a few demonstrations to score how well each action aligns with optimal ones, then prompts
+the LLM to refine toward higher critic scores [150]. LEAP corrects a student agent with critiques
+from a teacher granted privileged state information only at training time, letting it surpass the
+teacher [29]. Framing the LLM as an in-context reinforcement learner, scalar-reward feedback can
+be optimized over successive inference-time rounds [171]. ReCAPA further mitigates cascading
+failures by predicting and contrasting deviations across actions, subgoals, and trajectories on
+benchmarks such as MineDojo [236].
+In addition to learning from failures, reflective reasoning can also benefit from reflecting on suc
+cesses. Successful trajectories not only consolidate effective strategies but also provide contrastive
+signals when compared against failures. ExpeL [247] leverages this idea by retrieving the most
+relevant successful experiences, summarizing common patterns, and deriving insights through suc
+cess–failure comparisons. Similarly, KWM [151] extracts task knowledge from expert-demonstrated
+trajectories and distills it into a dedicated world knowledge model, which is then used to guide the
+agent’s planning in future episodes. AutoManual has a builder agent refine interaction experience
+into human-readable rule manuals that curb hallucination, reaching high success on ALFWorld
+from a single demonstration [25], while DiVE discovers, verifies, and evolves world-dynamics rules
+from a handful of demonstrations to reach human-level reward in Crafter and MiniHack [177]. In
+summary, reflective reasoning shares the basic idea of reinforcement learning that uses feedback to
+correct mistakes and reinforce successful strategies, embodying the principle of learning through
+interaction with the environment.
+5.2 Fine-tuning for Improving Reasoning
+In this subsection, we examine fine-tuning techniques for optimizing reasoning and action gen
+eration. Based on the training strategy, existing methods can be grouped into three categories.
+Supervised fine-tuning learns from expert trajectories to imitate reasoning and action generation.
+Reinforcement learning updates policies with reward feedback, reinforcing reasoning and actions
+that lead to favorable outcomes. Preference optimization leverages comparisons between better
+and worse trajectories to align models without the need for explicit reward models. It is worth
+noting that some methods mentioned below optimize only the final action without explicit reason
+ing, however, they can be extended to improve reasoning by eliciting chain-of-thought, allowing
+reasoning to be shaped through its effect on action outcomes [85].
+Supervised Fine-Tuning. Supervised fine-tuning trains LLM agents on collected trajectories to
+maximize the likelihood of reproducing demonstrated reasoning and actions. The most common
+approach is behavior cloning, where agents directly imitate expert demonstrations. Such trajectories
+may come from human experts [156], from state-of-the-art agents [117], or from teacher LLMs
+that generate rollouts for training student models [235]. Behavior cloning is widely adopted as an
+initialization strategy, providing a strong prior policy that can later be refined by reinforcement
+learning [3, 172].
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+14
+Hu et al.
+Building on this idea, rejection sampling fine-tuning introduces a selection stage before training.
+Instead of imitating all trajectories, the model generates multiple candidates and filters them accord
+ing to predefined criteria, such as binary success/failure signals or reward estimates. RFT [123], for
+example, fine-tunes models only on successful trajectories, while other works employ environment
+provided or model-estimated rewards to guide sample selection [186]. Although this improves data
+quality, it can be inefficient when the agent initially produces few successful rollouts. Wang et
+al. show that supervised fine-tuning on high-quality gameplay data lets LLMs approach strong
+game AIs across eight complex card games and acquire proficiency in several games at once [199].
+ChessLLM supervised-fine-tunes a language model on complete chess games trajectories to reach
+a 1788 Elo against Stockfish, showing that training on longer game sequences yields a large rat
+ing advantage [244]. For socially intelligent agents, SOTOPIA-𝜋 combines behavior cloning with
+self-reinforcement on social-interaction episodes filtered by LLM ratings, letting a 7B model match
+GPT-4’s social-goal completion [197].
+Reinforcement Learning. Reinforcement learning (RL) provides another major paradigm for
+improving reasoning and action generation in LLM agents. Existing game agents [3, 21, 44, 181]
+mainly adopt the Proximal Policy Optimization (PPO) algorithm [162], where the model is trained
+as a policy 𝜋(𝑎𝑡 | 𝑠𝑡) (without explicit reasoning) and updated using advantage-weighted gradients
+to favor actions leading to higher rewards. Alongside the policy model, PPO also learns a value
+function to estimate the relative quality of state–action pairs. While effective, applying RL to LLMs
+faces the challenge of an enormous generation space, which often leads to inadmissible actions. To
+address this, some methods compute the probability distribution of admissible actions by the chain
+rule before sampling, ensuring that the generated actions remain valid [21, 181].
+Recent works further integrate explicit reasoning into RL training, where the LLM is trained as a
+policy 𝜋(𝑟𝑠𝑡,𝑎𝑡 | 𝑠𝑡). Reinforced Fine-Tuning (ReFT) [187] introduces chain-of-thought supervi
+sion into PPO, encouraging the model to generate reasoning paths that lead to correct answers.
+However, because reasoning tokens are often much longer than action tokens, naive optimization
+can overweight reasoning relative to actions. Zhai et al. [237] propose downscaling the likelihood
+of reasoning steps, showing that moderate scaling achieves better balance between planning and
+acting. Beyond policy optimization, value-based methods such as Q-learning extend RL to reason
+ing by treating partial generations as states and token expansions as actions. This formulation
+allows the use of search algorithms, such as Best-of-N sampling or Monte Carlo tree search, to
+evaluate and expand reasoning paths guided by the Q-function [240]. Game agents extend this
+search-integrated view: SEEA-R1 fuses Monte Carlo tree search with a Tree-GRPO objective and a
+multimodal generative reward model to self-evolve on long-horizon ALFWorld tasks [183].
+A challenge is that conventional reward signals (and the value estimates derived from them) are
+provided only at the action level, providing no feedback on the intermediate reasoning steps. This
+causes error to propagate through the reasoning until the final outcome is known. To address this
+limitation, Process Reward Modeling (PRM) [116] supplies dense feedback by explicitly evaluating
+intermediate reasoning steps. In games, the reward signal and objective are themselves often tailored
+to the task: LARM derives rewards from a large LLM acting as a referee to train a compact policy
+for long-horizon Minecraft [113], DVM imposes a win-rate-constrained decision-chain reward
+to make Werewolf agents controllable [246], GFlowVLM replaces scalar-reward maximization
+with reward-proportional generative flow networks for card games such as BlackJack [87], and
+DipLLM sets an approximate-equilibrium policy as the learning target for Diplomacy, matching
+Cicero with a fraction of the data [220]. Two further paradigms sidestep hand-specified rewards.
+First, self-play and learning-through-play supply the signal directly: SPIRAL trains on zero-sum
+games such as TicTacToe and Kuhn Poker with role-conditioned advantage estimation [119], SPAG
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+15
+plays both sides of Adversarial Taboo to improve general reasoning [26], and an RL-instructed
+discussion policy is learned through One Night Ultimate Werewolf [82]. Second, LLMs shape the RL
+loop without acting as the policy: EnvGen generates and adapts training environments so a small
+agent surpasses GPT-4 agents on Crafter [234], and language-guided exploration scores candidate
+decisions for an RL explorer in ScienceWorld [59].
+Preference Optimization. The idea of preference optimization was first explored in games,
+where OpenAI demonstrated that human preference comparisons could be used to train reward
+models for Dota 2 [30]. This principle of optimizing agents by favoring trajectories preferred by
+humans rather than relying on hand-crafted rewards later became the foundation for aligning
+language models. Building on this, Direct Preference Optimization (DPO) [154] enables contrastive
+training without an explicit reward model by maximizing the margin between preferred and
+non-preferred generations, thereby simplifying the optimization process and reducing cost. In the
+context of game agents, this preference-based framework can also be applied at the trajectory or
+step level: ETO [172] alternates between exploration and fine-tuning with DPO on successful vs.
+failed rollouts, while IPR [218] extends this to step-wise preference optimization, pairing reasoning
+steps according to the average reward calculated via Monte Carlo method. In Table 3, we list
+representative LLMGAs by their reasoning mechanism design, aligned with the two dimensions of
+our categorization.
+6 Perception and Action Interfaces of LLMGA
+LLMGAs differ from generic LLM systems in that they operate within a continuous perception
+action loop. To support this loop, agents rely on perception and action interfaces that serve as their
+eyes and hands for interacting with the environment [73, 192]. On the input side, the perception
+interface determines how raw game states are abstracted into representations that can be processed
+by the LLM, handling textual, symbolic, and visual observations. On the output side, the action
+interface ensures that the model’s decisions are translated into admissible in-game operations by
+grounding the LLM outputs into high-level, low-level, and code-based actions. Figure 7 outlines
+the structure of this section.
+Perception & Action Interfaces
+Perception Interface
+Action Interface
+Textual Observation
+Symbolic Observation
+Visual Observation
+High-level Action
+Low-level Action
+Fig. 7. Overview of perception and action interfaces in LLMGAs.
+6.1 Perception Interface
+Code-based Action
+The perception interface defines how an LLMGA accesses and processes information from the game
+environment. The most direct and widely adopted way to categorize input-processing methods is
+based on the modality of the game observation, such as textual, symbolic, or visual forms.
+Textual Observations. In text-based or dialogue-centric games [77, 168], the environment
+state is natively presented in natural language. In such cases, the agent can directly consume
+text descriptions as observations without additional preprocessing [166, 227]. This modality is
+straightforward, as it aligns with the input format of LLMs, but it is restricted to environments
+where language is the primary medium of interaction.
+Symbolic Observations. Some video game environments provide structured state information
+through APIs or game engines [73, 110, 126, 131]. These symbolic variables (e.g., avatar health,
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+16 Huetal.
+Table3. SummaryofrepresentativeLLMGAsintermsofreasoningmechanism.
+LLMGA Environment Instruction-guidedReasoning Fine-tuningforImprovingReasoning
+ReAct[227] ALFWorld,etc. CoT
+Reflexion[166] ALFWorld,etc. CoT+Reflectivereasoning
+ADAPT[145] ALFWorld,etc. As-neededCoT(planning)
+SwiftSAGE[117] ScienceWorld As-neededCoT(planning)
+ETO[172] ALFWorld,etc. Trajectory-levelpreferenceoptimization
+IPR[218] ALFWorld,etc. Step-levelpreferenceoptimization
+GLAM[21] BabyAI-Text RLfine-tuning
+TWOSOME[181] Overcooked-AI RLfine-tuning
+Xuetal.[224] Werewolf Reflectivereasoning
+Xuetal.[225] Werewolf RL-basedcandidateselection
+WarAgent[74] Diplomacy-like Structuralreasoning
+PokéLLMon[72,73] PokémonBattles Consistentreasoninggeneration
+ChessGPT[52] Chess Supervisedfine-tuning
+PokerGPT[75] TexasHold’em RLfromhumanfeedback
+SuspicionAgent[63] LeducHold’em Theory-of-mindreasoning
+HLA[120] Overcooked As-neededCoT(planning)
+S-Agents[23] Minecraft Goaldecomposition,evaluation
+HAC[250] Minecraft Goaldecomposition,correction,evaluation
+Voyager[192] Minecraft Codeaspolicy,correction
+DEPS[205] Minecraft Goaldecomposition,reflection,selection
+GTIM[258] Minecraft Goaldecomposition,correction
+JARVIS-1[206] Minecraft Goaldecomposition,reflection
+Plan4MC[233] Minecraft Goaldecomposition
+RL-GPT[122] Minecraft Reasoningascodegeneration
+LLaMARider[53] Minecraft Novelty-drivenSupervisedfine-tuning
+ProjectSid[7] Minecraft Socialawarenessreasoning
+GenerativeAgents[142] Sims-likegame Tree-basedreflection&planning
+HumanoidAgents[207] Social Affective-drivenplanning
+LLMPlanner[170] ALFRED Planning&re-planning
+Octopus[3] OctoVerse Reasoningascodegeneration RLfine-tuning
+ELLM[44] Crafter Situatedgoalgeneration
+SPRING[213] Crafter Structuralreasoning
+PokéChamp[91] PokémonBattles Minimaxtreesearch
+Strategist[114] Avalon,GOPS Bi-leveltreesearch
+Schultzetal.[163] Chess,Hex External/internalsearch
+DiffuSearch[228] Chess Implicitdiffusionsearch
+MC-DML[165] Jericho MCTSwithmemory
+AutoManual[25] ALFWorld Reflectiverulelearning
+AgentKit[212] Crafter Dynamic-graphreasoning
+DGAP[150] ScienceWorld Discriminator-guidedrefinement
+DiVE[177] Crafter World-dynamicsreflection
+ReCAPA[236] MineDojo Hierarchicalpredictivecorrection
+DipLLM[220] Diplomacy RLfine-tuning
+SPIRAL[119] Zero-sumgames Self-playRL
+SPAG[26] AdversarialTaboo Self-playRL
+ChessLLM[244] Chess Supervisedfine-tuning
+CardGames[199] Cardgames Supervisedfine-tuning
+LARM[113] Minecraft Referee-basedRL
+SEEA-R1[183] ALFWorld Tree-structuredRL
+DVM[246] Werewolf RLfine-tuning
+GFlowVLM[87] BlackJack GFlowNetfine-tuning
+inventory,worldcoordinatesorobjectproperties)canbetransformedintoaformthattheLLM
+canprocess,oftenthroughtextualsummariesorstructuredprompttemplates.Forexample,Mine
+flayer[146]exposesaMinecraftcharacter’sstatsandsurroundingentities,whichcanthenbe
+summarizedintoanatural-languageprompt[73].Symbolicobservationsareefficientwhenthe
+selectedvariablescansufficientlycapturetheessentialcontext,buttheyrisklosingfidelityincom
+plexenvironmentswheresubtlebutcriticaldistinctions,suchasobjecttextures,spatialrelations,
+orsmallvisualcues,areomittedfromthesymbolicrepresentation.
+ACMComput.Surv.,Vol.1,No.1,Article.Publicationdate: June2026.
+A Survey on Large Language Model-Based Game Agents
+17
+Visual Observations. In video games, the agent typically perceives the environment as a
+sequence of rendered images. Since LLMs cannot directly operate on raw pixels, the perception
+interface requires a translator that converts visual signals into interpretable representations. One ap
+proach is vision-to-text translation, where object detectors or pretrained encoders such as CLIP [153]
+produce captions or object lists that can be inserted into prompt templates. For example, an agent
+in a 3D environment can use an object detector to list visible objects (“a key on the floor, a locked
+door ahead”) and insert them into the prompt template [170, 241]. The agent can also adopt a
+visual encoder to map images into pre-defined text descriptions [44, 205, 206], or a text decoder to
+generate the caption [44] to summarize the scene.
+An alternative is to use multimodal LLMs to directly process raw frames. These models align
+visual and textual information in a shared representation space, allowing an agent to feed raw
+images or pixels to the model and get an immediate understanding. Recent works [41, 180] leverage
+general-purpose multimodal LLMs (e.g., GPT-4 Vision [4]) to interpret game visuals. This direct
+approach can generalize well to new games, but still requires additional mechanisms to correct
+errors or uncertainties in its perceptions [3, 180]. Game-specific multimodal models have also
+been introduced, e.g., LLMs finetuned on paired image-instruction data for a particular game,
+such as SteveEye [251] or learned from environmental feedback through RL such as Octopus [3].
+STEVE follows this direction in Minecraft, coupling a vision-perception module that interprets
+visual observations with an LLM for reasoning and a code-action skill database, trained on the
+STEVE-21K dataset of vision–environment, QA, and skill-code pairs [249]. Rather than passively
+consuming observations, ActiveVOO performs value-of-observation guided active sensing for
+partially observable embodied planning, quantifying the utility of sensing actions from LLM and
+VLM commonsense priors so the agent perceives only task-relevant objects in ALFWorld [124].
+6.2 Action Interface
+The action interface determines how an LLM-based agent’s decisions are grounded into executable
+operations within the game environment. Unlike generic LLM outputs that produce unconstrained
+text, games require actions that conform to specific control formats. Accordingly, action interfaces
+are categorized by the type of action required by games: high-level actions represent semantic or
+logical operations (e.g., “open the door”); low-level actions specify concrete control signals such as
+keystrokes or mouse movements; and programmatic actions output structured commands or API
+calls that the environment can directly execute.
+High-Level Actions. In games where actions are expressed as discrete choices [72], the genera
+tion problem can be reformulated as a selection task. In this case, the model can simply select one
+of the provided options as the action. In parser-based environments, such as text adventure games
+or interactive narratives [68, 129], the LLM must generate a command that follows specific syntax,
+such as “open the door” or “pick up the sword”. Outputs that deviate from the expected syntax
+are treated as invalid and ignored. Therefore, the core challenge is to ensure that output actions
+are admissible. Recent work has introduced correction mechanisms, such as mapping generated
+phrases to the closest permissible action [76]. An alternative is constrained decoding: instead
+of unconstrained token-by-token decoding, it computes the joint likelihood of each valid action
+sequence using the chain rule, and then normalize across the entire action set [21]. However, such
+token-level probabilities penalize longer commands disproportionately, leading to systematic bias
+against valid but longer actions. To mitigate this problem, TWOSOME [181] introduces length
+normalization by scaling log-likelihoods with the action’s token count, thereby balancing the proba
+bility distribution over admissible actions. Other game agents refine high-level action selection with
+auxiliary knowledge or value signals: KnowAgent constrains executable-action planning with an
+explicit action knowledge base to reduce hallucination [259], while reinforced advantage feedback
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+18 Huetal.
+(ReAd)trainsacriticthatestimatesper-agentadvantagevaluessoagentscanrejectlow-value
+actionswithoutcostlyverificationintheOvercooked-AI[245].
+Low-LevelActions.Low-levelactionsoperateatthecontrollayer,suchaskeystrokes,mouse
+movements, joystickinputs,andareexecutedateachtimestep.Alow-levelcontroller(policy)is
+responsiblefortranslatingahigh-levelactionfromtheLLMintoasequenceofcontrolsignals.One
+approachisheuristicplanning[5,120,142]:givenanintentsuchas“chopatree,”thesysteminvokes
+apathplanner(e.g.,A∗)tolocatethenearesttreeandthenissuesthenecessarymovementand
+interactioncommands.Anotherapproachistolearnalow-levelcontroller(policy)thatgenerates
+therequiredactionsequencestorealizetheLLM’shigh-leveldecisions.Suchpoliciescanbetrained
+eitherthroughimitationlearningfromexpertdemonstrationsorthroughreinforcementlearning
+withenvironmentfeedback,oftenaidedbygoal-conditionedrewardsorsemanticsimilaritybetween
+goalsandobservedtransitions[122].
+Code-basedActions.Code-basedactionsexpressagentdecisionsasstructuredcodeorAPIcalls
+thatcanbeexecuteddirectlyintheenvironment[180,192].Theirstructurednatureprovidesexplicit
+semanticsandeliminatesambiguity,allowingcomplexoperationstobespecifiedwithprecision
+(e.g.,bot.equip(sword);throughamoddingAPI[146]orkey_press("M")atthesystemlevel).Afurther
+advantageisverifiability:codeoutputscanbeparsedandcheckedbeforeexecution,andcompilers
+orinterpreterssupplysyntaxfeedbackthatenablesautomaticdetectionandcorrectionofinvalid
+commands[192]. Inaddition,programmaticactionssupportreusabilitybyenablingagentsto
+maintainalibraryofhigh-levelprimitivesthatencapsulaterecurringskills.Thesefunctionscanbe
+flexiblycomposed,reducingredundantlow-levelgenerationandfacilitatingscalable,compositional
+behavior[180].Recentworkmakescode-basedgroundingmorelearnable:LearnActletsanagent
+analyzefailedattemptsanditerativelycreateandreviseexecutablePythonfunctionsthatexpandits
+actionspace[248].CoPiCemitsmultipleplanningprogramsandtrainsadomain-adaptiveselector
+topicktheplanbestalignedwithlong-termrewardsonALFWorld,NetHack,andStarCraftIIunit
+building[184].MaestroMotifhasanLLMspecifyper-skillrewardfunctionsandgeneratecodethat
+trainsandcomposesRL-learnedskillsintheNetHack[97].Table4listsrepresentativeLLMGAs,
+categorizedbytheirperceptionandactioninterfaces.
+Table4. SummaryofrepresentativeLLMGAsintermsofperception&actioninterfaces.
+Agent Game PerceptionInterface ActionInterface
+ReAct[227] ALFWorld,etc. Textualinput High-levelaction
+SwiftSAGE[117] ScienceWorld Textualinput High-levelaction
+Cradle[180] RDR2 Visualinput(VLM) Low-levelaction(viakeyboard–mousecontrolAPIs)
+Xuetal.[225] Werewolf Textualinput High-levelaction
+PokéLLMon[73] PokémonBattles Symbolicinput High-levelaction
+TextStarCraft[126] StarCraftII Symbolicinput Low-levelaction(rule-basedcontroller)
+ChessGPT[52] Chess Symbolicinput High-levelaction
+SuspicionAgent[63] LeducHold’em Symbolicinput High-levelaction
+ProAgent[238] Overcooked-AI Symbolicinput Low-levelaction(viapathsearch+APIcalls)
+TWOSOME[181] Overcooked-AI Symbolicinput High-levelaction(admissibleactiongeneration)
+Voyager[192] Minecraft Symbolicinput Code-basedaction(viaMineflayercodeexecution)
+GTIM[258] Minecraft Symbolicinput Low-levelaction(viaAPIcalls)
+JARVIS-1[206] Minecraft Visualandsymbolicinput Low-levelaction(viacontrollerandAPIcalls)
+CoELA[241] TDW-T&WAH Visualinput(objectdetector) Low-levelaction(viarule-basedcontroller)
+GenerativeAgents[142] SmallVillage Textualinput High-levelactions
+ZeroShotPlanner[76] VirtualHome Symbolicinput High-levelactions(semantictranslation)
+ELLM[44] Crafter Visualinput(visualencoder) Low-levelaction(RL-basedcontroller)
+STEVE[249] Minecraft Visualinput(perceptionmodule) Code-basedaction(skilldatabase)
+LearnAct[248] ALFWorld Textualinput Code-basedaction(learnedfunctions)
+CoPiC[184] ALFWorld,NetHack,StarCraftII Textual/symbolicinput Code-basedaction(programselection)
+KnowAgent[259] ALFWorld Textualinput High-levelaction(knowledge-constrained)
+MaestroMotif[97] NetHack Symbolicinput Code-basedskillcomposition
+ActiveVOO[124] ALFWorld Visualinput(activesensing) High-levelaction
+ReAd[245] Overcooked-AI Symbolicinput High-levelaction(advantagefeedback)
+ACMComput.Surv.,Vol.1,No.1,Article.Publicationdate: June2026.
+A Survey on Large Language Model-Based Game Agents
+19
+7 Multi-LLMGA Framework
+In this section, we extend the single agent framework to multi-agent settings. Designing a multi
+agent system in games is different from generic multi-agent systems because games impose unique
+constraints: game environments impose realistic constraints on information sharing: observations
+are partially observable and distributed across agents, and communication channels are often
+bandwidth-limited [241].
+At the agent level, we examine how agents exchange information and integrate it into their
+decision-making. Communication protocols specify what messages are generated (e.g., obser
+vations, beliefs, or intentions) and how they are interpreted by receivers. At the organization
+level, we study three aspects: the topology of connections that shape communication flow, the
+allocation of tasks and roles that governs functional division of labor, and the mechanisms for
+ensuring scalability and robustness as groups expand. Figure 8 presents the structure of this
+section of different components within the multi-LLMGA system.
+Multi-Agent Framework
+Communication Protocol
+Organizational Structure
+Message Generation
+Message Interpretation
+Organizational Topology
+Task & Role Allocation
+Scalability & Robustness
+Fig. 8. Overview of the multi-LLMGA framework.
+7.1 Communication Protocol
+In game and simulation environments, communication is likely constrained by partial observability,
+limited bandwidth, and asynchronous execution [241], which makes communication protocol
+design crucial for coordination. A communication protocol defines the rules that regulate peer
+to-peer information exchange at the agent level, which specifies what message the sender should
+share, and how it is integrated by the receiver.
+Message Generation. Senders determine what type of information is worth exchanging, which
+can be broadly categorized into three classes: The first is observation, referring to the raw and
+local signals each agent perceives from the environment. Observations are typically partial, such
+as perceiving only a limited visual field in the environment [241], sharing observations allows
+teammates to directly expand each other’s perceptual fields. Since raw perceptual input is often
+redundant or low-value, practical systems [241] apply summarization to compress observations into
+compact, salient statements. The second is belief, which represents an agent’s internal inference or
+probability distribution over the hidden state of the world, based on its own observations and prior
+knowledge [5, 238]. Compared to raw observations, beliefs provide higher-level interpretations. For
+example, an agent may observe scattered leaves and tree trunks, and infer that the environment
+contains sufficient wood resources nearby. The third is intention, where agents communicate their
+planned actions or subgoals. Intention propagation is especially important in tasks that require
+complementary execution to reduce redundant effort (e.g., multiple agents pursuing the same
+subtask) and prevent conflicts (e.g., two agents competing for the same resource) [5, 241]. In
+addition, when there is no communication mechanism/channel available, agents need to infer
+collaborators’ hidden intentions based on their actions observed. In adversarial games, senders also
+craft messages strategically rather than honestly: a study of Among Us finds impostor agents rely on
+equivocation rather than outright lies [130], GPT-4o agents can out-deceive humans in Mafia [89],
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+20
+Hu et al.
+and CoMet generates metaphor-based covert messages for the Undercover and Adversarial Taboo
+games [222]. Persuasion and negotiation are likewise produced deliberately, as in Richelieu’s goal
+oriented negotiation grounded in social reasoning for Diplomacy [62] and a Werewolf study of
+whether agents can generate opinion-leading speech [43]. To keep large-scale exchange efficient,
+EcoLANG induces a compact agent communication language [133].
+Message Interpretation. Once communication takes place, agents need to integrate the ex
+changed information into their memory and ongoing decision process.Ingeneral,receivedmessages
+can be directly adopted to guide actions. However, inconsistencies may arise when the new in
+formation conflicts with an agent’s existing internal state. To address this, agents must reconcile
+external messages and internal models. For instance, ProAgent [238] infers the belief of a partner
+through the reasoning of theory of mind and subsequently corrects its estimate when the partner’s
+observed actions reveal mismatches. ReConcile [24] provides a debate-based approach by engaging
+agents in multi-round discussions, where they attempt to convince each other with corrective
+explanations and aggregate responses through confidence-weighted voting to reach consensus.
+ECON[230] models this reconciliation as a Bayesian game, where agents treat each other’s beliefs
+and intentions as uncertain types and update them until they converge on a joint profile that
+all parties can consistently follow. BEACOF likewise frames collaboration as a dynamic game of
+incomplete information, refining probabilistic beliefs about peers’ capabilities until they reach an
+approximate perfect Bayesian equilibrium [51], and CSP4SDG interprets dialogue and game events
+in Avalon, Mafia, and Werewolf as evidence in a probabilistic constraint-satisfaction problem whose
+information-gain-weighted scores yield interpretable posterior beliefs over hidden roles [221].
+7.2 Organizational Structure
+Organizational structure defines how agents are arranged and coordinated within a multi-agent
+system, including the topology of their connections, the allocation of tasks and roles, and the
+mechanisms that ensure scalability and stability as the population grows.
+Organizational Topology. Organizational topology refers to the structural constraints that
+determine how decisions flow, how agents connect for communication, and where authority over
+world state resides. Rather than a free design choice, topology is an architectural constraint that
+shapes the trade-off between scalability, robustness, and latency [149].
+Centralized organization rely on a single planner or coordinator to aggregate information and
+allocate subtasks. This design ensures strong consistency and efficiency but creates bottlenecks
+and single points of failure, which limit scalability. For example, MindAgent [61] adopts a single
+foundation model as the central dispatcher that issues the step-by-step commands to all agents.
+Decentralized organization remove central authority and let agents act based on local observations
+and peer communication. Such topology is robust and can avoid global bottlenecks, but can
+suffer from coordination conflicts and redundant actions. CoELA [241] follows this paradigm,
+framing cooperation as decentralized planning under costly communication channels. To balance
+coherence with local flexibility, hierarchical organizations introduce multiple layers of control, with
+higher-level agents assigning goals or subtasks and lower-level agents refining them layer-by-layer.
+HAS[250] exemplifies a three-tier hierarchy: a top-level manager sets global plans, intermediate
+conductors translate and distribute these plans, and bottom-level action agents execute concrete
+steps. Similarly, S-Agents [23] use a tree structure where a root node provides coordination and leaf
+nodes carry outsubtasks.Partitioned orshardedsystemsdividepersistentenvironmentsintoregions,
+each governed by local authority with cross-shard coordination handled by bridging protocols.
+This design enables scalability and fault tolerance, but weakens global consistency. Project Sid [7]
+illustrates in a large-scale setting: thousands of Minecraft agents self-organize into civilizations
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+21
+where division of labor and institutions emerge, showing that centralized control is infeasible at
+such scale. Game-focused frameworks add explicit structure on top of these topologies: HIMA
+organizes a society of specialized imitation-learning agents, each mastering a distinct StarCraft II
+tactic, under a strategic-planner meta-controller that synthesizes their proposals into coordinated
+actions [6], and prompt-based organizational structures with designated leadership are imposed on
+embodied teams and iteratively refined through a criticize–reflect process to raise efficiency while
+lowering communication cost [64].
+Task & Role Allocation. Task and role allocation determines how subtasks are mapped to
+agents, shaping both efficiency and adaptability in multi-agent system. Allocation specifies the
+functional division of labor within the organizational topology. Three patterns are commonly
+observed: prefixed, dynamic, and emergent.
+Prefixed allocation specifies roles or tasks in advance, often through a central planner or a
+leader. This ensures clear division of labor and prevents conflicts, making it reliable for structured
+environments but rigid under open-ended or rapidly changing conditions. MindAgent [61] follows
+this approach: a single foundation model centrally dispatches per-step actions for all agents, directly
+specifying each agent’s next move. Similarly, S-Agents [23] predefine a root–leaf hierarchy, where
+the root serves as coordinator and leaves as executors, though the specific subtasks are still assigned
+dynamically during execution. Dynamic allocation allows agents to determine their roles during
+execution, with assignments decided in real time by monitoring the environment or coordinating
+with peers. This increases adaptability and robustness but may produce redundancy when multiple
+agents converge on the same role. Overcooked-AI [20] illustrates this challenge, as frequent task
+changesrequire agents to split and reassign responsibilities on the fly. CoELA [241] provides another
+example, where decentralized agents negotiate via natural language under costly communication
+channels to decide which subtasks to pursue. HAS [250] also falls into this category: while roles
+such as manager and conductors are predefined, the system dynamically reorganizes action groups
+and reallocates responsibilities as tasks evolve. Emergent allocation does not predefine the set of
+roles but lets them arise through repeated interaction.
+At scale, Project Sid [7] demonstrates how thousands of Minecraft agents spontaneously dif
+ferentiate into specialized professions such as farmers, miners, builders, and traders, stabilizing
+cooperation without central control. This diversification arises from social awareness, where agents
+adjust goals in response to others’ activities, thereby reducing redundancy and enabling stable
+specialization. For dynamic role coordination, COPPER assigns credit to individual agents via a
+shared reflector tuned with counterfactual rewards, producing role-personalized reflections that
+improve collaboration on tasks including chess [18].
+Scalability & Robustness. Scaling multi-agent systems beyond small groups remains chal
+lenging. Early studies such as Generative Agents typically support only dozens of agents, since
+agents execute cognition through a sequential pipeline with a single thread. This serialized design
+becomes the bottleneck for scaling [142]. Project Sid addresses the per-agent bottleneck with the
+PIANO architecture, which runs six modules in parallel to update the agent state at different time
+scales. To prevent incoherence between simultaneous outputs, a cognitive controller [86] selects
+an option from the candidate outputs of concurrent modules and transmits this decision to other
+modules for execution.
+During the emergence of roles, certain factors are critical for ensuring organizational stability.
+Project Sid [7] demonstrates that social awareness plays a critical role in sustaining division of
+labor: when agents observe many of their peers performing one task, they are more likely to
+select a different one. Through memory and repeated behavior, these roles become reinforced,
+allowing agents to form stable identities such as “farmer” or “miner” and yielding a more persistent
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+22
+Hu et al.
+specialization structure. In social simulation experiments, Artificial Leviathan [40] demonstrate
+that memory depth is the key factor for the emergence of a commonwealth (i.e., the rise of a
+sovereign), under which social disorder is significantly reduced. This suggests that memory acts as
+a stabilizing mechanism by turning short-term interactions into long-term understanding of agents’
+relative strengths and weaknesses, thereby forming group consensus. Such coordination remains
+brittle at the level of collective behavior: an evaluation in the Melting Pot Commons Harvest game
+shows that LLM-augmented agents display a propensity for cooperation yet still fail to collaborate
+effectively under social dilemmas [132].
+8 Gameplay Taxonomy for LLMGA Design
+The design of game agents is inseparable from the environments in which they operate: different
+genres foreground different capabilities, from fast perception–action cycles in action games to
+long-horizon planning in strategy games. A taxonomy that connects the properties of games
+with the demands they impose on agents is therefore valuable for this field. Here we adopt a
+challenge-centered game taxonomy: for each major category, we highlight the design challenge
+that most strongly drives LLMGA design. The genre axis itself draws on established categorizations,
+combining top-level groupings from SteamDB [174] with the gameplay-oriented classification of
+Lee et al. [101]. To make the taxonomy more coherent to covered studies, we exclude narrower
+genres such as driving/racing or fighting, and instead introduce sandbox as a category to capture
+open-ended and emergent play, with Minecraft as the canonical example.
+Building on this taxonomy, we sketch how different game genres map into distinct design chal
+lenges. Action games require low-latency response, where agents are challenged to reconcile the
+slow deliberation of language models with the frame-level demands of real-time play. Adventure
+games highlight stateful world modeling, where progress depends on maintaining coherent memo
+ries of evolving environments, quests, and object dependencies. Role-playing games raise the issue
+of role fidelity, in which agents are expected to sustain consistent personas and align dialogue and
+actions with character identity. Strategy games emphasize opponent-aware planning, where the
+key difficulty lies in anticipating and adjusting to adversaries’ potential intentions under imperfect
+information. Simulation games emphasize dynamics fidelity, evaluating whether agents can exhibit
+behaviors that remain faithful to the governing simulation dynamics. Finally, sandbox games expose
+the challenge of open-ended goal progression, where agents are tasked with generating their own
+objectives, decomposing them hierarchically, and accumulating reusable skills to sustain long-term
+play.
+8.1 Action Games: Low-Latency Response
+As shown in Figure 9, action games are characterized by real
+time, time-critical interaction, where success hinges on execut
+ing precise movements such as aiming, dodging, or chaining
+combos within narrow temporal windows. This creates a fun
+damental demand for low-latency response, and the design
+challenge is therefore to reconcile the reasoning strengths of
+LLMs with the immediacy required by real-time gameplay.
+Environments. Atari 2600 games in the Arcade Learning
+Environment [1] provide a canonical benchmark for reflexive
+control, where agents map raw pixel observations to joystick
+Fig. 9. Action games require agents to
+respond with low latency and execute
+precise low-level control.
+inputs at 60 Hz. Procgen [35] extends this setup with procedurally generated levels, requiring
+agents to generalize their responses across unseen layouts rather than memorizing fixed patterns.
+Moving into 3D, ViZDoom [92] present first-person 3D environments where perception is partial
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+23
+and high-dimensional, requiring agents to aim, strafe, and dodge in real time. Fighting games such
+as Street Fighter III [137] further sharpen the requirement for low-latency response: the timing of
+counters and combos is so precise that even minimal decision delays can flip the outcome of an
+exchange.
+Methods. Across action game environments, a consistent finding is that LLMs alone cannot
+sustain frame-level decision speed. Benchmarking across diverse video games including action
+games such as Super Mario and Street Fighter III shows that incorporating visual inputs often
+degrades rather than improves gameplay performance, partly because the additional processing
+overhead exacerbates inference latency [140]. Further latency-sensitive evaluation on Street Fighter
+demonstrates that achieving competent play requires explicitly trading off reasoning quality for
+faster inference [88].
+To mitigate this bottleneck, researchers have adopted hybrid designs. One line of work delegates
+reflexive control to low-level policies trained through reinforcement or imitation learning, while
+reserving the LLM for high-level reasoning and strategy, as illustrated by two-tier agent systems
+in Overcooked [120]. Empirical studies further show that latency-sensitive environments such
+as Street Fighter expose a fundamental trade-off between reasoning quality and decision speed:
+deeper reasoning produces stronger local decisions but increases inference latency to the point
+of losing more frequently, while shallower reasoning improves responsiveness and overall win
+rates [88]. Action-game environments also serve as testbeds beyond latency: PoE-World learns a
+programmatic world model from few observations and embeds it into a model-based planner for
+stochastic Atari games such as Pong and Montezuma’s Revenge [144].
+8.2 Adventure Games: Stateful World Modeling
+As shown in Figure 10, adventure games are defined by par
+tial observability and long-horizon quests: progress depends on
+remembering what has been explored, which preconditions of
+puzzles or storylines remain unsatisfied, and understanding how
+objects, actions, and the rules of the world interact. For LLMGAs,
+this creates a fundamental demand: they should be able to record,
+update, and retrieve both the evolving environment state and
+the underlying knowledge of how these elements can be used or
+combined. Without such modeling, agents lose track of progress,
+repeat past actions, or fail to connect prerequisites with goals.
+Empirically, GPT-3.5 struggles to construct coherent maps in
+Fig. 10. Adventure games typically
+involve exploration, object collec
+tion, and quest completion.
+partially known text-adventure environments, and state-prediction benchmarks indicate that even
+stronger LLMs are unreliable as implicit world simulators [68].
+Environments.AdventuregamebenchmarkssuchasTextWorld[36],Jericho[68],ALFWorld[168],
+and ScienceWorld [196] provide text-based environments in which players interact with the world
+through natural language, exploring rooms, collecting objects, and completing quests of varying
+complexity. For instance, TextWorld procedurally generates synthetic quests by varying the number
+of rooms, objects, and goals [129]. Jericho includes 56 human-authored classics such as the Zork
+series [77, 78] and Hitchhiker’s Guide to the Galaxy [14]. ALFWorld aligns to the embodied ALFRED
+benchmark [167], requiring agents to follow household instructions. ScienceWorld [196] simulates
+primary-school science curricula, highlighting basic knowledge from physics and chemistry for
+doing experiments.
+Methods. Recent work has gradually converged on the view that memory should operate as
+the backbone of world modeling in adventure settings. Early agents such as ReAct [227] showed
+that simple interleaving of observations and actions is not sufficient, as the agent often fails to
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+24
+Hu et al.
+maintain an accurate view of the environment and becomes stuck. By incorporating reasoning, the
+agent can periodically summarize recent progress, ensuring that short-term records of explored
+locations, obtained items, and pending subgoals remain stable across steps. Reflexion [166] further
+demonstrates that writing self-critiques of failed attempts enables agents to extract insights from
+errors and avoid repeating them, thereby transforming episodic failures into persistent corrections
+of world knowledge.Subsequentagents,includingAdapt[145]andSwiftSage[117]furtherexplicitly
+decompose quests into subgoals and track preconditions during execution. This keeps plans aligned
+with an evolving world state and enables coherent re-planning when branches fail. In a similar
+spirit, LPLH equips interactive-fiction agents with structured map building and feedback-driven
+experience analysis to track and reuse world state more like human players [243]. KWM [151]
+leverages successful trajectories to learn a knowledge-augmented world model, allowing agents to
+internalize regularities of environment dynamics and use the world model to guide future planning.
+Beyond internalizing dynamics in memory, a recent line learns explicit, adaptive world models that
+predict future states: CoEx co-evolves a neurosymbolic world model alongside exploration so it
+does not go stale on ALFWorld and Jericho [94], DreamPhase plans by rolling out a latent world
+model offline with uncertainty-aware filtering [67], and WorMI and TMoW retrieve and compose
+domain-specific world models at test time to adapt to new environments [80, 231]. AriGraph [9]
+encodes episodic experiences alongside semantic facts in a knowledge-graph memory, yielding a
+retrievable and interpretable representation of the game environment. Such structured memory can
+also steer search: MC-DML couples Monte Carlo tree search with in-trial and cross-trial memory
+to dynamically reweight action evaluations in the Jericho benchmark [165]. At a larger scale,
+Cradle [180] demonstrates the same principle in the visually rich adventure setting of Red Dead
+Redemption II, where the key difficulty lies in aligning perception with quest progress and narrative
+state. By maintaining memory as an explicit record of explored context and completed steps, Cradle
+enables the agent to keep exploration and story advancement coherent across long-horizon play,
+which stabilizes behavior in sprawling 3D environments. Even with such mechanisms, world
+modeling stays hard in open-ended roguelikes: in NetHack, the zero-shot skill-based agent NetPlay
+tracks interaction history yet still struggles under sparse feedback and ambiguous goals [81].
+8.3 Role-Playing Games: Role Fidelity
+As illustrated in Figure 11, role-playing games (RPGs) require players to assume pre-defined
+characters with distinct abilities, knowledge, experiences, and objectives. Although RPGs may
+also incorporate elements of action or adventure, our focus here is on a common characteristic
+that underpins this genre: role fidelity. Role fidelity means that agents should internalize their
+assigned role and generate dialogue and actions that remain consistent with the character’s identity
+and capabilities. Failure to do so causes agents to lose consistency in speech and action, or even
+contradict their assigned role, undermining both immersion and gameplay effectiveness.
+Environments. Social deduction board games provide natural testbeds for role fidelity. In
+Werewolf, each player receives a hidden role such as seer, guard, or werewolf, and must preserve
+secrecy while engaging in persuasion, deception, and coordinated voting [224, 225]. Similarly,
+Avalon assigns asymmetric roles with private knowledge (e.g., Merlin knowing the bad team),
+requiring agents to participate in multi-round discussions without revealing confidential informa
+tion while still influencing team decisions [115]. Negotiation games like Diplomacy, where each
+player embodies a nation with its own objectives [48], and scripted murder-mystery games such as
+Jubensha [211], reinforce the same demand: agents must consistently inhabit a pre-defined persona
+and objectives, balancing what to disclose and what to withhold across multiple turns to preserve
+immersion and effectiveness.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+25
+Classic RPGs also emphasize role fidelity through long
+horizon progression. For example, in Pokémon Red, the trainer
+role requires remembering the current storyline position, the
+Pokémon owned, the items carried, and the towns and paths
+visited. PokéAgent introduces exploration tasks to test whether
+agents can remain coherent as trainers throughout the game
+play [90]. Beyond the main character, role fidelity is even more
+critical for non-player characters (NPCs), which must sustain
+consistent personas across repeated interactions and emer
+gent narratives, as exemplified by recent studies evaluating
+personality fidelity in role-playing [202].
+Fig. 11. Role-playing games require
+agents to internalize and consistently
+enact pre-defined roles with distinct
+abilities, knowledge, and objectives.
+Methods. The simplest approach adds the role card directly into the prompt, listing traits and
+goals as initial memory [142]. While this establishes in-character openings, it quickly breaks down
+over multi-turn play, i.e., the role drift problem. Empirical studies show that in Avalon, LLMs
+may reveal their secret identity or fail to sustain deception across rounds [115]. To mitigate such
+inconsistencies, approaches condition generation on explicit intentions or structured reasoning.
+For example, in Diplomacy, Cicero anchors dialogue in private strategic plans to ensure alignment
+between language and action [48]. These methods improve local consistency but are not designed to
+preserve long-term role fidelity. More recent approaches target role fidelity directly by integrating
+role profiles as a persistent component of the memory system. RoleLLM [195] introduces structured
+role memory that separates private belief states(e.g., hidden identities) from public discourse records,
+ensuring that agents regulate what to disclose versus conceal across turns. CharacterLLM [164],
+RoleLLM [195] and CoSER [200] adopt parametric adaptation, fine-tuning LLMs on curated role
+play data to internalize persona traits and generate consistent style and objectives without continual
+reminders. These frameworks shift the focus from dialogue-level consistency to persistent memory
+management. Role fidelity is also exercised in open-ended narrative and social play: the AI-native
+game 1001 Nights casts the player opposite an LLM-powered King in co-creative storytelling, where
+the model sustains narrative coherence and story keywords are materialized as in-game equipment
+via image generation [176], while a multi-agent framework guides LLM agents through Avalon to
+study how they balance collaborative and confrontational behaviors and how this affects success
+rates [100].
+8.4 Sandbox Games: Open-Ended Goal Progression
+Sandbox games are characterized by open-ended environments
+and emergent play rather than fixed quests or roles. As shown
+in Figure 12, players can freely explore, collect resources, and set
+their own objectives from survival to large-scale construction.
+For LLMGAs, this creates unique demands for both generating
+meaningful goals in the absence of external instructions and
+decomposing goals into actionable plans. Without such mech
+anisms, agents either become stuck in aimless wandering or fail
+to coordinate long-horizon plans into coherent progression.
+Environments.MinecraftandCrafteraretwosandboxgames
+that have been widely studied for game agents. Minecraft [131]
+is a 3D sandbox game that offer players the great freedom to
+traverse a world made up of blocky, pixelated landscapes, facili
+Fig. 12. Sandbox games are typi
+cally open-ended, requiring agents
+to decide their own goals while
+freely exploring and building to sup
+port emergent progression.
+tated by the procedurally generated worlds. The resource-based crafting system enables players to
+transform collected materials into tools, build elaborate structures and complex machines. Built on
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+26
+Hu et al.
+Minecraft, MineDojo [50] provides a large-scale research platform with thousands of open-ended
+tasks, multimodal data from community sources, and the MineCLIP reward model. Crafter [66]
+offers a lightweight 2D open-world environment with procedurally generated maps. It challenges
+players to manage their resources carefully to ensure sufficient water, food, and rest, while also
+defending against threats like zombies.
+Methods. In sandbox settings, agents need to first determine what goals to pursue before they
+can decide how to achieve them. Existing works can be divided into two complementary directions.
+The first direction emphasizes goal generation through intrinsically motivated exploration. With
+LLMs, agents can propose adaptive goals conditioned on their current state, skills, and environment
+for curriculum learning. Voyager [192] exemplifies this idea by prompting an LLM to continually
+generate new objectives, building a self-directed curriculum and accumulating a library of reusable
+skills. OMNI [242] utilizes LLMs to determine interesting tasks for curriculum design, overcoming
+the previous challenge of quantifying "interestingness". ELLM [44] queries LLMs for next goals
+given an agent’s current context, and rewards agents for accomplishing those suggestions in the
+sparse-reward setting; SPRING [213] uses LLMs to summarize useful knowledge from the Crafter
+paper [66] and progressively prompts the LLM to generate next action.
+The second direction is hierarchical planning for task execution. Sandbox objectives such as
+constructing tools or building structures require agents to gather dispersed resources and follow
+multi-step recipes with strict dependencies. DEPS [205] introduces plan correction: the LLM
+generates candidate subgoals, monitors execution outcomes, and self-explains failures in order to
+iteratively repair its plans, while leaving the final action execution to goal-conditioned controllers.
+Subsequent work emphasized making planning more reusable. JARVIS-1 [206] extend this idea by
+integrating multimodal perception and memory, grounding subgoal generation in visual context.
+Later work such as Plan4MC [233] and RL-GPT [122] extend hierarchical planning by coupling
+high-level LLM planners with low-level controllers trained via reinforcement learning. Finally,
+multi-agent frameworks such as HAS [250] and S-Agents [23] extend hierarchical planning to
+cooperative settings, dispatching subgoals across multiple agents to parallelize progress on complex
+objectives. A third, increasingly direction grounds open-ended progression in learned world models.
+WALL-E aligns an LLM world model with the environment by extracting symbolic action rules
+and knowledge graphs into executable code, letting an RL-free model-predictive-control planner
+substantially raise success rates on the Minecraft-like Mars world [254]. ADAM autonomously
+learns a causal world graph from scratch, enabling interpretable lifelong task solving even in
+modified Minecraft worlds where prior crafting knowledge is unavailable [232]. DLLM injects
+LLM-proposed subgoal hints into a model-based agent’s imagined rollouts, rewarding hint-aligned
+transitions to improve exploration in the sparse-reward Crafter and Minecraft environments [125].
+8.5 Strategy Games: Opponent-Aware Planning
+Strategy games span a spectrum of complexity, from turn-based, deterministic, perfect information
+game to real-time, stochastic imperfect information games. As shown in Figure 13, a common
+requirement is opponent-aware planning: agents need to infer opponents’ possible intentions and
+conduct multi-step planning conditioned on these possibilities, as shown in Figure 13.
+Environments.BoardgameslikeChessandGoarefullyobservable,whereagentsneedtosearch
+vast move trees while anticipating optimal counter-moves [52, 106, 185]. Pokémon battles [73] add
+uncertainty: players select moves or switches without knowing the opponent’s choice, and success
+depends on exploiting type matchups.
+Poker, exemplified by Texas Hold’em, deals each player two private hole cards, followed by
+betting rounds as community cards are revealed. The winning strategy is not simply holding the
+best hand, but managing information asymmetry through bluffing, pot control, and reasoning
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+27
+about what cards the opponent may have [260]. StarCraft II is a real-time strategy game where
+players collect resources, expand bases, build armies, and fight under the fog of war. Winning
+requires players to infer the opponent’s strategy from limited scouting, adapt build orders and
+timing attacks accordingly, and still control units precisely in battle. For agents, the challenge is
+therefore twofold: modeling and planning against an adaptive opponent as in other strategy games,
+and at the same time coordinating across macro, tactical, and micro levels under strict temporal
+constraints [126].
+Methods. In perfect-information games such as Chess and Go,
+opponent-aware planning reduces to deterministic search over
+long move sequences. ChessGPT [52] demonstrates that training
+on textual game corpora allows LLMs to evaluate positions and
+propose continuations, while blindfold-play studies [106, 185]
+reveal that models can implicitly reconstruct board states from
+move sequences, approximating the effect of explicit lookahead
+search. Building on this, MATE fine-tunes an LLM on a million
+chess positions annotated with expert strategy and tactic ex
+planations, surpassing leading closed-source models at move
+selection [198]. Explicit lookahead has also been layered on top
+of the model. Schultz et al. reach grandmaster-level chess by
+guiding Monte Carlo tree search externally or linearizing the
+Fig. 13. Strategy games empha
+size strategic reasoning, requiring
+agents to anticipate opponent re
+sponses and plan over multiple fu
+ture steps.
+game tree within the context window [163]. DiffuSearch instead replaces explicit search with
+discrete-diffusion implicit search over imagined future board states [228]. In imperfect-information
+games, the challenge is reasoning over probability trees defined by partially observable states and
+uncertain opponent actions. Here, opponent modeling, often framed as theory-of-mind (ToM) think
+ing, is crucial. Suspicion-Agent [63] shows that prompting LLMs for higher-order ToM in Leduc
+Hold’em leads to more aggressive raises and fewer passive calls, improving long-term chip gains.
+PokéLLMon [72, 73] shows that LLM agents are still vulnerable to human misdirection strategies
+exploiting their limited higher-order ToM. For instance, a player may bait the agent by sending out
+a seemingly weak Pokémon, then switch to an immune one just before the attack lands, causing
+the agent to waste its move. To strengthen opponent-aware play under such uncertainty, recent
+agents pair LLMs with lookahead and explicit opponent modeling. PokéChamp embeds an LLM in
+minimax tree search with model-based opponent prediction for Pokémon battles [91]. Strategist
+couples high-level textual strategy generation with Monte Carlo tree search through self-play in
+the hidden-role games GOPS and Avalon [114]. Such gains remain bounded by the models’ inherent
+decision-making, as a systematic analysis across the dictator game, rock-paper-scissors, and a
+ring-network game finds persistent gaps from human rationality in forming preferences, refining
+beliefs, and acting optimally [49].
+8.6 Simulation Games: Dynamics Fidelity
+As illustrated in Figure 14, simulation games model the behavior of a system governed by dynamics
+rules such as social norms, economic mechanisms, ecological constraints, or physical laws. Rather
+than focusing on fixed objectives, these environments emphasize the faithful operation of the
+underlying simulation processes, i.e., dynamics. We therefore characterize the core challenge as
+dynamics fidelity, referring to an agent’s ability to generate behaviors that drive the state transitions
+of the simulated system in a manner consistent with its governing dynamics.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+28
+Hu et al.
+Environments. Human simulation environments construct
+virtual societies for studying emergent social behavior. Genera
+tive Agents [142] places 25 agents in a sandbox town with cogni
+tive modules for everyday interaction. Humanoid Agents [207]
+extends this setting by incorporating physiological needs, emo
+tions, and relationship closeness. Beyond human simulation,
+CivRealm [148] is a Civilization-style simulation environment
+focusing on the macro-scale evolution of societies across histori
+cal eras. From a generative angle, Unbounded realizes an infinite
+character life-simulation game whose mechanics, narrative, and
+interactions are produced on the fly by a distilled LLM with
+consistent visual character generation [105].
+Methods. For social simulation games, maintaining dynamics
+Fig. 14. Simulation games aim to
+model or reproduce the behavior of
+a system and require agents to be
+have consistently with the underly
+ing dynamics of the simulation.
+fidelity in simulation requires that agents behave in ways consistent with human or societal patterns
+rather than drifting into unrealistic behavior. Generative Agents [142] achieved this by introducing
+cognitive architectures with memory, reflection, and planning. Its memory system scores experi
+ences by recency, relevance, and importance, allowing salient events to be repeatedly recalled and
+consolidated, mirroring core patterns of human memory. Humanoid Agents [207] further improved
+fidelity by embedding physiological needs, emotions, and relationship closeness into decision
+making, leading agents to display more human-like variability. Similarly, a desire-driven agent
+selects activities to satisfy multi-dimensional intrinsic needs, producing coherent human-like daily
+routines in the Concordia simulator [203]. At larger scales, Project Sid [7] constructed an agent so
+ciety in a Minecraft-based world, inhabited by hundreds to thousands of agents who shared limited
+resources and interacted concurrently. Under conditions of scarcity and continual co-presence, the
+agents competed and cooperated, spontaneously developing specialized roles, adapting collective
+rules, and propagating cultural practices such as religion. Artificial Leviathan [40] approaches
+fidelity through a survival sandbox in which agents, driven by psychological needs under resource
+pressure, choose among farming, trading, or robbing each day. Empirical results show that agents
+start in conflict but eventually form social contracts, authorize a sovereign, and transition to
+peaceful cooperation. Experiments further show that parameters like memory depth has a large
+impact on the speed and nature of social evolution. Such emergent dynamics also surface in game
+economies, where a generative agent-based model reproduces role specialization and realistic
+market dynamics in massively multiplayer games [219]. However, a distinct concern is whether it
+is genuinely faithful to real humans rather than merely plausible. Validation against established
+human findings is encouraging: given heterogeneous personas and theory of mind, LLM agents
+reproduce human third-party punishment in public-goods games [38], match human choices in the
+behavioral-economics Trust Game [217], and recover the predictions of Homans’ social exchange
+theory [194]. To close residual gaps, other work calibrates simulations to empirical data, aligning
+population-level decision dynamics to real social statistics [128] or tuning agent personas until
+crowd behavior matches expert benchmarks [204]. Diagnostic studies nonetheless caution that
+human-like socialization may not genuinely emerge in such open-ended agent societies [107].
+9 Discussion and Open Challenges
+This section synthesizes the discussions from previous sections and connects them to the two
+research questions: (Q1) how the core architectural components of LLMGAs are designed, and (Q2)
+how genre-specific requirements shape these architectural components. We also highlight open
+challenges and future research directions.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+29
+9.1 Memory System
+To answer Q1, we introduced memory systems as a core architectural component for storing,
+retrieving, and recalling past experiences in order to maintain behavioral consistency and inform
+decision-making. The memory system is divided into working memory and long-term mem
+ory, serving distinct yet interdependent functions (§4). Working memory stabilizes short-horizon
+decision-making under limited context by (i) extending the effective input span, (ii) compressing
+redundant information, and (iii) maintaining recent bindings and plans. These mechanisms mitigate
+short-term drift and prevent inconsistent actions [72]. Long-term memory ensures continuity across
+episodes when organized into structured and retrievable forms such as chunks with metadata,
+key–value pairs, hierarchical trees, graphs, or skill libraries. The interaction between the two
+hinges on three functions: consolidation, which determines when transient traces are committed
+to durable storage; structuring, which organizes stored content for efficient access; and retrieval,
+which reactivates relevant information through metadata filtering, semantic search, or traversal of
+structured memories.
+An open challenge for current memory systems is to move beyond “storing more” toward de
+veloping a true “world-model” memory that consolidates fragmented experiences into a coherent
+mental model of the game world [83]. This limitation is particularly pronounced in adventure
+games, wherelong-horizon exploration and partial observability place strong demands on persistent
+world modeling (Q2). To obtain a world-model memory system and distinguish it from a mere
+database, three design principles can be essential: (i) Predictive dynamics: memory should not
+only replay past events but also predict what might happen next. In cognitive science, mental
+models are understood as internal simulations that help people anticipate outcomes and detect
+errors, rather than as static records [83]. (ii) Structural compositionality: experiences need to be
+stored in organized forms, such as schemas or graphs that link entities, relations, and precondi
+tion–effect rules, so that knowledge from different situations can be combined and reused. This
+idea aligns with schema and situation-model theories, which show that humans build integrated
+“who–what–where–when–why” representations to reason beyond literal experiences [261]. (iii)
+Selective consolidation and forgetting: long-term memory should decide what to keep and what
+to discard. Instead of saving every detail, it should preserve experiences that are important for
+understanding or improving the current model of the world, while letting irrelevant or low-value
+details fade. Research on human memory shows that people tend to remember information that is
+useful or frequently encountered and forget what rarely matters [8].
+9.2 Reasoning Mechanism
+Reasoning in LLMGAs is not merely about generating intermediate thoughts, but also ensuring that
+these thoughts lead to correct decisions (§5). To answer Q1, we categorize existing approaches into
+instruction-guided reasoning and fine-tuning–based reasoning enhancement. Instruction-guided
+reasoning highlights recurring challenges: reasoning should avoid error propagation and remain
+consistent across steps. In comparison, fine-tuning approaches improve reasoning abilities by
+grounding reasoning in experience and feedback. Despite these advances, a fundamental limitation
+remains: current approaches rely on narrow forms of feedback or numeric rewards. Multi-path
+reasoning improves robustness by exploring diverse reasoning trajectories, yet it provides no
+learning signal about which paths are preferable or why. Reflective reasoning enables self-correction
+across episodes but remains coarse-grained, offering post-hoc summaries rather than actionable,
+step-level feedback. Process Reward Models (PRMs) attempt to provide this supervision by assigning
+stepwise rewards, but rely heavily on costly human annotation or handcrafted heuristics, making
+feedback sparse, rigid, and poorly aligned with the linguistic nature of reasoning.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+30
+Hu et al.
+The deeper challenge lies in the mismatch between the form of reinforcement and the medium of
+reasoning. Traditional reinforcement learning depends on numeric rewards, whereas reasoning in
+LLMs unfolds through language, where success, failure, and state changes appear as semantic cues.
+Humans, however, are capable of assigning credit even from weak or indirect feedback: they adjust
+their reasoning based on partial signals such as environmental changes, the outcome of intermediate
+goals, or the perceived coherence of an explanation. Cognitive studies on metacognition and error
+monitoring show that such internal evaluation enables people to refine reasoning continuously
+through semantic and contextual signals rather than explicit numeric reinforcement [16, 54, 229].
+By virtue of their linguistic grounding, LLMs can transform textual feedback, environmental
+descriptions, and self-critiques into implicit reinforcement signals, generalizing traditional reward
+learning beyond numeric values and enabling reasoning to improve through understanding rather
+than scoring. As for Q2, across strategy games, opponent-aware planning poses a central reasoning
+challenge. In deterministic, perfect-information games, the main difficulty lies in evaluating long
+sequences of alternating moves to anticipate the opponent’s best actions. In imperfect-information
+games, agents must reason under uncertainty by forming and updating beliefs about hidden states
+and possible opponent actions, which often requires higher-order theory-of-mind reasoning to
+explicitly model the opponent’s intentions, predict their likely responses, and adjust strategies
+accordingly over multiple steps.
+9.3 Perception-Action Interface
+From the perspective of Q1, the perception & action interface grounds how agents see the environ
+ment and fulfill their decisions (§6). Across the surveyed literature, perception interfaces tend to be
+most effective when they emphasize decision-relevant features, such as object states, affordances,
+and strategic cues, rather than exhaustively encoding raw observations. However, increasing per
+ceptual richness often comes at the cost of efficiency, as more complex representations incur higher
+preprocessing and inference overhead. A similar tension arises on the action side. Existing action
+interfaces reflect a recurring trade-off between effectiveness and efficiency: high-level actions
+simplify the decision space and stabilize reasoning but may limit control precision, while low-level
+controls enable fine-grained execution but require high-frequency generation.
+For Q2, the challenge of low-latency response is particularly pronounced in action games, where
+agents operate under strict real-time constraints while issuing low-level control signals at high
+frequency. In such environments, evenstrong strategic reasoning can fail if actions are generated too
+slowly. These constraints expose a requirement for hierarchical action generation. Low-level action
+execution is typically lightweight and reactive, while higher-level strategic reasoning operates
+at a slower timescale. A practical direction for future research is therefore to explicitly decouple
+strategic decision-making from reflexive control, allowing LLMs to generate abstract intents or
+subgoals, which are then executed by fast, specialized controllers. Further opportunities include
+adaptive abstraction, where the granularity of perception and action is dynamically adjusted based
+on latency budgets and task demands. Designing perception & action interfaces that jointly optimize
+effectiveness and efficiency remains an open challenge for LLMGA research.
+9.4 Multi-LLMGA System
+LLM-based multi-agent systems extend game environments from single-agent decision making to
+collective behavior, introducing new challenges such as communication bandwidth limits, and the
+need to preserve realistic interaction constraints (§7). To answer Q1, we analyzed these systems
+across two complementary levels. At the agent level, communication protocols determine what
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+31
+information agents exchange and how it is integrated under these constraints, while at the organi
+zation level, organizational structures govern decision flow (topology), guide division of labor (task
+allocation), and determine whether societies can scale and remain stable.
+For Q2, we are interested in how genre-specific requirements influence the multi-agent architec
+tural design. Role-playing gamessuchasWerewolfandAvaloncenteronagent-levelcommunication:
+the core challenge is controlling what to disclose and what to withhold, placing the design emphasis
+on belief sharing and selective information exchange. Strategy games such as StarCraft II and
+Overcooked also foreground agent-level coordination, where the focus shifts to rapid intention
+propagation and conflict avoidance. In contrast, simulation and sandbox games operating at larger
+scales, such as those modeling entire virtual societies in Minecraft, shift the architectural focus
+from agent-level protocols to organization-level structures. As the number of agents grows, the
+primary challenge becomes designing topologies and role allocation mechanisms that sustain stable
+coordination without centralized control.
+Prior studies have demonstrated the potential of multi-agent systems in large-scale simulations,
+where agents exhibit emergent behaviors. However, current large-scale multi-agent simulations
+remain constrained by structural and methodological limitations. Many “emergent” phenomena,
+such as role differentiation, norm formation, or collective planning, are closely tied to task initial
+ization and rule design. In practice, agents are often seeded with shared goals, cooperation-oriented
+prompts, or predefined role templates that guide subsequent division of labor and coordination pat
+terns. Prior studies of multi-agent societies have shown that such structural priors are widespread,
+from small-scale social environments [142] to hierarchical and large-scale simulations [23, 250],
+where coordination often reflects the constraints of task setup rather than fully autonomous self
+organization. Moreover, the lack of open and reproducible large-scale platforms further limits
+systematic evaluation, making it difficult to test under what specific conditions such collective
+dynamics genuinely arise.
+9.5 Game Environments and Benchmarks
+Table 5 summarizes existing open-sourced benchmarks or environments for LLMGAs. Some widely
+used benchmarks (e.g., TextWorld [36], ALFWorld [168], ScienceWorld [196]) were primarily devel
+oped before the rise of LLMs. Their tasks are generated from templated rules and constrained by a
+limited set of admissible actions and shallow dynamics, which result in highly similar instantiated
+tasks and low interactive complexity. In ALFWorld, for example, tasks are constructed from house
+hold instruction templates over a fixed action set (e.g., pick up, open, put, heat), producing many
+near-duplicate instances that only substitute objects or receptacles [168].
+High-quality game environments/benchmarks are crucial for advancing the capabilities of LLM
+GAs. Such environments should not only be more complex, but complex in targeted ways that
+expose the distinctive weaknesses of current architectures. This entails: (i) tasks with deeper com
+positional structure and long-horizon dependencies, ensuring that success cannot be reduced to
+pattern-matching templates; (ii) world dynamics governed by consistent physical or social rules,
+requiring agents to acquire and exploit regularities rather than memorize isolated instances; and
+(iii) scalability in both breadth (diverse tasks and domains) and depth (persistent settings spanning
+multiple days or large populations of agents).
+Most existing benchmarks evaluate game agents with coarse-grained metrics such as win rate
+and task success rate [168, 196]. While these high-level measures capture overall gameplay perfor
+mance, they obscure where and why agents fail. Moving forward, the field requires fine-grained
+evaluation protocols that can diagnose the core components of agent design, memory, reasoning,
+perception–action translation, and multi-agent coordination, thus linking empirical evaluation to
+theoretical progress. One practical approach is game-specific metric design. Such metrics leverage
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+32 Huetal.
+Table5. Open-sourcedBenchmark/EnvironmentsforLLMGAs
+Genre Benchmark/Environment GameContent PlayerMode Modality CodeLink Date
+Action
+Overcooked-AI[20] Overcooked-likeGame Multi Symbolic GitHub 2019/12
+LLM-Coordination[5] Overcooked-AI Multi Text GitHub 2023/10
+TextStarCraft[126] StarCraftII Single Text GitHub 2023/12
+llm-colosseum[137] StreetFighterIII Multi Vision GitHub 2024/03
+Adventure
+VirtualHome[147] HouseholdTasks Single Mixed GitHub 2018/06
+TextWorld[36] Text-basedGames Single Text GitHub 2018/07
+Jericho[68] InteractiveFictions Single Text GitHub 2019/09
+ALFRED[167] HouseholdTasks Single Mixed GitHub 2020/03
+ALFWorld[168] HouseholdTasks Single Text GitHub 2020/10
+ScienceWorld[196] ScienceExperiments Single Text GitHub 2022/03
+BabyAI-Text[21] MiniGridTasks Single Text GitHub 2023/02
+Role-playing
+Cicero[48] Diplomacy Multi Text Github 2022/12
+GenerativeAgents[142] Sims-likeGame Multi Text GitHub 2023/04
+AgentSims[118] Sims-likeGame Multi Text GitHub 2023/08
+Xuetal.[224] Werewolf Multi Text GitHub 2023/09
+AvalonBench[115] Avalon Multi Text GitHub 2023/10
+HumanoidAgents[207] Sims-likeGame Multi Mixed GitHub 2023/10
+clembench[22] DialogueGames Multi Text GitHub 2023/11
+SOTOPIA[255] Social-interactionScenarios Multi Text GitHub 2023/10
+PokéAgentChallenge[90] Pokémon Single Text GitHub 2025/07
+RoleLLM[195] Role-PlayingBenchmark Single Text GitHub 2023/10
+CoSER[200] Role-PlayingBenchmark Multi Text GitHub 2025/02
+Strategy
+Cicero[48] Diplomacy Multi Text Github 2022/12
+Xuetal.[224] Werewolf Multi Text GitHub 2023/09
+AvalonBench[115] Avalon Multi Text GitHub 2023/10
+TextStarCraft[126] StarCraftII Single Text GitHub 2023/12
+PokéLLMon[72] PokémonBattles Single Text GitHub 2024/02
+PokerBench[260] TexasHold’em Single Text GitHub 2025/01
+ChessGPT[52] Chess Single Symbolic GitHub 2024/03
+CivRealm[148] Civilization-likeGame Single Symbolic GitHub 2024/01
+LMAct[158] Chess,Atari,Tic-tac-toe Single Mixed GitHub 2025/01
+LLM-PySC2[111] StarCraftII Multi Mixed GitHub 2025/04
+Full-pressDiplomacy[45] Diplomacy Multi Text GitHub 2025/08
+Simulation
+MineDojo[50] Minecraft Single Mixed GitHub 2022/06
+GenerativeAgents[142] Sims-likeGame Multi Text GitHub 2023/04
+AgentSims[118] Sims-likeGame Multi Text GitHub 2023/08
+HumanoidAgents[207] Sims-likeGame Multi Mixed GitHub 2023/10
+CivRealm[148] Civilization-likeGame Single Symbolic GitHub 2024/01
+Sandbox
+Crafter[66] 2DSurvivalSandbox Single Vision GitHub 2021/06
+MineDojo[50] Minecraft Single Mixed GitHub 2022/06
+Odyssey[121] Minecraft Single Mixed GitHub 2024/07
+Mars[182] Crafter Single Vision GitHub 2024/10
+BabaIsAI[34] Rule-manipulationPuzzle Single Vision GitHub 2024/07
+Plancraft[39] Minecraft Single Mixed GitHub 2025/03
+UnrealZoo[252] Photo-realistic3DWorlds Multi Vision GitHub 2025/06
+Diverse
+CuisineWorld[61] CooperativeTasks Multi Text GitHub 2023/09
+Cradle[180] MultipleVideoGames Single Mixed GitHub 2024/03
+BALROG[139] MultipleRLGames Single Mixed GitHub 2024/11
+lmgame-Bench[69] MultipleVideoGames Single/Multi Mixed GitHub 2025/05
+Orak[140] MultipleVideoGames Single Mixed GitHub 2025/06
+domainknowledgetoexposefailuremodesthataggregatescorescannotreveal.Forexample,
+PokéLLMonintroducestheconsecutiveswitchrate,measuringtheproportionofturnswherethe
+agentswitchesPokémonconsecutivelyasaproxyforshort-terminconsistency[73].Voyageruses
+mapcoverageandnumberofuniqueitemscollectedtoquantifyexplorationbreadthandinventory
+management[192].Atalargerscale,ProjectSid[7]invitenewmetrics,suchaspersistenceofsocial
+ACMComput.Surv.,Vol.1,No.1,Article.Publicationdate: June2026.
+A Survey on Large Language Model-Based Game Agents
+33
+norms or stability of emergent institutions, providing outcome measures with diagnostic signals
+for interpreting agent behavior.
+However, not all evaluation targets lend themselves to direct quantification. Aspects such as
+role fidelity, believability, or the coherence of emergent behavior often require judgment-based
+protocols. In Generative Agents [142], for example, agents were interviewed about their recent
+activities, relationships, or future plans, and their answers were cross-checked against internal
+memory logs. Human evaluators then rated responses for consistency, plausibility, and coherence,
+providing a qualitative assessment of role fidelity. This procedure can be extended through LLM
+basedjudgments,whereastrongLLMservesastheevaluatortoassessthequalityofagentbehaviors,
+offering scalability and reproducibility. To mitigate bias, a practical solution is to adopt hybrid
+protocols, where LLM judgments are guided by rubrics defined by human experts and their outputs
+are validated through human spot-checking.
+10 Conclusion
+This survey provides an up-to-date review of LLMGAs through an analytical framework. At the
+single agent level, we synthesize prior work across three core components, memory, reasoning,
+and perception-action interface, that together describe how agents perceive, think, and act through
+language. Extending this foundation, we introduce a complementary multi-agent framework for
+analyzing communication protocols and organizational structures that govern coordination, task
+allocation, and large-scale stability. We further introduce a challenge-centered taxonomy that maps
+six major game genres to their dominant agent design requirements, from low-latency response
+in action games to open-ended goal generation in sandbox worlds. Together, these perspectives
+present a coherent view of how language-enabled agents operate in interactive game environments
+and outline key challenges that define the next stage of research.
+Acknowledgements
+This research is partially sponsored by the NSF CISE grants 2302720 and 2312758, and a CISCO
+research grant in Edge AI, and PACE at the Georgia Institute of Technology. The first author and
+the last author are the primary contacts for this work.
+References
+[1] The arcade learning environment: An evaluation platform for general agents. Journal of artificial intelligence research,
+47:253–279, 2013.
+[2] Treeofthoughts: Deliberate problem solving with large language models. In Advances in Neural Information Processing
+Systems (NeurIPS), 2023.
+[3] Octopus: Embodied vision-language programmer for daily tasks. In European Conference on Computer Vision (ECCV).
+Springer, 2024.
+[4] J. Achiam, S. Adler, S. Agarwal, et al. Gpt-4 technical report. Technical report, OpenAI, 2023.
+[5] S. Agashe, Y. Fan, A. Reyna, and X. E. Wang. LLM-coordination: Evaluating and analyzing multi-agent coordination
+abilities in large language models. In L. Chiruzzo, A. Ritter, and L. Wang, editors, Findings of the Association for
+Computational Linguistics: NAACL 2025, pages 8038–8057, Albuquerque, New Mexico, Apr. 2025. Association for
+Computational Linguistics.
+[6] D. Ahn, S. Kim, and J. Choi. Society of mind meets real-time strategy: A hierarchical multi-agent framework for
+strategic reasoning. In Conference on Language Modeling (COLM), 2025.
+[7] A. AL, A. Ahn, N. Becker, S. Carroll, N. Christie, M. Cortes, A. Demirci, M. Du, F. Li, S. Luo, et al. Project sid:
+Many-agent simulations toward ai civilization. Technical report, Altera AI, 2024.
+[8] J. R. Anderson and L. J. Schooler. Reflections of the environment in memory. Psychological science, 2(6):396–408, 1991.
+[9] P. Anokhin, N. Semenov, A. Sorokin, D. Evseev, A. Kravchenko, M. Burtsev, and E. Burnaev. Arigraph: learning
+knowledge graph world models with episodic memory for llm agents. In Proceedings of the Thirty-Fourth International
+Joint Conference on Artificial Intelligence, pages 12–20, 2025.
+[10] A. Baddeley. Working memory: Theories, models, and controversies. Annual review of psychology, 63(1):1–29, 2012.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+34
+Hu et al.
+[11] A. D. Baddeley and G. Hitch. Working memory. In G. A. Bower, editor, Psychology of Learning and Motivation,
+volume 8, pages 47–89. Academic Press, 1974.
+[12] L. W. Barsalou. Perceptual symbol systems. Behavioral and brain sciences, 22(4):577–660, 1999.
+[13] S. Basavatia, K. Murugesan, and S. Ratnakar. STARLING: Self-supervised training of text-based reinforcement learning
+agent with large language models. In Findings of the Association for Computational Linguistics: ACL 2024, 2024.
+[14] BBC. The hitchhiker’s guide to the galaxy text adventure: 30th anniversary edition. https://www.bbc.co.uk/
+programmes/articles/1g84m0sXpnNCv84GpN2PLZG/the-game-30th-anniversary-edition.
+[15] C. Beattie, J. Z. Leibo, D. Teplyashin, T. Ward, M. Wainwright, H. Küttler, A. Lefrancq, S. Green, V. Valdés, A. Sadik,
+et al. Deepmind lab. arXiv preprint arXiv:1612.03801, 2016.
+[16] M. J. Beran. Foundations of metacognition. Oxford University Press, 2012.
+[17] M.Besta, N. Blach, A. Kubicek, R. Gerstenberger, M. Podstawski, L. Gianinazzi, J. Gajda, T. Lehmann, H. Niewiadomski,
+P. Nyczyk, et al. Graph of thoughts: Solving elaborate problems with large language models. In Proceedings of the
+AAAI conference on artificial intelligence, volume 38, pages 17682–17690, 2024.
+[18] X. Bo, Z. Zhang, Q. Dai, X. Feng, L. Wang, R. Li, X. Chen, and J.-R. Wen. Reflective multi-agent collaboration based
+on large language models. In Advances in Neural Information Processing Systems (NeurIPS), 2024.
+[19] T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell,
+et al. Language models are few-shot learners. Advances in neural information processing systems, 33:1877–1901, 2020.
+[20] M. Carroll, R. Shah, M. K. Ho, T. Griffiths, S. Seshia, P. Abbeel, and A. Dragan. On the utility of learning about humans
+for human-ai coordination. Advances in neural information processing systems, 32, 2019.
+[21] T. Carta, C. Romac, T. Wolf, S. Lamprier, O. Sigaud, and P.-Y. Oudeyer. Grounding large language models in interactive
+environments with online reinforcement learning. In International Conference on Machine Learning, pages 3676–3713.
+PMLR, 2023.
+[22] K. Chalamalasetti, J. Götze, S. Hakimov, B. Madureira, P. Sadler, and D. Schlangen. clembench: Using game play to
+evaluate chat-optimized language models as conversational agents. In Proceedings of the 2023 Conference on Empirical
+Methods in Natural Language Processing (EMNLP), 2023.
+[23] J. Chen, Y. Jiang, J. Lu, and L. Zhang. S-agent: self-organizing agents in open-ended environment. In ICLR 2024
+Workshop on Large Language Model (LLM) Agents, 2024.
+[24] J. Chen, S. Saha, and M. Bansal. Reconcile: Round-table conference improves reasoning via consensus among diverse
+llms. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long
+Papers), pages 7066–7085, 2024.
+[25] M. Chen, Y. Li, Y. Yang, S. Yu, B. Lin, and X. He. AutoManual: Constructing instruction manuals by LLM agents via
+interactive environmental learning. In Advances in Neural Information Processing Systems (NeurIPS), 2024.
+[26] P. Cheng, T. Hu, H. Xu, Z. Zhang, Z. Yuan, Y. Dai, L. Han, N. Du, and X. Li. Self-playing adversarial language game
+enhances LLM reasoning. In Advances in Neural Information Processing Systems (NeurIPS), 2024.
+[27] A. Chevalier, A. Wettig, A. Ajith, and D. Chen. Adapting language models to compress contexts. In H. Bouamor,
+J. Pino, and K. Bali, editors, Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing,
+pages 3829–3846, Singapore, Dec. 2023. Association for Computational Linguistics.
+[28] W. Choi, J. Park, S. Ahn, D. Lee, and H. Woo. NeSyC: A neuro-symbolic continual learner for complex embodied
+tasks in open domains. In International Conference on Learning Representations (ICLR), 2025.
+[29] S. Choudhury and P. Sodhi. Better than your teacher: LLM agents that learn from privileged AI feedback. In
+International Conference on Learning Representations (ICLR), 2025.
+[30] P. F. Christiano, J. Leike, T. Brown, M. Martic, S. Legg, and D. Amodei. Deep reinforcement learning from human
+preferences. Advances in neural information processing systems, 30, 2017.
+[31] A. Clark. Being there: Putting brain, body, and world together again. MIT press, 1998.
+[32] A. Clark. Whatever next? predictive brains, situated agents, and the future of cognitive science. Behavioral and brain
+sciences, 36(3):181–204, 2013.
+[33] R. I. Clarke, J. H. Lee, and N. Clark. Why video game genres fail: A classificatory analysis. Games and Culture,
+12(5):445–465, 2017.
+[34] N. Cloos, M. Jens, M. Naim, Y.-L. Kuo, I. Cases, A. Barbu, and C. J. Cueva. Baba is AI: Break the rules to beat the
+benchmark. In ICML 2024 Workshop on LLMs and Cognition, 2024.
+[35] K. Cobbe, C. Hesse, J. Hilton, and J. Schulman. Leveraging procedural generation to benchmark reinforcement
+learning. In International conference on machine learning, pages 2048–2056. PMLR, 2020.
+[36] M.-A. Côté, A. Kádár, X. Yuan, B. Kybartas, T. Barnes, E. Fine, J. Moore, M. Hausknecht, L. El Asri, M. Adada, et al.
+Textworld: A learning environment for text-based games. In Computer Games: 7th Workshop, CGW 2018, Held in
+Conjunction with the 27th International Conference on Artificial Intelligence, IJCAI 2018, Stockholm, Sweden, July 13,
+2018, Revised Selected Papers 7, pages 41–75. Springer, 2019.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+35
+[37] N. Cowan. The magical number 4 in short-term memory: A reconsideration of mental storage capacity. Behavioral
+and brain sciences, 24(1):87–114, 2001.
+[38] L. Cross, N. Haber, and D. L. K. Yamins. Validating generative agent-based models of social norm enforcement: From
+replication to novel predictions. In Proceedings of the Annual Meeting of the Cognitive Science Society (CogSci), 2025.
+[39] G. Dagan, F. Keller, and A. Lascarides. Plancraft: an evaluation dataset for planning with LLM agents. In Conference
+on Language Modeling (COLM), 2025.
+[40] G. Dai, W. Zhang, J. Li, S. Yang, S. Rao, A. Caetano, M. Sra, et al. Artificial leviathan: Exploring social evolution of llm
+agents through the lens of hobbesian social contract theory. arXiv preprint arXiv:2406.14373, 2024.
+[41] A. de Wynter. Will gpt-4 run doom? IEEE Transactions on Games, 17(2):451–459, 2025.
+[42] Y. Ding, L. L. Zhang, C. Zhang, Y. Xu, N. Shang, J. Xu, F. Yang, and M. Yang. Longrope: Extending llm context window
+beyond 2 million tokens. In International Conference on Machine Learning, pages 11091–11104. PMLR, 2024.
+[43] S. Du and X. Zhang. Helmsman of the masses? evaluate the opinion leadership of large language models in the
+werewolf game. In Conference on Language Modeling (COLM), 2024.
+[44] Y. Du, O. Watkins, Z. Wang, C. Colas, T. Darrell, P. Abbeel, A. Gupta, and J. Andreas. Guiding pretraining in
+reinforcement learning with large language models. In International Conference on Machine Learning, pages 8657
+8677. PMLR, 2023.
+[45] A. Duffy, S. J. Paech, I. Shastri, E. Karpinski, B. Alloui-Cros, T. Marques, and M. L. Olson. Democratizing diplomacy:
+A harness for evaluating any large language model on full-press diplomacy. In MTI-LLM Workshop at the Conference
+on Neural Information Processing Systems (NeurIPS), 2025.
+[46] H. Ebbinghaus. Memory: A Contribution to Experimental Psychology. Teachers College, Columbia University, New
+York, 1913. Translated by Henry A. Ruger and Clara E. Bussenius.
+[47] J. S. B. Evans. Dual-processing accounts of reasoning, judgment, and social cognition. Annu. Rev. Psychol., 59(1):255
+278, 2008.
+[48] M. F. A. R. D. T. (FAIR)†, A. Bakhtin, N. Brown, E. Dinan, G. Farina, C. Flaherty, D. Fried, A. Goff, J. Gray, H. Hu,
+et al. Human-level play in the game of diplomacy by combining language models with strategic reasoning. Science,
+378(6624):1067–1074, 2022.
+[49] C. Fan, J. Chen, Y. Jin, and H. He. Can large language models serve as rational players in game theory? a systematic
+analysis. In Proceedings of the AAAI Conference on Artificial Intelligence, 2024.
+[50] L. Fan, G. Wang, Y. Jiang, A. Mandlekar, Y. Yang, H. Zhu, A. Tang, D.-A. Huang, Y. Zhu, and A. Anandkumar. Minedojo:
+Building open-ended embodied agents with internet-scale knowledge. Advances in Neural Information Processing
+Systems, 35:18343–18362, 2022.
+[51] W. Fang, L. Li, K. Shi, Y. Yang, and J. Zhang. Belief-driven multi-agent collaboration via approximate perfect bayesian
+equilibrium for social simulation. In Proceedings of the ACM Web Conference (WWW), 2026.
+[52] X. Feng, Y. Luo, Z. Wang, H. Tang, M. Yang, K. Shao, D. Mguni, Y. Du, and J. Wang. Chessgpt: Bridging policy learning
+and language modeling. Advances in Neural Information Processing Systems, 36, 2024.
+[53] Y. Feng, Y. Wang, J. Liu, S. Zheng, and Z. Lu. Llama-rider: Spurring large language models to explore the open world.
+In Findings of the Association for Computational Linguistics: NAACL 2024, pages 4705–4724, 2024.
+[54] S. M. Fleming and R. J. Dolan. The neural basis of metacognitive ability. Philosophical Transactions of the Royal Society
+B: Biological Sciences, 367(1594):1338–1349, 2012.
+[55] S. Forouzandeh, W. Peng, P. Moradi, X. Yu, and M. Jalili. Learning hierarchical procedural memory for LLM agents
+through bayesian selection and contrastive refinement. In Proceedings of the 25th International Conference on
+Autonomous Agents and Multiagent Systems (AAMAS), 2026.
+[56] R. Gallotta, G. Todd, M. Zammit, S. Earle, A. Liapis, J. Togelius, and G. N. Yannakakis. Large language models and
+games: A survey and roadmap. IEEE Transactions on Games, 2024.
+[57] C. Gao, X. Lan, N. Li, Y. Yuan, J. Ding, Z. Zhou, F. Xu, and Y. Li. Large language models empowered agent-based
+modeling and simulation: A survey and perspectives. Humanities and Social Sciences Communications, 11(1):1–24,
+2024.
+[58] T. Ge, H. Jing, L. Wang, X. Wang, S.-Q. Chen, and F. Wei. In-context autoencoder for context compression in a large
+language model. In The Twelfth International Conference on Learning Representations, 2024.
+[59] H. Golchha, S. Yerawar, D. Patel, S. Dan, and K. Murugesan. Language guided exploration for RL agents in text
+environments. In Findings of the Association for Computational Linguistics: NAACL 2024, 2024.
+[60] D. Gong, X. Wan, and D. Wang. Working memory capacity of chatgpt: An empirical study. In Proceedings of the AAAI
+Conference on Artificial Intelligence, volume 38, pages 10048–10056, 2024.
+[61] R. Gong, Q. Huang, X. Ma, Y. Noda, Z. Durante, Z. Zheng, D. Terzopoulos, L. Fei-Fei, J. Gao, and H. Vo. Mindagent:
+Emergent gaming interaction. In Findings of the Association for Computational Linguistics: NAACL 2024, pages
+3154–3183, 2024.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+36
+Hu et al.
+[62] Z. Guan, X. Kong, F. Zhong, and Y. Wang. Richelieu: Self-evolving LLM-based agents for AI diplomacy. In Advances
+in Neural Information Processing Systems (NeurIPS), 2024.
+[63] J. Guo, B. Yang, P. Yoo, B. Y. Lin, Y. Iwasawa, and Y. Matsuo. Suspicion-agent: Playing imperfect information games
+with theory of mind aware gpt-4. In Proceedings of the 1st Conference on Language Modeling (COLM), 2024.
+[64] X. Guo, K. Huang, J. Liu, W. Fan, N. Vélez, Q. Wu, H. Wang, T. L. Griffiths, and M. Wang. Embodied LLM agents learn
+to cooperate in organized teams. IEEE Transactions on Computational Social Systems, 2025.
+[65] A. Gupta. Are chatgpt and gpt-4 er players?–a pre-flop analysis. arXiv preprint arXiv:2308.12466, 2023.
+[66] D. Hafner. Benchmarking the spectrum of agent capabilities. In International Conference on Learning Representations,
+2022.
+[67] S. M. Hamidi, L. Ye, and K. N. Plataniotis. DreamPhase: Offline imagination and uncertainty-guided planning for
+large-language-model agents. In International Conference on Learning Representations (ICLR), 2026.
+[68] M. Hausknecht, P. Ammanabrolu, M.-A. Côté, and X. Yuan. Interactive fiction games: A colossal adventure. In
+Proceedings of the AAAI Conference on Artificial Intelligence, volume 34, pages 7903–7910, 2020.
+[69] L. Hu, M. Huo, Y. Zhang, H. Yu, E. P. Xing, I. Stoica, T. Rosing, H. Jin, and H. Zhang. lmgame-bench: How good are
+LLMs at playing games? In The Fourteenth International Conference on Learning Representations, 2026.
+[70] M. Hu, T. Chen, Q. Chen, Y. Mu, W. Shao, and P. Luo. Hiagent: Hierarchical working memory management for solving
+long-horizon agent tasks with large language model. In Proceedings of the 63rd Annual Meeting of the Association for
+Computational Linguistics (ACL 2025), 2025.
+[71] S. Hu, T. Huang, F. İlhan, S. F. Tekin, and L. Liu. Large language model-powered smart contract vulnerability detection:
+Newperspectives. In 2023 5th IEEE International Conference on Trust, Privacy and Security in Intelligent Systems and
+Applications (TPS-ISA), pages 297–306. IEEE, 2023.
+[72] S. Hu, T. Huang, G. Liu, R. Kompella, and L. Liu. Pokéllmon: A grounding and reasoning benchmark for large language
+models in pokémon battles. ACM Transactions on Internet Technology, 2025.
+[73] S. Hu, T. Huang, and L. Liu. Pokéllmon: A human-parity agent for pokémon battles with large language models, 2024.
+[74] W. Hua, L. Fan, L. Li, K. Mei, J. Ji, Y. Ge, L. Hemphill, and Y. Zhang. War and peace (waragent): Large language
+model-based multi-agent simulation of world wars. arXiv preprint arXiv:2311.17227, 2023.
+[75] C. Huang, Y. Cao, Y. Wen, T. Zhou, and Y. Zhang. Pokergpt: An end-to-end lightweight solver for multi-player texas
+hold’em via large language model. arXiv preprint arXiv:2401.06781, 2024.
+[76] W. Huang, P. Abbeel, D. Pathak, and I. Mordatch. Language models as zero-shot planners: Extracting actionable
+knowledge for embodied agents. In International Conference on Machine Learning, pages 9118–9147. PMLR, 2022.
+[77] Infocom. Zork I. http://ifdb.tads.org/viewgame?id=0dbnusxunq7fw5ro, 1980.
+[78] Infocom. Zork III. http://ifdb.tads.org/viewgame?id=vrsot1zgy1wfcdru, 1982.
+[79] M. Iovino, E. Scukins, J. Styrud, P. Ögren, and C. Smith. A survey of behavior trees in robotics and ai. Robotics and
+Autonomous Systems, 154:104096, 2022.
+[80] J. Jang, M. Yoo, S. Yoon, and H. Woo. Test-time mixture of world models for embodied agents in dynamic environments.
+In International Conference on Learning Representations (ICLR), 2026.
+[81] D. Jeurissen, D. Perez-Liebana, J. Gow, D. Cakmak, and J. Kwan. Playing NetHack with LLMs: Potential and limitations
+as zero-shot agents. In IEEE Conference on Games (CoG), 2024.
+[82] X. Jin, Z. Wang, Y. Du, M. Fang, H. Zhang, and J. Wang. Learning to discuss strategically: A case study on one night
+ultimate werewolf. In Advances in Neural Information Processing Systems (NeurIPS), 2024.
+[83] P. N. Johnson-Laird. Mental models: Towards a cognitive science of language, inference, and consciousness. Number 6.
+Harvard University Press, 1983.
+[84] P. N. Johnson-Laird. Mental models and human reasoning. Proceedings of the National Academy of Sciences,
+107(43):18243–18250, 2010.
+[85] D. Kahneman. Thinking, Fast and Slow. Farrar, Straus and Giroux, 2011.
+[86] Z. Kaiya, M. Naim, J. Kondic, M. Cortes, J. Ge, S. Luo, G. R. Yang, and A. Ahn. Lyfe agents: Generative agents for
+low-cost real-time social interactions. arXiv preprint arXiv:2310.02172, 2023.
+[87] H. Kang, E. Sachdeva, P. Gupta, S. Bae, and K. Lee. GFlowVLM: Enhancing multi-step reasoning in vision-language
+models with generative flow networks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 2025.
+[88] H. Kang, Q. Zhang, H. Cai, W. Xu, T. Krishna, Y. Du, and T. Weissman. Win fast or lose slow: Balancing speed
+and accuracy in latency-sensitive decisions of llms. In The Thirty-ninth Annual Conference on Neural Information
+Processing Systems.
+[89] C. Kao, V. Vats, and J. Davis. Hidden in plain text: Measuring LLM deception quality against human baselines using
+social deduction games. In International Conference on Agents (ICA), 2025.
+[90] S. Karten, J. Grigsby, S. Milani, K. Vodrahalli, A. Zhang, F. Fang, Y. Zhu, and C. Jin. The pokeagent challenge:
+Competitive and long-context learning at scale. In NeurIPS Competition Track, Apr. 2025.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+37
+[91] S. Karten, A. L. Nguyen, and C. Jin. Pokéchamp: an expert-level minimax language agent. In International Conference
+on Machine Learning (ICML), 2025.
+[92] M. Kempka, M. Wydmuch, G. Runc, J. Toczek, and W. Jaśkowski. Vizdoom: A doom-based ai research platform for
+visual reinforcement learning. In 2016 IEEE conference on computational intelligence and games (CIG). IEEE, 2016.
+[93] G. Kim, P. Baldi, and S. McAleer. Language models can solve computer tasks. Advances in Neural Information
+Processing Systems, 36, 2024.
+[94] M. Kim and S.-w. Hwang. CoEx– co-evolving world-model and exploration. In Findings of the Association for
+Computational Linguistics: EMNLP 2025, 2025.
+[95] M. Kim and S.-w. Hwang. Dual-scale world memory for LLM agents towards hard-exploration problems. In
+International Conference on Learning Representations (ICLR), 2026.
+[96] R. Klevjer. Enter the avatar: The phenomenology of prosthetic telepresence in computer games. In The philosophy of
+computer games, pages 17–38. Springer, 2012.
+[97] M. Klissarov, M. Henaff, R. Raileanu, S. Sodhani, P. Vincent, A. Zhang, P.-L. Bacon, D. Precup, M. C. Machado, and
+P. D’Oro. MaestroMotif: Skill design from artificial intelligence feedback. In International Conference on Learning
+Representations (ICLR), 2025.
+[98] T. Kojima, S. S. Gu, M. Reid, Y. Matsuo, and Y. Iwasawa. Large language models are zero-shot reasoners. Advances in
+neural information processing systems, 35:22199–22213, 2022.
+[99] I. Kotseruba and J. K. Tsotsos. 40 years of cognitive architectures: core cognitive abilities and practical applications.
+Artificial Intelligence Review, 53(1):17–94, 2020.
+[100] Y. Lan, Z. Hu, L. Wang, Y. Wang, D. Ye, P. Zhao, E.-P. Lim, H. Xiong, and H. Wang. LLM-based agent society
+investigation: Collaboration and confrontation in avalon gameplay. In Proceedings of the 2024 Conference on Empirical
+Methods in Natural Language Processing (EMNLP), 2024.
+[101] J. H. Lee, N. Karlova, R. I. Clarke, K. Thornton, and A. Perti. Facet analysis of video game genres. IConference 2014
+Proceedings, 2014.
+[102] B. Lester, R. Al-Rfou, and N. Constant. The power of scale for parameter-efficient prompt tuning. In Proceedings of the
+2021 Conference on Empirical Methods in Natural Language Processing, pages 3045–3059. Association for Computational
+Linguistics, 2021.
+[103] J. Leung, Y. Wang, and Z. Shen. From entity-centric to goal-oriented graphs: Enhancing LLM knowledge retrieval in
+minecraft. Knowledge-Based Systems, 2026.
+[104] H. Li, Y. Chong, S. Stepputtis, J. Campbell, D. Hughes, C. Lewis, and K. Sycara. Theory of mind for multi-agent
+collaboration via large language models. In H. Bouamor, J. Pino, and K. Bali, editors, Proceedings of the 2023
+Conference on Empirical Methods in Natural Language Processing, pages 180–192, Singapore, Dec. 2023. Association
+for Computational Linguistics.
+[105] J. Li, Y. Li, N. Wadhwa, Y. Pritch, D. E. Jacobs, M. Rubinstein, M. Bansal, and N. Ruiz. Unbounded: A generative
+infinite game of character life simulation. In International Conference on Learning Representations (ICLR), 2025.
+[106] K. Li, A. K. Hopkins, D. Bau, F. Viégas, H. Pfister, and M. Wattenberg. Emergent world representations: Exploring a
+sequence model trained on a synthetic task. In The Eleventh International Conference on Learning Representations,
+2023.
+[107] M. Li, X. Li, and T. Zhou. Does socialization emerge in AI agent society? a case study of moltbook, 2026.
+[108] S. Li, Y. He, H. Guo, X. Bu, G. Bai, J. Liu, J. Liu, X. Qu, Y. Li, W. Ouyang, et al. Graphreader: Building graph-based
+agent to enhance long-context abilities of large language models. In Findings of the Association for Computational
+Linguistics: EMNLP 2024, pages 12758–12786, 2024.
+[109] X. Li, S. Wang, S. Zeng, Y. Wu, and Y. Yang. A survey on llm-based multi-agent systems: workflow, infrastructure,
+and challenges. Vicinagearth, 1(1):9, 2024.
+[110] Y. Li, S. Zhang, J. Sun, Y. Du, Y. Wen, X. Wang, and W. Pan. Cooperative open-ended learning framework for zero-shot
+coordination. In Proceedings of the 40th International Conference on Machine Learning, pages 20470–20484, 2023.
+[111] Z. Li, Y. Ni, R. Qi, C. Lu, L. Jiang, X. Xu, X. Liu, P. Li, Y. Guo, Z. Ma, H. Li, W. Hui, G. Xian, K. Huang, and X. Zhang.
+LLM-PySC2: Starcraft II learning environment for large language models. In Advances in Neural Information Processing
+Systems (NeurIPS), 2025.
+[112] Z. Li, Y. Xie, R. Shao, G. Chen, D. Jiang, and L. Nie. Optimus-1: Hybrid multimodal memory empowered agents excel
+in long-horizon tasks. In Advances in Neural Information Processing Systems (NeurIPS), 2024.
+[113] Z. Li, X. Xu, Z. Xu, S.-N. Lim, and H. Zhao. LARM:Largeauto-regressive model for long-horizon embodied intelligence.
+In International Conference on Machine Learning (ICML), 2025.
+[114] J. Light, M. Cai, W. Chen, G. Wang, X. Chen, W. Cheng, Y. Yue, and Z. Hu. Strategist: Self-improvement of LLM
+decision making via bi-level tree search. In International Conference on Learning Representations (ICLR), 2025.
+[115] J. Light, M. Cai, S. Shen, and Z. Hu. From text to tactic: Evaluating LLMs playing the game of avalon. In NeurIPS 2023
+Foundation Models for Decision Making Workshop, 2023.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+38
+Hu et al.
+[116] H. Lightman, V. Kosaraju, Y. Burda, H. Edwards, B. Baker, T. Lee, J. Leike, J. Schulman, I. Sutskever, and K. Cobbe.
+Let’s verify step by step. In The Twelfth International Conference on Learning Representations, 2023.
+[117] B. Y. Lin, Y. Fu, K. Yang, F. Brahman, S. Huang, C. Bhagavatula, P. Ammanabrolu, Y. Choi, and X. Ren. Swiftsage: A
+generative agent with fast and slow thinking for complex interactive tasks. Advances in Neural Information Processing
+Systems, 36, 2024.
+[118] J. Lin, H. Zhao, A. Zhang, Y. Wu, H. Ping, and Q. Chen. Agentsims: An open-source sandbox for large language model
+evaluation. https://github.com/py499372727/AgentSims, 2023.
+[119] B. Liu, S. Yu, Z. Liu, L. Guertler, P. Qi, D. Balcells, M. Liu, C. Tan, W. Shi, M. Lin, W. S. Lee, and N. Jaques. SPIRAL: Self
+play on zero-sum games incentivizes reasoning via multi-agent multi-turn reinforcement learning. In International
+Conference on Learning Representations (ICLR), 2026.
+[120] J. Liu, C. Yu, J. Gao, Y. Xie, Q. Liao, Y. Wu, and Y. Wang. Llm-powered hierarchical language agent for real-time
+human-ai coordination. In Proceedings of the 23rd International Conference on Autonomous Agents and Multiagent
+Systems, pages 1219–1228, 2024.
+[121] S. Liu, Y. Li, K. Zhang, Z. Cui, W. Fang, Y. Zheng, T. Zheng, and M. Song. Odyssey: empowering minecraft agents
+with open-world skills. In Proceedings of the Thirty-Fourth International Joint Conference on Artificial Intelligence,
+pages 187–195, 2025.
+[122] S. Liu, H. Yuan, M. Hu, Y. Li, Y. Chen, S. Liu, Z. Lu, and J. Jia. Rl-gpt: Integrating reinforcement learning and
+code-as-policy. In Advances in Neural Information Processing Systems (NeurIPS), 2024.
+[123] T. Liu, Y. Zhao, R. Joshi, M. Khalman, M. Saleh, P. J. Liu, and J. Liu. Statistical rejection sampling improves preference
+optimization. In The Twelfth International Conference on Learning Representations, 2024.
+[124] X. Liu, A. Pesaranghader, J. Kim, T. Sadhu, H. Jeon, and S. Sanner. ActiveVOO: Value of observation guided active
+knowledge acquisition for open-world embodied lifted regression planning. In Advances in Neural Information
+Processing Systems (NeurIPS), 2025.
+[125] Z. Liu, Z. Huan, X. Wang, J. Lyu, J. Tao, X. Li, F. Huang, and H. Xu. World models with hints of large language models
+for goal achieving. In Proceedings of the Conference of the North American Chapter of the Association for Computational
+Linguistics (NAACL), 2024.
+[126] W.Ma,Q.Mi,Y.Zeng,X.Yan,R.Lin,Y.Wu,J.Wang,andH.Zhang. LargelanguagemodelsplaystarcraftII:benchmarks
+and a chain of summarization approach. In The Thirty-eighth Annual Conference on Neural Information Processing
+Systems, 2024.
+[127] A. Madaan, N. Tandon, P. Gupta, S. Hallinan, L. Gao, S. Wiegreffe, U. Alon, N. Dziri, S. Prabhumoye, Y. Yang, et al.
+Self-refine: Iterative refinement with self-feedback. Advances in Neural Information Processing Systems, 36, 2024.
+[128] Q. Mi, M. Yang, X. Yu, Z. Zhao, C. Deng, B. An, H. Zhang, X. Chen, and J. Wang. MF-LLM: Simulating population
+decision dynamics via a mean-field large language model framework. In Advances in Neural Information Processing
+Systems (NeurIPS), 2025.
+[129] Microsoft Research. First textworld problems: The competition using text-based games to advance capabilities of ai
+agents, 2019.
+[130] M. Milkowski and T. Weninger. Deception and communication in autonomous multi-agent systems: An experimental
+study with among us. In Proceedings of the 25th International Conference on Autonomous Agents and Multiagent
+Systems (AAMAS), 2026.
+[131] Mojang Studios. Minecraft. https://www.minecraft.net/en-us.
+[132] M. Mosquera, J. S. Pinzon, M. Rios, Y. Fonseca, L. F. Giraldo, N. Quijano, and R. Manrique. Can LLM-augmented
+autonomous agents cooperate? an evaluation of their cooperative capabilities through melting pot. IEEE Transactions
+on Artificial Intelligence, 7(2):674–683, 2026.
+[133] X. Mou, C. Qian, W. Liu, L. Yan, Y. Hu, X. Huang, and Z. Wei. EcoLANG: Efficient and effective agent communication
+language induction for social simulation. In Findings of the Association for Computational Linguistics: EMNLP 2025,
+2025.
+[134] E. Mu, J. Cai, Y. Lu, M. Zhang, K. Tei, and J. Li. Knowledge graph-enhanced large language model for incremental
+game playtesting. IEICE Transactions on Information and Systems, 2025.
+[135] J. Mu, X. Li, and N. Goodman. Learning to compress prompts with gist tokens. Advances in Neural Information
+Processing Systems, 36:19327–19352, 2023.
+[136] A. Newell. Unified theories of cognition. Harvard University Press, 1994.
+[137] OpenGenerativeAI. Llm colosseum: Benchmark llms by fighting in street fighter iii. https://github.com/
+OpenGenerativeAI/llm-colosseum, 2024.
+[138] L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. Wainwright, P. Mishkin, C. Zhang, S. Agarwal, K. Slama, A. Ray, et al.
+Training language models to follow instructions with human feedback. Advances in Neural Information Processing
+Systems, 35:27730–27744, 2022.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+39
+[139] D. Paglieri, B. Cupiał, S. Coward, U. Piterbarg, M. Wolczyk, A. Khan, E. Pignatelli, Ł. Kuciński, L. Pinto, R. Fergus, J. N.
+Foerster, J. Parker-Holder, and T. Rocktäschel. BALROG: Benchmarking agentic LLM and VLM reasoning on games.
+In The Thirteenth International Conference on Learning Representations, 2025.
+[140] D. Park, M. Kim, B. Choi, J. Kim, K. Lee, J. Lee, I. Park, B.-U. Lee, J. Hwang, J. Ahn, A. S. Mahabaleshwarkar, B. Kartal,
+P. Biswas, Y. Suhara, K. Lee, and J. Cho. Orak: A foundational benchmark for training and evaluating LLM agents on
+diverse video games. In The Fourteenth International Conference on Learning Representations, 2026.
+[141] J. Park, J. Cho, and S. Ahn. MrSteve: Instruction-following agents in minecraft with what-where-when memory. In
+International Conference on Learning Representations (ICLR), 2025.
+[142] J. S. Park, J. O’Brien, C. J. Cai, M. R. Morris, P. Liang, and M. S. Bernstein. Generative agents: Interactive simulacra of
+human behavior. In Proceedings of the 36th Annual ACM Symposium on User Interface Software and Technology, 2023.
+[143] B. Peng, J. Quesnelle, H. Fan, and E. Shippole. YaRN: Efficient context window extension of large language models. In
+The Twelfth International Conference on Learning Representations, 2024.
+[144] W. T. Piriyakulkij, Y. Liang, H. Tang, A. Weller, M. Kryven, and K. Ellis. PoE-world: Compositional world modeling
+with products of programmatic experts. In Advances in Neural Information Processing Systems (NeurIPS), 2025.
+[145] A. Prasad, A. Koller, M. Hartmann, P. Clark, A. Sabharwal, M. Bansal, and T. Khot. Adapt: As-needed decomposition
+and planning with language models. In Findings of the Association for Computational Linguistics: NAACL 2024, pages
+4226–4252, 2024.
+[146] PrismarineJS. Mineflayer: Create minecraft bots with a powerful, stable, and high level javascript api. https:
+//github.com/PrismarineJS/mineflayer, 2013.
+[147] X. Puig, K. Ra, M. Boben, J. Li, T. Wang, S. Fidler, and A. Torralba. Virtualhome: Simulating household activities via
+programs. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pages 8494–8502, 2018.
+[148] S. Qi, S. Chen, Y. Li, X. Kong, J. Wang, B. Yang, P. Wong, Y. Zhong, X. Zhang, Z. Zhang, N. Liu, Y. Yang, and S.-C. Zhu.
+Civrealm: A learning and reasoning odyssey in civilization for decision-making agents. In The Twelfth International
+Conference on Learning Representations, 2024.
+[149] C. Qian, Z. Xie, Y. Wang, W. Liu, K. Zhu, H. Xia, Y. Dang, Z. Du, W. Chen, C. Yang, Z. Liu, and M. Sun. Scaling
+large language model-based multi-agent collaboration. In The Thirteenth International Conference on Learning
+Representations, 2025.
+[150] H. Qian, C. Bai, J. Zhang, F. Wu, W. Song, and X. Li. Discriminator-guided embodied planning for LLM agent. In
+International Conference on Learning Representations (ICLR), 2025.
+[151] S. Qiao, R. Fang, N. Zhang, Y. Zhu, X. Chen, S. Deng, Y. Jiang, P. Xie, F. Huang, and H. Chen. Agent planning with
+world knowledge model. In Proceedings of the 38th International Conference on Neural Information Processing Systems,
+pages 114843–114871, 2024.
+[152] G. Qin and B. Van Durme. Nugget: Neural agglomerative embeddings of text. In International Conference on Machine
+Learning, pages 28337–28350. PMLR, 2023.
+[153] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark, et al.
+Learning transferable visual models from natural language supervision. In International conference on machine
+learning, pages 8748–8763. PMLR, 2021.
+[154] R. Rafailov, A. Sharma, E. Mitchell, C. D. Manning, S. Ermon, and C. Finn. Direct preference optimization: Your
+language model is secretly a reward model. Advances in Neural Information Processing Systems, 36:53728–53741, 2023.
+[155] N. Ratner, Y. Levine, Y. Belinkov, O. Ram, I. Magar, O. Abend, E. Karpas, A. Shashua, K. Leyton-Brown, and Y. Shoham.
+Parallel context windows for large language models. In Proceedings of the 61st Annual Meeting of the Association for
+Computational Linguistics (Volume 1: Long Papers), pages 6383–6402, 2023.
+[156] S. Reed, K. Zolna, E. Parisotto, S. G. Colmenarejo, A. Novikov, G. Barth-maron, M. Giménez, Y. Sulsky, J. Kay, J. T.
+Springenberg, T. Eccles, J. Bruce, A. Razavi, A. Edwards, N. Heess, Y. Chen, R. Hadsell, O. Vinyals, M. Bordbar, and
+N. de Freitas. A generalist agent. Transactions on Machine Learning Research, 2022.
+[157] A. Rezazadeh, Z. Li, W. Wei, and Y. Bao. From isolated conversations to hierarchical schemas: Dynamic tree memory
+representation for LLMs. In The Thirteenth International Conference on Learning Representations, 2025.
+[158] A. Ruoss, F. Pardo, H. Chan, B. Li, V. Mnih, and T. Genewein. LMAct: A benchmark for in-context imitation learning
+with long multimodal demonstrations. In International Conference on Machine Learning (ICML), 2025.
+[159] P. Sarthi, S. Abdullah, A. Tuli, S. Khanna, A. Goldie, and C. D. Manning. Raptor: Recursive abstractive processing for
+tree-organized retrieval. In The Twelfth International Conference on Learning Representations.
+[160] V. Sarukkai, Z. Xie, and K. Fatahalian. Self-generated in-context examples improve LLM agents for sequential
+decision-making tasks. In Advances in Neural Information Processing Systems (NeurIPS), 2025.
+[161] P. Schroeder, N. Morgan, H. Luo, and J. Glass. THREAD: Thinking deeper with recursive spawning. In Proceedings of
+the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics (NAACL),
+2025.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+40
+Hu et al.
+[162] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov. Proximal policy optimization algorithms. Technical
+report, OpenAI, 2017.
+[163] J. Schultz, J. Adamek, M. Jusup, M. Lanctot, M. Kaisers, S. Perrin, D. Hennes, J. Shar, C. A. Lewis, A. Ruoss, T. Zahavy,
+P. Veličković, L. Prince, S. Singh, E. Malmi, and N. Tomasev. Mastering board games by external and internal planning
+with language models. In International Conference on Machine Learning (ICML), 2025.
+[164] Y. Shao, L. Li, J. Dai, and X. Qiu. Character-llm: A trainable agent for role-playing. In Proceedings of the 2023 Conference
+on Empirical Methods in Natural Language Processing, pages 13153–13187, 2023.
+[165] Z. Shi, M. Fang, and L. Chen. Monte carlo planning with large language model for text-based game agents. In
+International Conference on Learning Representations (ICLR), 2025.
+[166] N. Shinn, F. Cassano, E. Berman, A. Gopinath, K. Narasimhan, and S. Yao. Reflexion: Language agents with verbal
+reinforcement learning. In Advances in Neural Information Processing Systems (NeurIPS), 2023.
+[167] M. Shridhar, J. Thomason, D. Gordon, Y. Bisk, W. Han, R. Mottaghi, L. Zettlemoyer, and D. Fox. Alfred: A benchmark
+for interpreting grounded instructions for everyday tasks. In Proceedings of the IEEE/CVF conference on computer
+vision and pattern recognition, pages 10740–10749, 2020.
+[168] M. Shridhar, X. Yuan, M.-A. Cote, Y. Bisk, A. Trischler, and M. Hausknecht. Alfworld: Aligning text and embodied
+environments for interactive learning. In International Conference on Learning Representations, 2021.
+[169] L. Smith and M. Gasser. The development of embodied cognition: Six lessons from babies. Artificial life, 11(1-2):13–29,
+2005.
+[170] C. H. Song, J. Wu, C. Washington, B. M. Sadler, W.-L. Chao, and Y. Su. Llm-planner: Few-shot grounded planning for
+embodied agents with large language models. In Proceedings of the IEEE/CVF International Conference on Computer
+Vision, pages 2998–3009, 2023.
+[171] K. Song, A. Moeini, P. Wang, L. Gong, R. Chandra, S. Zhang, and Y. Qi. Reward is enough: LLMs are in-context
+reinforcement learners. In International Conference on Learning Representations (ICLR), 2026.
+[172] Y. Song, D. Yin, X. Yue, J. Huang, S. Li, and B. Y. Lin. Trial and error: Exploration-based trajectory optimization of llm
+agents. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long
+Papers), pages 7584–7600, 2024.
+[173] L. R. Squire. Memory systems of the brain: a brief history and current perspective. Neurobiology of learning and
+memory, 82(3):171–177, 2004.
+[174] SteamDB. Steam tags and genres. https://steamdb.info/tags/, 2025. Accessed: 2025-08-20.
+[175] T. Sumers, S. Yao, K. Narasimhan, and T. Griffiths. Cognitive architectures for language agents. Transactions on
+Machine Learning Research, 2024. Survey Certification.
+[176] Y. Sun, Z. Li, K. Fang, C. H. Lee, and A. Asadipour. Language as reality: A co-creative storytelling game experience in
+1001 nights using generative AI. In Proceedings of the AAAI Conference on Artificial Intelligence and Interactive Digital
+Entertainment (AIIDE), 2023.
+[177] Z. Sun, H. Shi, M.-A. Côté, G. Berseth, X. Yuan, and B. Liu. Enhancing agent learning through world dynamics
+modeling. In Findings of the Association for Computational Linguistics: EMNLP 2024, 2024.
+[178] R. S. Sutton, A. G. Barto, et al. Reinforcement learning: An introduction, volume 1. MIT press Cambridge, 1998.
+[179] P. Sweetser. Large language models and video games: A preliminary scoping review. In Proceedings of the 6th ACM
+Conference on Conversational User Interfaces, pages 1–8, 2024.
+[180] W. Tan, Z. Ding, W. Zhang, B. Li, B. Zhou, J. Yue, H. Xia, J. Jiang, L. Zheng, X. Xu, Y. Bi, P. Gu, X. Wang, B. F. Karlsson,
+B. An, and Z. Lu. Towards general computer control: A multimodal agent for red dead redemption II as a case study.
+In ICLR 2024 Workshop on Large Language Model (LLM) Agents, 2024.
+[181] W. Tan, W. Zhang, S. Liu, L. Zheng, X. Wang, and B. An. True knowledge comes from practice: Aligning large
+language models with embodied environments via reinforcement learning. In The Twelfth International Conference on
+Learning Representations, 2024.
+[182] X. Tang, J. Li, Y. Liang, S.-c. Zhu, M. Zhang, and Z. Zheng. Mars: Situated inductive reasoning in an open-world
+environment. Advances in Neural Information Processing Systems, 37:17830–17869, 2024.
+[183] W. Tian, S. Zhang, K. Zhang, X. Chi, C.-K. Fan, J. Lu, Y. Luo, Q. Zhou, Y. Zhao, N. Liu, S. Lin, Z. Qin, X. Ju, S. Zhang,
+and J. Tang. SEEA-R1: Tree-structured reinforcement fine-tuning for self-evolving embodied agents. In Advances in
+Neural Information Processing Systems (NeurIPS), 2025.
+[184] Z. Tian, S. Peng, D. Huang, J. Guo, R. Chen, R. Zhang, X. Zhang, Y. Guo, Z. Du, Q. Guo, L. Li, Y. Pu, X. Hu, and Y. Chen.
+Code driven planning with domain-adaptive selector. In International Conference on Learning Representations (ICLR),
+2026.
+[185] S. Toshniwal, S. Wiseman, K. Livescu, and K. Gimpel. Chess as a testbed for language model state tracking. In
+Proceedings of the AAAI Conference on Artificial Intelligence, volume 36, pages 11385–11393, 2022.
+[186] H. Touvron, T. Lavril, G. Izacard, X. Martinet, M.-A. Lachaux, T. Lacroix, B. Rozière, N. Goyal, E. Hambro, F. Azhar,
+et al. Llama: Open and efficient foundation language models. Technical report, Meta AI, 2023.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+41
+[187] L. Trung, X. Zhang, Z. Jie, P. Sun, X. Jin, and H. Li. Reft: Reasoning with reinforced fine-tuning. In Proceedings of the
+62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 7601–7614, 2024.
+[188] E. Tulving et al. Episodic and semantic memory. Organization of memory, 1(381-403):1, 1972.
+[189] F. J. Varela, E. Thompson, and E. Rosch. The embodied mind, revised edition: Cognitive science and human experience.
+MIT press, 2017.
+[190] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin. Attention is all
+you need. Advances in neural information processing systems, 30, 2017.
+[191] B. Wang, X. Liang, J. Yang, H. Huang, Z. Wu, S. Wu, Z. Ma, and Z. Li. Scm: Enhancing large language model with
+self-controlled memory framework. In International Conference on Database Systems for Advanced Applications, pages
+188–203. Springer, 2025.
+[192] G. Wang, Y. Xie, Y. Jiang, A. Mandlekar, C. Xiao, Y. Zhu, L. Fan, and A. Anandkumar. Voyager: An open-ended
+embodied agent with large language models. Transactions on Machine Learning Research, 2024.
+[193] L. Wang, C. Ma, X. Feng, Z. Zhang, H. Yang, J. Zhang, Z. Chen, J. Tang, X. Chen, Y. Lin, et al. A survey on large
+language model based autonomous agents. Frontiers of Computer Science, 18(6):186345, 2024.
+[194] L. Wang, Z. Zhang, and X. Chen. Investigating and extending homans’ social exchange theory with large language
+model based agents. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (ACL),
+2025.
+[195] N. Wang, Z. Peng, H. Que, J. Liu, W. Zhou, Y. Wu, H. Guo, R. Gan, Z. Ni, J. Yang, M. Zhang, Z. Zhang, W. Ouyang,
+K. Xu, W. Huang, J. Fu, and J. Peng. Rolellm: Benchmarking, eliciting, and enhancing role-playing abilities of large
+language models. In L.-W. Ku, A. Martins, and V. Srikumar, editors, Findings of the Association for Computational
+Linguistics: ACL 2024, pages 14743–14777, Bangkok, Thailand, Aug. 2024. Association for Computational Linguistics.
+[196] R. Wang, P. Jansen, M.-A. Côté, and P. Ammanabrolu. Scienceworld: Is your agent smarter than a 5th grader? In
+Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing, pages 11279–11298, Abu
+Dhabi, 2022. Association for Computational Linguistics.
+[197] R. Wang, H. Yu, W. Zhang, Z. Qi, M. Sap, G. Neubig, Y. Bisk, and H. Zhu. SOTOPIA-𝜋: Interactive learning of socially
+intelligent language agents. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics
+(ACL), 2024.
+[198] S. Wang, L. Ji, R. Wang, W. Zhao, H. Liu, Y. Hou, and Y. N. Wu. Explore the reasoning capability of LLMs in the chess
+testbed. In Proceedings of the 2025 Conference of the North American Chapter of the Association for Computational
+Linguistics (NAACL), 2025.
+[199] W. Wang, F. Bie, J. Chen, D. Zhang, S. Huang, E. Kharlamov, and J. Tang. Can large language models master complex
+card games? In Advances in Neural Information Processing Systems (NeurIPS), 2025.
+[200] X. Wang, H. Wang, Y. Zhang, X. Yuan, R. Xu, J.-t. Huang, S. Yuan, H. Guo, J. Chen, S. Zhou, et al. Coser: Coordinating
+llm-based persona simulation of established roles. In Forty-second International Conference on Machine Learning, 2025.
+[201] X. Wang, J. Wei, D. Schuurmans, Q. V. Le, E. H. Chi, S. Narang, A. Chowdhery, and D. Zhou. Self-consistency improves
+chain of thought reasoning in language models. In The Eleventh International Conference on Learning Representations,
+2023.
+[202] X. Wang, Y. Xiao, J.-t. Huang, S. Yuan, R. Xu, H. Guo, Q. Tu, Y. Fei, Z. Leng, W. Wang, et al. Incharacter: Evaluating
+personality fidelity in role-playing agents through psychological interviews. In Proceedings of the 62nd Annual Meeting
+of the Association for Computational Linguistics (Volume 1: Long Papers), pages 1840–1873, 2024.
+[203] Y. Wang, Y. Chen, F. Zhong, L. Ma, and Y. Wang. Simulating human-like daily activities with desire-driven autonomy.
+In International Conference on Learning Representations (ICLR), 2025.
+[204] Y. Wang,G.M.Lucas,B.Becerik-Gerber, and V. Ustun. Implicit behavioral alignment of language agents in high-stakes
+crowdsimulations. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing (EMNLP),
+2025.
+[205] Z. Wang, S. Cai, G. Chen, A. Liu, X. Ma, and Y. Liang. Describe, explain, plan and select: Interactive planning with
+LLMs enables open-world multi-task agents. In Thirty-seventh Conference on Neural Information Processing Systems,
+2023.
+[206] Z. Wang, S. Cai, A. Liu, Y. Jin, J. Hou, B. Zhang, H. Lin, Z. He, Z. Zheng, Y. Yang, et al. Jarvis-1: Open-world multi-task
+agents with memory-augmented multimodal language models. IEEE Transactions on Pattern Analysis and Machine
+Intelligence, 47(3):1894–1907, 2025.
+[207] Z. Wang, Y. Y. Chiu, and Y. C. Chiu. Humanoid agents: Platform for simulating human-like generative agents. In
+Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing: System Demonstrations, 2023.
+[208] M. Weber, D. Y. Fu, Q. Anthony, Y. Oren, S. Adams, A. Alexandrov, X. Lyu, H. Nguyen, X. Yao, V. Adams, et al.
+Redpajama: an open dataset for training large language models. Advances in neural information processing systems,
+37:116462–116492, 2024.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+42
+Hu et al.
+[209] J. Wei, X. Wang, D. Schuurmans, M. Bosma, F. Xia, E. Chi, Q. V. Le, D. Zhou, et al. Chain-of-thought prompting elicits
+reasoning in large language models. Advances in Neural Information Processing Systems, 35:24824–24837, 2022.
+[210] D. Wu, F. Brudy, B. Liu, and Y. Wang. IndoorWorld: Integrating physical task solving and social simulation in a
+heterogeneous multi-agent environment. In Findings of the Association for Computational Linguistics: EMNLP 2025,
+2025.
+[211] D. Wu, H. Shi, Z. Sun, and B. Liu. Deciphering digital detectives: Understanding llm behaviors and capabilities in
+multi-agent mystery games. In Findings of the Association for Computational Linguistics ACL 2024, pages 8225–8291,
+2024.
+[212] Y. Wu, Y. Fan, S. Y. Min, S. Prabhumoye, S. M. McAleer, R. Salakhutdinov, Y. Bisk, Y. Li, and T. Mitchell. AgentKit:
+Structured LLM reasoning with dynamic graphs. In Conference on Language Modeling (COLM), 2024.
+[213] Y. Wu, S. Y. Min, S. Prabhumoye, Y. Bisk, R. R. Salakhutdinov, A. Azaria, T. M. Mitchell, and Y. Li. Spring: Studying
+papers and reasoning to play games. Advances in Neural Information Processing Systems, 36, 2024.
+[214] Y. Wu, T. Yue, S. Zhang, C. Wang, and Q. Wu. StateFlow: Enhancing LLM task-solving through state-driven workflows.
+In Conference on Language Modeling (COLM), 2024.
+[215] J. Xiang, T. Tao, Y. Gu, T. Shu, Z. Wang, Z. Yang, and Z. Hu. Language models meet world models: Embodied
+experiences enhance language models. Advances in neural information processing systems, 36, 2024.
+[216] Y. Xiao, Y. Sun, M. Xu, U. M. Sehwag, J. Vann, D. Garg, and S. Ganesh. O3d: Offline data-driven discovery and
+distillation for sequential decision-making with large language models. In Conference on Language Modeling (COLM),
+2024.
+[217] C. Xie, C. Chen, F. Jia, Z. Ye, S. Lai, K. Shu, J. Gu, A. Bibi, Z. Hu, D. Jurgens, J. Evans, P. Torr, B. Ghanem, and G. Li. Can
+large language model agents simulate human trust behavior? In Advances in Neural Information Processing Systems
+(NeurIPS), 2024.
+[218] W. Xiong, Y. Song, X. Zhao, W. Wu, X. Wang, K. Wang, C. Li, W. Peng, and S. Li. Watch every step! LLM agent
+learning via iterative step-level process refinement. In Proceedings of the 2024 Conference on Empirical Methods in
+Natural Language Processing, pages 1556–1572, 2024.
+[219] B. Xu, S. Zhao, R. Wu, Z. Huang, J. Wang, Z. Hu, K. Wang, H. Liu, T. Lv, L. Li, C. Fan, X. Tong, and J. Han. Empowering
+economic simulation for massively multiplayer online games through generative agent-based modeling. In Proceedings
+of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD), 2025.
+[220] K. Xu, J. Chai, S. Li, Y. Fu, Y. Zhu, and D. Zhao. DipLLM: Fine-tuning LLM for strategic decision-making in diplomacy.
+In International Conference on Machine Learning (ICML), 2025.
+[221] K. Xu, F. Meng, C. Verbrugge, and S. Lucas. CSP4SDG: Constraint and information-theory based role identification in
+social deduction games with LLM-enhanced inference. Proceedings of the AAAI Conference on Artificial Intelligence,
+40, 2026.
+[222] S. Xu and F. Zhong. CoMet: Metaphor-driven covert communication for multi-agent language games. In Proceedings
+of the 63rd Annual Meeting of the Association for Computational Linguistics (ACL), 2025.
+[223] W. Xu, Z. Liang, K. Mei, H. Gao, J. Tan, and Y. Zhang. A-mem: Agentic memory for LLM agents. In The Thirty-ninth
+Annual Conference on Neural Information Processing Systems, 2025.
+[224] Y. Xu, S. Wang, P. Li, F. Luo, X. Wang, W. Liu, and Y. Liu. Exploring large language models for communication games:
+An empirical study on werewolf. (arXiv:2309.04658), 2023.
+[225] Z. Xu, C. Yu, F. Fang, Y. Wang, and Y. Wu. Language agents with reinforcement learning for strategic play in the
+werewolf game. In Forty-first International Conference on Machine Learning, 2024.
+[226] G. N. Yannakakis and J. Togelius. Artificial Intelligence and Games. Springer, 2018.
+[227] S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. R. Narasimhan, and Y. Cao. React: Synergizing reasoning and acting in
+language models. In The Eleventh International Conference on Learning Representations, 2023.
+[228] J. Ye, Z. Wu, J. Gao, Z. Wu, X. Jiang, Z. Li, and L. Kong. Implicit search via discrete diffusion: A study on chess. In
+International Conference on Learning Representations (ICLR), 2025.
+[229] N. Yeung and C. Summerfield. Metacognition in human decision-making: confidence and error monitoring. Philo
+sophical Transactions of the Royal Society B: Biological Sciences, 367(1594):1310–1321, 2012.
+[230] X. Yi, Z. Zhou, C. Cao, Q. Niu, T. Liu, and B. Han. From debate to equilibrium: Belief-driven multi-agent llm reasoning
+via bayesian nash equilibrium. In Forty-second International Conference on Machine Learning.
+[231] M. Yoo, J. Jang, S. Yoon, and H. Woo. World model implanting for test-time adaptation of embodied agents. In
+International Conference on Machine Learning (ICML), 2025.
+[232] S. Yu and C. Lu. ADAM: An embodied causal agent in open-world environments. In International Conference on
+Learning Representations (ICLR), 2025.
+[233] H. Yuan, C. Zhang, H. Wang, F. Xie, P. Cai, H. Dong, and Z. Lu. Skill reinforcement learning and planning for
+open-world long-horizon tasks. In NeurIPS 2023 Foundation Models for Decision Making Workshop, 2023.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+A Survey on Large Language Model-Based Game Agents
+43
+[234] A. Zala, J. Cho, H. Lin, J. Yoon, and M. Bansal. EnvGen: Generating and adapting environments via LLMs for training
+embodied agents. In Conference on Language Modeling (COLM), 2024.
+[235] A. Zeng, M. Liu, R. Lu, B. Wang, X. Liu, Y. Dong, and J. Tang. Agenttuning: Enabling generalized agent abilities for
+llms. In Findings of the Association for Computational Linguistics ACL 2024, pages 3053–3077, 2024.
+[236] X. Zeng, Y. Sun, H. Li, S. Liu, and H. Wang. ReCAPA: Hierarchical predictive correction to mitigate cascading failures.
+In International Conference on Learning Representations (ICLR), 2026.
+[237] S. Zhai, H. Bai, Z. Lin, J. Pan, P. Tong, Y. Zhou, A. Suhr, S. Xie, Y. LeCun, Y. Ma, et al. Fine-tuning large vision-language
+models as decision-making agents via reinforcement learning. Advances in Neural Information Processing Systems,
+37:110935–110971, 2025.
+[238] C. Zhang, K. Yang, S. Hu, Z. Wang, G. Li, Y. Sun, C. Zhang, Z. Zhang, A. Liu, S.-C. Zhu, X. Chang, J. Zhang, F. Yin,
+Y. Liang, and Y. Yang. Proagent: Building proactive cooperative agents with large language models. Proceedings of the
+AAAI Conference on Artificial Intelligence, 38(16):17609–17617, 2024.
+[239] D. Zhang, L. Chen, S. Zhang, H. Xu, Z. Zhao, and K. Yu. Large language models are semi-parametric reinforcement
+learning agents. Advances in Neural Information Processing Systems, 36, 2024.
+[240] D. Zhang, S. Zhoubian, Z. Hu, Y. Yue, Y. Dong, and J. Tang. Rest-mcts*: Llm self-training via process reward guided
+tree search. Advances in Neural Information Processing Systems, 37:64735–64772, 2024.
+[241] H. Zhang, W. Du, J. Shan, Q. Zhou, Y. Du, J. B. Tenenbaum, T. Shu, and C. Gan. Building cooperative embodied agents
+modularly with large language models. In The Twelfth International Conference on Learning Representations, 2024.
+[242] J. Zhang, J. Lehman, K. Stanley, and J. Clune. OMNI: Open-endedness via models of human notions of interestingness.
+In The Twelfth International Conference on Learning Representations, 2024.
+[243] J. Zhang and Y. Long. Learning to play like humans: A framework for LLM adaptation in interactive fiction games. In
+Findings of the Association for Computational Linguistics: ACL 2025, 2025.
+[244] Y. Zhang, X. Han, H. Li, K. Chen, and S. Lin. Complete chess games enable LLM become a chess master. In Proceedings
+of the 2025 Conference of the North American Chapter of the Association for Computational Linguistics (NAACL), 2025.
+[245] Y. Zhang, S. Yang, C. Bai, F. Wu, X. Li, Z. Wang, and X. Li. Towards efficient LLM grounding for embodied multi-agent
+collaboration. In Findings of the Association for Computational Linguistics: ACL 2025, 2025.
+[246] Z. Zhang, Y. Lan, Y. Chen, L. Wang, X. Wang, and H. Wang. DVM: Towards controllable LLM agents in social
+deduction games. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP), 2025.
+[247] A. Zhao, D. Huang, Q. Xu, M. Lin, Y.-J. Liu, and G. Huang. Expel: Llm agents are experiential learners. In Proceedings
+of the AAAI Conference on Artificial Intelligence, volume 38, pages 19632–19642, 2024.
+[248] H. Zhao, C. Ma, G. Wang, J. Su, L. Kong, J. Xu, Z.-H. Deng, and H. Yang. Empowering large language model agents
+through action learning. In Conference on Language Modeling (COLM), 2024.
+[249] Z. Zhao, W. Chai, X. Wang, B. Li, S. Hao, S. Cao, T. Ye, and G. Wang. See and think: Embodied agent in virtual
+environment. In European Conference on Computer Vision (ECCV), 2024.
+[250] Z. Zhao, K. Chen, D. Guo, W. Chai, T. Ye, Y. Zhang, and G. Wang. Hierarchical auto-organizing system for open-ended
+multi-agent navigation. In ICLR 2024 Workshop on Large Language Model (LLM) Agents, 2024.
+[251] S. Zheng, Y. Feng, Z. Lu, et al. Steve-eye: Equipping llm-based embodied agents with visual perception in open worlds.
+In The Twelfth International Conference on Learning Representations, 2023.
+[252] F. Zhong, K. Wu, C. Wang, H. Chen, H. Ci, Z. Li, and Y. Wang. UnrealZoo: Enriching photo-realistic virtual worlds
+for embodied AI. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), 2025.
+[253] W. Zhong, L. Guo, Q. Gao, H. Ye, and Y. Wang. Memorybank: Enhancing large language models with long-term
+memory. In Proceedings of the AAAI Conference on Artificial Intelligence, volume 38, pages 19724–19731, 2024.
+[254] S. Zhou, T. Zhou, Y. Yang, G. Long, D. Ye, J. Jiang, and C. Zhang. WALL-E: World alignment by neurosymbolic learning
+improves world model-based LLM agents. In Advances in Neural Information Processing Systems (NeurIPS), 2025.
+[255] X. Zhou, H. Zhu, L. Mathur, R. Zhang, H. Yu, Z. Qi, L.-P. Morency, Y. Bisk, D. Fried, G. Neubig, and M. Sap. SOTOPIA:
+Interactive evaluation for social intelligence in language agents. In International Conference on Learning Representations
+(ICLR), 2024.
+[256] Z. Zhou, A. Qu, Z. Wu, S. Kim, A. Prakash, D. Rus, J. Zhao, B. K. H. Low, and P. P. Liang. Mem1: Learning to
+synergize memory and reasoning for efficient long-horizon agents. In First Workshop on Multi-Turn Interactions in
+Large Language Models.
+[257] D. Zhu, N. Yang, L. Wang, Y. Song, W. Wu, F. Wei, and S. Li. Pose: Efficient context window extension of llms via
+positional skip-wise training. In The Twelfth International Conference on Learning Representations (ICLR), 2024.
+[258] X. Zhu, Y. Chen, H. Tian, C. Tao, W. Su, C. Yang, G. Huang, B. Li, L. Lu, X. Wang, et al. Ghost in the minecraft:
+Generally capable agents for open-world enviroments via large language models with text-based knowledge and
+memory. arXiv preprint arXiv:2305.17144, 2023.
+[259] Y. Zhu, S. Qiao, Y. Ou, S. Deng, S. Lyu, Y. Shen, L. Liang, J. Gu, H. Chen, and N. Zhang. KnowAgent: Knowledge
+augmented planning for LLM-based agents. In Findings of the Association for Computational Linguistics: NAACL 2025,
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.
+44
+Hu et al.
+2025.
+[260] R. Zhuang, A. Gupta, R. Yang, A. Rahane, Z. Li, and G. Anumanchipalli. Pokerbench: Training large language models
+to become professional poker players. In Proceedings of the AAAI Conference on Artificial Intelligence, volume 39,
+pages 26175–26182, 2025.
+[261] R. A. Zwaan and G. A. Radvansky. Situation models in language comprehension and memory. Psychological bulletin,
+123(2):162, 1998.
+ACMComput. Surv., Vol. 1, No. 1, Article . Publication date: June 2026.

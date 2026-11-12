@@ -18,6 +18,8 @@ return
 end
   
 send "d"
+setVar $Move~ScanHolo 0
+setVar $Move~ExtraSend ""
 gosub :Move~Move
   
 goto :start

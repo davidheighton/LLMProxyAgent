@@ -404,7 +404,9 @@ public sealed class NativeHaggleEngine
         @"^Your offer \[([\d,]+)\]\s*\?",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    private readonly object _enabledSync = new();
     private readonly ShipInfoParser _shipInfoParser = new();
+    private bool _enabled;
     private ShipStatus _shipStatus = new();
     private SessionState? _session;
     private string? _pendingProductKey;
@@ -482,25 +484,47 @@ public sealed class NativeHaggleEngine
         };
     }
 
-    public bool Enabled { get; private set; }
+    public bool Enabled
+    {
+        get
+        {
+            lock (_enabledSync)
+            {
+                return _enabled;
+            }
+        }
+    }
 
     public event Action<bool>? EnabledChanged;
 
     public void SetEnabled(bool enabled)
     {
-        if (Enabled == enabled)
-            return;
+        lock (_enabledSync)
+        {
+            if (_enabled == enabled)
+                return;
 
-        Enabled = enabled;
-        if (!enabled)
-            Reset("disabled");
+            _enabled = enabled;
+            if (!enabled)
+                Reset("disabled");
+        }
+
         EnabledChanged?.Invoke(enabled);
     }
 
     public bool Toggle()
     {
-        SetEnabled(!Enabled);
-        return Enabled;
+        bool enabled;
+        lock (_enabledSync)
+        {
+            enabled = !_enabled;
+            _enabled = enabled;
+            if (!enabled)
+                Reset("disabled");
+        }
+
+        EnabledChanged?.Invoke(enabled);
+        return enabled;
     }
 
     public void SetFirstBidMode(string? mode) => SetPortHaggleMode(mode);
@@ -546,6 +570,14 @@ public sealed class NativeHaggleEngine
     }
 
     public string? HandleLine(string line)
+    {
+        lock (_enabledSync)
+        {
+            return HandleLineSynchronized(line);
+        }
+    }
+
+    private string? HandleLineSynchronized(string line)
     {
         if (string.IsNullOrWhiteSpace(line))
             return null;

@@ -1905,6 +1905,7 @@ public partial class MainWindow
 
         EnsureStatusBarLayout();
         RefreshHaggleDetailsMenuState();
+        UpdateTerminalLiveSelector();
 
         EmbeddedMtcStatusBarConfig statusConfig = GetStatusBarConfigForDisplay();
         string? conn = statusConfig.ShowIpInfo

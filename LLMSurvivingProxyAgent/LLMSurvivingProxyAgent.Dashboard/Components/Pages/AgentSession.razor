@@ -1,7 +1,7 @@
 @page "/agents/{AgentId}"
 @using LLMSurvivingProxyAgent.Core
 @inject IAgentStore AgentStore
-@inject IConfiguration Configuration
+@inject IAgentSessionLauncher AgentSessionLauncher
 
 <PageTitle>@(_agent?.DisplayName ?? "Agent workspace")</PageTitle>
 
@@ -74,26 +74,118 @@ else
             }
         </section>
 
-        <section class="surface-card">
-            <div class="section-heading">
-                <div>
-                    <p class="eyebrow">LIVE SESSION</p>
-                    <h2>Terminal availability</h2>
+        @if (AgentSessionLauncher.IsAvailable)
+        {
+            <section id="game-assignment" class="surface-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">GAME ASSIGNMENT</p>
+                        <h2>Assign a game to this agent</h2>
+                    </div>
+                    <button class="btn btn-outline-secondary"
+                            disabled="@_sessionLaunchInProgress"
+                            @onclick="RefreshSessionProfilesAsync">
+                        Refresh profiles
+                    </button>
                 </div>
-            </div>
-            <p>
-                The native terminal is currently attached to the single Meridian desktop session. This web workspace
-                does not open a game connection or send TradeWars commands.
-            </p>
-            @if (string.Equals(Configuration["LLMControlCenter:EmbeddedHost"], "true", StringComparison.OrdinalIgnoreCase))
-            {
-                <p class="inline-note">Use the desktop Agent Sessions navigation to open the native terminal.</p>
-            }
-            else
-            {
-                <p class="inline-note">Open the LLM Control Center desktop client for native terminal access.</p>
-            }
-        </section>
+                <p>
+                    Save the game assignment independently from starting the agent. Starting uses the saved profile
+                    in a separate MTC process and does not change another running game session.
+                </p>
+                <div class="form-grid">
+                    <div class="form-field">
+                        <label for="game-profile">Saved game profile</label>
+                        <InputSelect id="game-profile" class="form-select" @bind-Value="_selectedGameProfileId">
+                            <option value="">Select a game profile</option>
+                            @foreach (AgentGameProfile profile in _gameProfiles)
+                            {
+                                <option value="@profile.Id">
+                                    @($"{profile.Name} ({profile.Host}:{profile.Port}){(profile.IsInUse ? " (in use; save only until released)" : string.Empty)}")
+                                </option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="form-field">
+                        <label for="agent-team-id">Team ID (optional)</label>
+                        <InputText id="agent-team-id"
+                                   class="form-control"
+                                   @bind-Value="_teamId"
+                                   maxlength="64" />
+                        <small>Use the same Team ID for agents that should share fresh status and goals.</small>
+                    </div>
+                </div>
+                <div class="form-check mt-3">
+                    <input id="create-account-if-needed"
+                           class="form-check-input"
+                           type="checkbox"
+                           @bind="_createAccountIfNeeded" />
+                    <label class="form-check-label" for="create-account-if-needed">
+                        Create a new TradeWars account automatically if this game has no existing account
+                    </label>
+                    <small class="d-block text-secondary">
+                        Generated login details are saved locally for this agent and game.
+                    </small>
+                </div>
+                @if (_gameProfiles.Count == 0)
+                {
+                    <p class="inline-note">
+                        No saved game profiles are available. Create or import a game profile in MTC, then refresh this list.
+                    </p>
+                }
+                else if (_gameProfiles.All(profile => profile.IsInUse))
+                {
+                    <p class="inline-note">
+                        Every saved game profile is open in an MTC process. You can still save this assignment, but the selected profile must be released before starting this agent.
+                    </p>
+                }
+                @if (_sessionLaunchStatus.IsRunning)
+                {
+                    <p class="inline-note" role="status">
+                        An MTC process for this agent is open
+                        @if (!string.IsNullOrWhiteSpace(_sessionLaunchStatus.GameProfileName))
+                        {
+                            <span>. Saved assignment: @_sessionLaunchStatus.GameProfileName</span>
+                        }.
+                        Saving a different assignment does not switch the open process; close and relaunch it to use the new game.
+                    </p>
+                }
+                @if (!string.IsNullOrWhiteSpace(_sessionLaunchMessage))
+                {
+                    <p class="text-success" role="status">@_sessionLaunchMessage</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(_sessionLaunchError))
+                {
+                    <p class="text-danger" role="alert">@_sessionLaunchError</p>
+                }
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-outline-primary"
+                            disabled="@(_sessionLaunchInProgress || !CanSaveAssignment)"
+                            @onclick="SaveAssignedGameAsync">
+                        @(_sessionLaunchInProgress ? "Saving assignment..." : "Save assignment")
+                    </button>
+                    <button class="btn btn-success"
+                        disabled="@(_sessionLaunchInProgress || !CanStartAssignedSession)"
+                        @onclick="StartAssignedSessionAsync">
+                        @(_sessionLaunchInProgress ? "Starting agent session..." : "Save and start agent")
+                    </button>
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="surface-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">LIVE SESSION</p>
+                        <h2>Start this agent from MTC</h2>
+                    </div>
+                </div>
+                <p>
+                    Isolated game assignment is available in the embedded MTC Control Center. Open this agent's
+                    workspace there to select a saved game profile and start its own session.
+                </p>
+            </section>
+        }
 
         <section class="surface-card">
             <div class="section-heading">
@@ -140,10 +232,139 @@ else
     public string AgentId { get; set; } = string.Empty;
 
     private AgentContainer? _agent;
+    private IReadOnlyList<AgentGameProfile> _gameProfiles = [];
+    private AgentSessionLaunchStatus _sessionLaunchStatus = new(false, null, null);
+    private string _selectedGameProfileId = string.Empty;
+    private string _teamId = string.Empty;
+    private bool _createAccountIfNeeded = true;
+    private string? _sessionLaunchMessage;
+    private string? _sessionLaunchError;
+    private bool _sessionLaunchInProgress;
+    private bool CanSaveAssignment =>
+        _gameProfiles.Any(profile =>
+            string.Equals(profile.Id, _selectedGameProfileId, StringComparison.OrdinalIgnoreCase));
+    private bool CanStartAssignedSession =>
+        !_sessionLaunchStatus.IsRunning &&
+        _gameProfiles.Any(profile =>
+            !profile.IsInUse &&
+            string.Equals(profile.Id, _selectedGameProfileId, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnParametersSetAsync()
     {
         _agent = await AgentStore.GetAgentAsync(AgentId);
+        if (_agent is null || !AgentSessionLauncher.IsAvailable)
+        {
+            return;
+        }
+
+        _gameProfiles = await AgentSessionLauncher.GetGameProfilesAsync();
+        string? assignedProfileId = _agent.Configuration.GetValueOrDefault("Session:GameProfile");
+        _selectedGameProfileId = _gameProfiles.Any(profile =>
+                string.Equals(profile.Id, assignedProfileId, StringComparison.OrdinalIgnoreCase))
+            ? assignedProfileId!
+            : _gameProfiles.FirstOrDefault(profile => !profile.IsInUse)?.Id ?? string.Empty;
+        _teamId = _agent.Configuration.GetValueOrDefault("Session:TeamId", string.Empty);
+        if (bool.TryParse(
+                _agent.Configuration.GetValueOrDefault("Session:CreateAccountIfNeeded"),
+                out bool createAccountIfNeeded))
+        {
+            _createAccountIfNeeded = createAccountIfNeeded;
+        }
+        await RefreshSessionLaunchStatusAsync();
+    }
+
+    private async Task RefreshSessionProfilesAsync()
+    {
+        if (!AgentSessionLauncher.IsAvailable)
+        {
+            return;
+        }
+
+        _gameProfiles = await AgentSessionLauncher.GetGameProfilesAsync();
+        if (!_gameProfiles.Any(profile =>
+                string.Equals(
+                    profile.Id,
+                    _selectedGameProfileId,
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            _selectedGameProfileId = _gameProfiles.FirstOrDefault()?.Id
+                ?? string.Empty;
+        }
+        await RefreshSessionLaunchStatusAsync();
+    }
+
+    private async Task RefreshSessionLaunchStatusAsync()
+    {
+        if (_agent is null)
+        {
+            return;
+        }
+
+        _sessionLaunchStatus = await AgentSessionLauncher.GetStatusAsync(_agent.AgentId);
+    }
+
+    private async Task SaveAssignedGameAsync()
+    {
+        if (_agent is null || _sessionLaunchInProgress || !CanSaveAssignment)
+        {
+            return;
+        }
+
+        _sessionLaunchInProgress = true;
+        _sessionLaunchMessage = null;
+        _sessionLaunchError = null;
+        try
+        {
+            await AgentSessionLauncher.SaveAssignmentAsync(
+                _agent.AgentId,
+                _selectedGameProfileId,
+                _teamId,
+                _createAccountIfNeeded);
+            await RefreshSessionLaunchStatusAsync();
+            _sessionLaunchMessage = _sessionLaunchStatus.IsRunning
+                ? "Assignment saved. The open MTC process is unchanged; close and relaunch it to use the selected game."
+                : "Game assignment saved.";
+        }
+        catch (Exception exception)
+        {
+            _sessionLaunchError = exception.Message;
+            await RefreshSessionLaunchStatusAsync();
+        }
+        finally
+        {
+            _sessionLaunchInProgress = false;
+        }
+    }
+
+    private async Task StartAssignedSessionAsync()
+    {
+        if (_agent is null || _sessionLaunchInProgress || !CanStartAssignedSession)
+        {
+            return;
+        }
+
+        _sessionLaunchInProgress = true;
+        _sessionLaunchMessage = null;
+        _sessionLaunchError = null;
+        try
+        {
+            await AgentSessionLauncher.StartAsync(
+                _agent.AgentId,
+                _selectedGameProfileId,
+                _teamId,
+                _createAccountIfNeeded);
+            await RefreshSessionLaunchStatusAsync();
+            _sessionLaunchMessage = "The isolated MTC agent session is running.";
+        }
+        catch (Exception exception)
+        {
+            _sessionLaunchError = exception.Message;
+            await RefreshSessionLaunchStatusAsync();
+        }
+        finally
+        {
+            _sessionLaunchInProgress = false;
+        }
     }
 
     private static string StatusClass(AgentStatus status) => status switch

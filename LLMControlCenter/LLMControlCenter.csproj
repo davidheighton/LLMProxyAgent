@@ -52,6 +52,7 @@
 
   <ItemGroup>
     <Compile Remove="TWXProxy.Core\**\*.cs" />
+    <Compile Remove="bin\**\*.cs" />
   </ItemGroup>
 
 </Project>

@@ -35,6 +35,8 @@ public partial class MainWindow
         ConfigureStatusCommButton();
         ConfigureStatusBotButton();
         ConfigureStatusHaggleButton();
+        ConfigureStatusAgentPauseButton();
+        ConfigureStatusAgentLearnButton();
         ConfigureStatusToggleButton();
         ConfigureStatusRedAlertButton();
 
@@ -61,6 +63,14 @@ public partial class MainWindow
         _statusHaggleFrame.Padding = new Thickness(3, 2);
         _statusHaggleFrame.CornerRadius = new CornerRadius(8);
         _statusHaggleFrame.Child = _statusHaggleButton;
+
+        _statusAgentPauseFrame.Padding = new Thickness(3, 2);
+        _statusAgentPauseFrame.CornerRadius = new CornerRadius(8);
+        _statusAgentPauseFrame.Child = _statusAgentPauseButton;
+
+        _statusAgentLearnFrame.Padding = new Thickness(3, 2);
+        _statusAgentLearnFrame.CornerRadius = new CornerRadius(8);
+        _statusAgentLearnFrame.Child = _statusAgentLearnButton;
 
         _statusLivePausedFrame.Padding = new Thickness(4, 2);
         _statusLivePausedFrame.CornerRadius = new CornerRadius(8);
@@ -591,6 +601,64 @@ public partial class MainWindow
         };
     }
 
+    private void ConfigureStatusAgentPauseButton()
+    {
+        _statusAgentPauseButton.MinWidth = 0;
+        _statusAgentPauseButton.Width = 58;
+        _statusAgentPauseButton.Height = 20;
+        _statusAgentPauseButton.Padding = new Thickness(4, 1);
+        _statusAgentPauseButton.FontSize = 9;
+        _statusAgentPauseButton.FontWeight = FontWeight.Bold;
+        _statusAgentPauseButton.Focusable = false;
+        _statusAgentPauseButton.VerticalAlignment = VerticalAlignment.Center;
+        _statusAgentPauseButton.HorizontalAlignment = HorizontalAlignment.Center;
+        ToolTip.SetTip(_statusAgentPauseButton, "Pause autonomous game agent");
+        _statusAgentPauseButton.Click += async (_, _) =>
+        {
+            await OnAgentPauseToggleRequestedAsync();
+            Dispatcher.UIThread.Post(FocusActiveTerminal, DispatcherPriority.Input);
+        };
+        _statusAgentPauseButton.PointerEntered += (_, _) =>
+        {
+            _statusAgentPauseHovered = true;
+            UpdateTerminalLiveSelector();
+        };
+        _statusAgentPauseButton.PointerExited += (_, _) =>
+        {
+            _statusAgentPauseHovered = false;
+            UpdateTerminalLiveSelector();
+        };
+    }
+
+    private void ConfigureStatusAgentLearnButton()
+    {
+        _statusAgentLearnButton.MinWidth = 0;
+        _statusAgentLearnButton.Width = 68;
+        _statusAgentLearnButton.Height = 20;
+        _statusAgentLearnButton.Padding = new Thickness(4, 1);
+        _statusAgentLearnButton.FontSize = 9;
+        _statusAgentLearnButton.FontWeight = FontWeight.Bold;
+        _statusAgentLearnButton.Focusable = false;
+        _statusAgentLearnButton.VerticalAlignment = VerticalAlignment.Center;
+        _statusAgentLearnButton.HorizontalAlignment = HorizontalAlignment.Center;
+        ToolTip.SetTip(_statusAgentLearnButton, "Observe and record human gameplay without issuing commands");
+        _statusAgentLearnButton.Click += async (_, _) =>
+        {
+            await OnAgentLearnToggleRequestedAsync();
+            Dispatcher.UIThread.Post(FocusActiveTerminal, DispatcherPriority.Input);
+        };
+        _statusAgentLearnButton.PointerEntered += (_, _) =>
+        {
+            _statusAgentLearnHovered = true;
+            UpdateTerminalLiveSelector();
+        };
+        _statusAgentLearnButton.PointerExited += (_, _) =>
+        {
+            _statusAgentLearnHovered = false;
+            UpdateTerminalLiveSelector();
+        };
+    }
+
     private Control BuildStatusHaggleIcon()
     {
         _statusHaggleSpark = new Border
@@ -763,6 +831,8 @@ public partial class MainWindow
         ApplyStatusCommButtonStyle(_statusCommButton, _commWindowVisible);
         ApplyStatusBotButtonStyle(_statusBotButton, selected: botRuntime.NativeRunning, nativeBotAvailable);
         ApplyStatusHaggleButtonStyle(_statusHaggleButton, selected: haggleSelected, haggleAvailable);
+        UpdateAgentPauseButtonState();
+        UpdateAgentLearnButtonState();
         ToolTip.SetTip(_statusBotButton,
             nativeBotAvailable
                 ? "Start or stop native MomBot"
@@ -778,6 +848,90 @@ public partial class MainWindow
             : (_terminalLivePaused ? "PAUSED" : "LIVE");
         ApplyStatusModeButtonStyle(_statusLivePausedButton, paused: _terminalLivePaused, enabled);
         ApplyStatusRedAlertButtonStyle(_statusRedAlertButton, _redAlertEnabled);
+    }
+
+    private void UpdateAgentPauseButtonState()
+    {
+        bool canControlAgent = _dashboardHost.CanControlAgent(DefaultAgentId);
+        GameAgentBackgroundStatusSnapshot snapshot =
+                _dashboardHost.GetAgentMonitorSnapshot(DefaultAgentId);
+        bool agentRunning = canControlAgent && snapshot.AutonomousWorkerRunning;
+        bool learningModeRunning = canControlAgent && snapshot.LearningModeRunning;
+        string label = learningModeRunning
+                ? "MANUAL"
+                : agentRunning
+                ? "PAUSE"
+                : _agentPausedByUser
+                    ? "RESUME"
+                : "START";
+        _statusAgentPauseButton.Content = label;
+        bool enabled = canControlAgent &&
+                !_agentPauseControlBusy &&
+                (agentRunning || (!learningModeRunning && _gameInstance is not null));
+        ApplyStatusAgentPauseButtonStyle(_statusAgentPauseButton, agentRunning, enabled);
+        ToolTip.SetTip(
+                _statusAgentPauseButton,
+                !canControlAgent
+                    ? "Agent controls are unavailable"
+                    : learningModeRunning
+                        ? "Learn mode is active; use the Learn button to stop observing"
+                    : agentRunning
+                        ? "Pause autonomous game agent"
+                        : _agentPausedByUser
+                            ? "Resume autonomous game agent"
+                            : "Start autonomous game agent");
+        ApplyStatusToggleFrameStyle(_statusAgentPauseFrame, enabled);
+    }
+
+    private void UpdateAgentLearnButtonState()
+    {
+        bool canControlAgent = _dashboardHost.CanControlAgent(DefaultAgentId);
+        GameAgentBackgroundStatusSnapshot snapshot =
+                _dashboardHost.GetAgentMonitorSnapshot(DefaultAgentId);
+        bool learningModeRunning = canControlAgent && snapshot.LearningModeRunning;
+        bool enabled = canControlAgent &&
+                !_agentLearnControlBusy &&
+                (learningModeRunning || _gameInstance is not null);
+        _statusAgentLearnButton.Content = learningModeRunning ? "LEARN ON" : "LEARN";
+        ApplyStatusAgentLearnButtonStyle(_statusAgentLearnButton, learningModeRunning, enabled);
+        ToolTip.SetTip(
+                _statusAgentLearnButton,
+                !canControlAgent
+                    ? "Learn mode is unavailable"
+                    : learningModeRunning
+                        ? "Stop Learn mode; observations are recorded without game commands"
+                        : "Observe and record human gameplay without issuing game commands");
+        ApplyStatusToggleFrameStyle(_statusAgentLearnFrame, enabled);
+    }
+
+    private void ApplyStatusAgentLearnButtonStyle(Button button, bool learning, bool enabled)
+    {
+        button.IsEnabled = enabled;
+        button.Foreground = Brushes.White;
+        button.BorderThickness = new Thickness(1);
+        button.Background = learning
+                ? (_statusAgentLearnHovered
+                    ? new SolidColorBrush(Color.Parse("#245B3A"))
+                    : new SolidColorBrush(Color.Parse("#173D2D")))
+                : (_statusAgentLearnHovered ? HudHeaderAlt : HudFrame);
+        button.BorderBrush = learning
+                ? new SolidColorBrush(Color.Parse("#63C78B"))
+                : (_statusAgentLearnHovered ? HudAccent : HudInnerEdge);
+        button.Opacity = enabled ? 1.0 : 0.6;
+    }
+
+    private void ApplyStatusAgentPauseButtonStyle(Button button, bool running, bool enabled)
+    {
+        button.IsEnabled = enabled;
+        button.Foreground = Brushes.White;
+        button.BorderThickness = new Thickness(1);
+        button.Background = running
+            ? (_statusAgentPauseHovered ? new SolidColorBrush(Color.Parse("#55231F")) : HudFrame)
+            : (_statusAgentPauseHovered ? HudHeaderAlt : HudFrame);
+        button.BorderBrush = running
+            ? (_statusAgentPauseHovered ? new SolidColorBrush(Color.Parse("#F28B82")) : new SolidColorBrush(Color.Parse("#9A514A")))
+            : (_statusAgentPauseHovered ? HudAccent : HudInnerEdge);
+        button.Opacity = enabled ? 1.0 : 0.6;
     }
 
     private void ApplyStatusToggleFrameStyle(Border frame, bool enabled)
