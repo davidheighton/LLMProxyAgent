@@ -13,6 +13,8 @@ public sealed class OllamaLessonDistiller(
     HttpClient httpClient,
     ILlmInteractionHistoryStore? interactionHistory = null) : ILessonDistiller
 {
+    private readonly LlmChatClient _chat = new(httpClient);
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -53,7 +55,7 @@ public sealed class OllamaLessonDistiller(
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(request);
-        if (!string.Equals(configuration.Provider, Id, StringComparison.OrdinalIgnoreCase))
+        if (!LlmBackends.IsSupported(configuration.Provider))
         {
             throw new ArgumentException($"Provider '{configuration.Provider}' is not supported.", nameof(configuration));
         }
@@ -99,7 +101,6 @@ public sealed class OllamaLessonDistiller(
             new OllamaMessage("system", SystemPrompt),
             new OllamaMessage("user", JsonSerializer.Serialize(context, JsonOptions))
         };
-        var endpoint = new Uri(configuration.Endpoint.ToString().TrimEnd('/') + "/api/chat");
         string interactionId = Guid.NewGuid().ToString("N");
         DateTimeOffset startedAt = DateTimeOffset.UtcNow;
         string prompt = string.Join(
@@ -110,29 +111,27 @@ public sealed class OllamaLessonDistiller(
         bool succeeded = false;
         try
         {
-            using var response = await httpClient.PostAsJsonAsync(
-                    endpoint,
-                    new OllamaChatRequest(configuration.Model, false, BuildSchema(), messages),
-                    JsonOptions,
+            LlmChatResult reply = await _chat.ChatAsync(
+                    configuration,
+                    new LlmChatRequest(
+                        "lesson distillation",
+                        messages.Select(message => new LlmChatMessage(message.Role, message.Content)).ToArray(),
+                        BuildSchema())
+                    {
+                        // Reflection benefits from deliberation when the strategy brain is configured to think.
+                        Think = configuration.Think,
+                        MaxTokens = configuration.MaxTokens
+                    },
                     cancellationToken)
                 .ConfigureAwait(false);
-            responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+            responseBody = reply.RawResponse;
+            if (string.IsNullOrWhiteSpace(reply.Content))
             {
-                throw new HttpRequestException(
-                    $"Ollama returned HTTP {(int)response.StatusCode} for lesson distillation.",
-                    null,
-                    response.StatusCode);
-            }
-
-            OllamaChatResponse? payload = JsonSerializer.Deserialize<OllamaChatResponse>(responseBody, JsonOptions);
-            if (string.IsNullOrWhiteSpace(payload?.Message?.Content))
-            {
-                throw new InvalidDataException("Ollama returned an empty lesson distillation.");
+                throw new InvalidDataException("The model returned an empty lesson distillation.");
             }
 
             DistillationPayload result =
-                JsonSerializer.Deserialize<DistillationPayload>(payload.Message.Content, JsonOptions)
+                JsonSerializer.Deserialize<DistillationPayload>(reply.Content, JsonOptions)
                 ?? throw new InvalidDataException("Ollama returned an empty lesson distillation object.");
             succeeded = true;
             return new LessonDistillationResult(
@@ -225,13 +224,7 @@ public sealed class OllamaLessonDistiller(
         IReadOnlyList<string>? EvidenceStepIds,
         string? ReinforcesEntryId);
 
-    private sealed record OllamaChatRequest(
-        string Model,
-        bool Stream,
-        JsonElement Format,
-        IReadOnlyList<OllamaMessage> Messages);
 
     private sealed record OllamaMessage(string Role, string Content);
 
-    private sealed record OllamaChatResponse(OllamaMessage? Message);
 }

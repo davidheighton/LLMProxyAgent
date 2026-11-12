@@ -18,7 +18,8 @@ public sealed class AutonomousLoginWorker(
     IAutonomousLoginIdentityProvider identityProvider,
     AutonomousLoginCredentialStore credentialStore,
     ProxyGameCommandBroker commandBroker,
-    ILogger<AutonomousLoginWorker> logger) : BackgroundService
+    ILogger<AutonomousLoginWorker> logger,
+    string modelProvider = LlmBackends.Ollama) : BackgroundService
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PromptTimeout = TimeSpan.FromSeconds(30);
@@ -35,7 +36,7 @@ public sealed class AutonomousLoginWorker(
         if (!modelEndpoint.IsLoopback)
         {
             throw new InvalidOperationException(
-                "Autonomous login identity generation requires a loopback Ollama endpoint.");
+                "Autonomous login identity generation requires a loopback model endpoint.");
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(modelName);
 
@@ -113,7 +114,7 @@ public sealed class AutonomousLoginWorker(
             FullMode = BoundedChannelFullMode.DropWrite
         });
         var sequence = new TradeWarsLoginPromptSequence(gameProfile.GameLetter);
-        var modelConfiguration = new ModelConfiguration("Ollama", modelName, modelEndpoint);
+        var modelConfiguration = new ModelConfiguration(modelProvider, modelName, modelEndpoint);
         var authenticated = 0;
         var decoder = new TradeWarsTelnetTelemetryDecoder((gameEvent, cancellationToken) =>
         {

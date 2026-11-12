@@ -41,7 +41,9 @@ public sealed class AutonomousTestWorker(
     IEpisodeCompletionHandler? episodeCompletionHandler = null,
     string? identityModelName = null,
     IPlaybookGuidanceProvider? playbookGuidanceProvider = null,
-    string? playbookMemoryId = null) : BackgroundService
+    string? playbookMemoryId = null,
+    ModelConfiguration? pilotModelTemplate = null,
+    ModelConfiguration? identityModelTemplate = null) : BackgroundService
 {
     public const int UnlimitedActionsPerSession = 0;
     private const int KnownHighRiskSector = 99;
@@ -934,10 +936,10 @@ public sealed class AutonomousTestWorker(
                     ?? throw new InvalidOperationException(
                         "New-character identity cannot be saved because the login credential store is unavailable.");
         // Naming is a trivial task, so it uses the fast reactive model rather than the Pilot model.
-        var modelConfiguration = new ModelConfiguration(
-            "Ollama",
-            string.IsNullOrWhiteSpace(_identityModelName) ? _pilotModelName : _identityModelName,
-            modelEndpoint);
+        var modelConfiguration = string.IsNullOrWhiteSpace(_identityModelName)
+            ? PilotModelConfiguration(LlmBackends.Ollama)
+            : (identityModelTemplate ?? new ModelConfiguration(LlmBackends.Ollama, _identityModelName, modelEndpoint))
+                with { Model = _identityModelName };
         string gameProfile = string.IsNullOrWhiteSpace(credentials.GameProfileKey)
             ? credentials.GameLetter
             : credentials.GameProfileKey;
@@ -1356,7 +1358,7 @@ public sealed class AutonomousTestWorker(
         try
         {
             AutonomousTestActionDecision decision = await provider.DecideAsync(
-                new ModelConfiguration(provider.Id, _pilotModelName, modelEndpoint),
+                PilotModelConfiguration(provider.Id),
                 actionContext,
                 cancellationToken).ConfigureAwait(false);
             statusStore?.RecordModelRequestCompleted(
@@ -1433,6 +1435,11 @@ public sealed class AutonomousTestWorker(
                 .ConfigureAwait(false);
         }
     }
+
+    /// <summary>The Pilot's backend, endpoint and options from configuration, with the agent's selected model.</summary>
+    private ModelConfiguration PilotModelConfiguration(string defaultProvider) =>
+        (pilotModelTemplate ?? new ModelConfiguration(defaultProvider, _pilotModelName, modelEndpoint))
+            with { Model = _pilotModelName };
 
     private string? PlaybookGameKey => string.IsNullOrWhiteSpace(sessionName) ? null : sessionName.Trim();
 

@@ -10,6 +10,8 @@ public sealed class OllamaReasoningProvider(
     HttpClient httpClient,
     ILlmInteractionHistoryStore? interactionHistory = null) : IStrategicReasoningProvider
 {
+    private readonly LlmChatClient _chat = new(httpClient);
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
@@ -139,13 +141,12 @@ public sealed class OllamaReasoningProvider(
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(context);
-        if (!string.Equals(configuration.Provider, Id, StringComparison.OrdinalIgnoreCase))
+        if (!LlmBackends.IsSupported(configuration.Provider))
         {
             throw new ArgumentException($"Provider '{configuration.Provider}' is not supported.", nameof(configuration));
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(configuration.Model);
 
-        var endpoint = new Uri(configuration.Endpoint.ToString().TrimEnd('/') + "/api/chat");
         var messages = new[]
         {
             new OllamaMessage("system", SystemPrompt),
@@ -178,37 +179,30 @@ public sealed class OllamaReasoningProvider(
         });
         try
         {
-            using var response = await httpClient.PostAsJsonAsync(
-                endpoint,
-                new OllamaChatRequest(
-                    configuration.Model,
-                    false,
-                    BuildAssessmentSchema(context),
-                    messages),
-                JsonOptions,
+            // The strategy brain may deliberate before answering (configuration.Think); on llama.cpp that is a
+            // separate unconstrained reasoning pass followed by the schema-constrained answer.
+            LlmChatResult result = await _chat.ChatAsync(
+                configuration,
+                new LlmChatRequest(
+                    "the strategic assessment",
+                    messages.Select(message => new LlmChatMessage(message.Role, message.Content)).ToArray(),
+                    BuildAssessmentSchema(context))
+                {
+                    Think = configuration.Think,
+                    MaxTokens = configuration.MaxTokens
+                },
                 cancellationToken);
-            responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                string errorBody = responseBody.Length <= 1000
-                    ? responseBody
-                    : responseBody[..1000];
-                throw new HttpRequestException(
-                    $"Ollama returned HTTP {(int)response.StatusCode} ({response.StatusCode}) for the strategic assessment: {errorBody}",
-                    null,
-                    response.StatusCode);
-            }
+            responseBody = result.RawResponse;
 
             try
             {
-                var payload = JsonSerializer.Deserialize<OllamaChatResponse>(responseBody, JsonOptions);
-                if (string.IsNullOrWhiteSpace(payload?.Message?.Content))
+                if (string.IsNullOrWhiteSpace(result.Content))
                 {
-                    throw new InvalidDataException("Ollama returned an empty strategic assessment.");
+                    throw new InvalidDataException("The model returned an empty strategic assessment.");
                 }
 
                 StrategicAssessment assessment =
-                    JsonSerializer.Deserialize<StrategicAssessment>(payload.Message.Content, JsonOptions)
+                    JsonSerializer.Deserialize<StrategicAssessment>(result.Content, JsonOptions)
                     ?? throw new InvalidDataException("Ollama returned an empty strategic assessment object.");
                 ValidateObjectiveFields(assessment, context);
                 succeeded = true;
@@ -401,12 +395,6 @@ public sealed class OllamaReasoningProvider(
         return document.RootElement.Clone();
     }
 
-    private sealed record OllamaChatRequest(
-        string Model,
-        bool Stream,
-        JsonElement Format,
-        IReadOnlyList<OllamaMessage> Messages);
 
     private sealed record OllamaMessage(string Role, string Content);
-    private sealed record OllamaChatResponse(OllamaMessage? Message);
 }

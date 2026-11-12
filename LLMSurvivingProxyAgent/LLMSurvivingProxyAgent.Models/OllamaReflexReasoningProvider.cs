@@ -10,6 +10,8 @@ public sealed class OllamaReflexReasoningProvider(
     HttpClient httpClient,
     ILlmInteractionHistoryStore? interactionHistory = null) : IReflexReasoningProvider
 {
+    private readonly LlmChatClient _chat = new(httpClient);
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
@@ -46,7 +48,7 @@ public sealed class OllamaReflexReasoningProvider(
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(context);
-        if (!string.Equals(configuration.Provider, Id, StringComparison.OrdinalIgnoreCase))
+        if (!LlmBackends.IsSupported(configuration.Provider))
         {
             throw new ArgumentException($"Provider '{configuration.Provider}' is not supported.", nameof(configuration));
         }
@@ -57,7 +59,6 @@ public sealed class OllamaReflexReasoningProvider(
             throw new ArgumentException("The reflex model endpoint must be an absolute HTTP or HTTPS URL.", nameof(configuration));
         }
 
-        var endpoint = new Uri(endpointUri.ToString().TrimEnd('/') + "/api/chat");
         var messages = new[]
         {
             new OllamaMessage("system", SystemPrompt),
@@ -89,40 +90,30 @@ public sealed class OllamaReflexReasoningProvider(
         });
         try
         {
-            using var response = await httpClient.PostAsJsonAsync(
-                endpoint,
-                new OllamaChatRequest(
-                    configuration.Model,
-                    false,
-                    BuildAssessmentSchema(context.Event.EventId),
-                    messages,
-                    Think: configuration.Model.StartsWith("qwen3", StringComparison.OrdinalIgnoreCase)
-                        ? false
-                        : null),
-                JsonOptions,
+            LlmChatResult result = await _chat.ChatAsync(
+                configuration,
+                new LlmChatRequest(
+                    "the reflex assessment",
+                    messages.Select(message => new LlmChatMessage(message.Role, message.Content)).ToArray(),
+                    BuildAssessmentSchema(context.Event.EventId))
+                {
+                    // Reflex classification must be fast: no reasoning unless explicitly configured.
+                    Think = configuration.Think ??
+                        (configuration.Model.StartsWith("qwen3", StringComparison.OrdinalIgnoreCase) ? false : null),
+                    MaxTokens = configuration.MaxTokens
+                },
                 cancellationToken);
-            responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                string errorBody = responseBody.Length <= 1000
-                    ? responseBody
-                    : responseBody[..1000];
-                throw new HttpRequestException(
-                    $"Ollama returned HTTP {(int)response.StatusCode} ({response.StatusCode}) for the reflex assessment: {errorBody}",
-                    null,
-                    response.StatusCode);
-            }
+            responseBody = result.RawResponse;
 
             try
             {
-                var payload = JsonSerializer.Deserialize<OllamaChatResponse>(responseBody, JsonOptions);
-                if (string.IsNullOrWhiteSpace(payload?.Message?.Content))
+                if (string.IsNullOrWhiteSpace(result.Content))
                 {
-                    throw new InvalidDataException("Ollama returned an empty reflex assessment.");
+                    throw new InvalidDataException("The model returned an empty reflex assessment.");
                 }
 
                 ReflexAssessment assessment = JsonSerializer.Deserialize<ReflexAssessment>(
-                    payload.Message.Content,
+                    result.Content,
                     JsonOptions)
                     ?? throw new InvalidDataException("Ollama returned an empty reflex assessment object.");
                 _ = ReflexAssessmentGate.ToDecision(context.Event, assessment);
@@ -195,13 +186,6 @@ public sealed class OllamaReflexReasoningProvider(
         return document.RootElement.Clone();
     }
 
-    private sealed record OllamaChatRequest(
-        string Model,
-        bool Stream,
-        JsonElement Format,
-        IReadOnlyList<OllamaMessage> Messages,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Think = null);
 
     private sealed record OllamaMessage(string Role, string Content);
-    private sealed record OllamaChatResponse(OllamaMessage? Message);
 }

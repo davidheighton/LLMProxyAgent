@@ -5,10 +5,16 @@ using LLMSurvivingProxyAgent.Core;
 
 namespace LLMSurvivingProxyAgent.Models;
 
+/// <summary>
+/// The Pilot brain. Despite the historical name it talks to any supported local backend (Ollama or llama.cpp)
+/// through <see cref="LlmChatClient"/>.
+/// </summary>
 public sealed class OllamaAutonomousTestActionProvider(
     HttpClient httpClient,
     ILlmInteractionHistoryStore? interactionHistory = null) : IAutonomousTestActionProvider
 {
+    private readonly LlmChatClient _chat = new(httpClient);
+
     private const int MaximumDecisionResponseTokens = 2048;
     private const int MaximumDecisionAttempts = 2;
     private static readonly TimeSpan MaximumSnapshotAge = TimeSpan.FromSeconds(30);
@@ -20,8 +26,6 @@ public sealed class OllamaAutonomousTestActionProvider(
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
-    private static readonly JsonSerializerOptions OllamaResponseJsonOptions =
-        new(JsonSerializerDefaults.Web);
 
     private const string SystemPrompt = """
         You are selecting one action for a constrained TradeWars test.
@@ -227,7 +231,7 @@ public sealed class OllamaAutonomousTestActionProvider(
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(actionContext);
-        if (!string.Equals(configuration.Provider, Id, StringComparison.OrdinalIgnoreCase))
+        if (!LlmBackends.IsSupported(configuration.Provider))
         {
             throw new ArgumentException(
                 $"Provider '{configuration.Provider}' is not supported.",
@@ -235,7 +239,6 @@ public sealed class OllamaAutonomousTestActionProvider(
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(configuration.Model);
 
-        var endpoint = new Uri(configuration.Endpoint.ToString().TrimEnd('/') + "/api/chat");
         var situation = actionContext.Situation;
         IntegratedGameClientSnapshot? integratedGameClient =
             situation.Snapshot is { } synchronizedSnapshot &&
@@ -308,8 +311,11 @@ public sealed class OllamaAutonomousTestActionProvider(
             new("system", hasPlaybook ? SystemPrompt + PlaybookPrompt : SystemPrompt),
             new("user", JsonSerializer.Serialize(context, JsonOptions))
         };
-        bool enableQwenThinking =
-            configuration.Model.StartsWith("qwen3", StringComparison.OrdinalIgnoreCase);
+        // Ollama Qwen3 Pilots historically think first; an explicit per-brain setting overrides that, and
+        // llama.cpp Pilots answer directly unless thinking is configured.
+        bool enableQwenThinking = configuration.Think ??
+            (!LlmBackends.IsLlamaCpp(configuration) &&
+             configuration.Model.StartsWith("qwen3", StringComparison.OrdinalIgnoreCase));
         bool retryWithoutThinking = false;
         for (int attempt = 0; attempt < MaximumDecisionAttempts; attempt++)
         {
@@ -342,42 +348,28 @@ public sealed class OllamaAutonomousTestActionProvider(
             });
             try
             {
-            using var response = await httpClient.PostAsJsonAsync(
-                endpoint,
-                new OllamaChatRequest(
-                    configuration.Model,
-                    false,
-                    CreateDecisionSchema(actionContext),
-                    messages,
-                    Think: enableQwenThinking ? !retryWithoutThinking : null,
-                    Options: new OllamaChatOptions(MaximumDecisionResponseTokens)),
-                JsonOptions,
+            LlmChatResult result = await _chat.ChatAsync(
+                configuration,
+                new LlmChatRequest(
+                    "the test-action decision",
+                    messages.Select(message => new LlmChatMessage(message.Role, message.Content ?? string.Empty)).ToArray(),
+                    JsonSerializer.SerializeToElement(CreateDecisionSchema(actionContext), JsonOptions))
+                {
+                    Think = enableQwenThinking ? !retryWithoutThinking : null,
+                    MaxTokens = configuration.MaxTokens ?? MaximumDecisionResponseTokens
+                },
                 cancellationToken);
-            responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                string errorBody = responseBody.Length <= 1000
-                    ? responseBody
-                    : responseBody[..1000];
-
-                throw new HttpRequestException(
-                    $"Ollama returned HTTP {(int)response.StatusCode} ({response.StatusCode}) for the test-action decision: {errorBody}",
-                    null,
-                    response.StatusCode);
-            }
+            responseBody = result.RawResponse;
 
             try
             {
-                var payload = JsonSerializer.Deserialize<OllamaChatResponse>(
-                    responseBody,
-                    OllamaResponseJsonOptions);
-                if (string.IsNullOrWhiteSpace(payload?.Message?.Content))
+                if (string.IsNullOrWhiteSpace(result.Content))
                 {
                     string emptyContentError =
-                        $"Ollama returned an empty test-action decision (role={payload?.Message?.Role ?? "unknown"}; " +
-                        $"contentLength={payload?.Message?.Content?.Length ?? 0}; " +
-                        $"thinkingLength={payload?.Message?.Thinking?.Length ?? 0}; " +
-                        $"doneReason={payload?.DoneReason ?? "unknown"}; evalCount={payload?.EvalCount?.ToString() ?? "unknown"}).";
+                        $"The model returned an empty test-action decision (" +
+                        $"contentLength={result.Content.Length}; " +
+                        $"thinkingLength={result.Thinking?.Length ?? 0}; " +
+                        $"doneReason={result.FinishReason ?? "unknown"}; evalCount={result.CompletionTokens?.ToString() ?? "unknown"}).";
                     if (enableQwenThinking && !retryWithoutThinking &&
                         attempt + 1 < MaximumDecisionAttempts)
                     {
@@ -390,7 +382,7 @@ public sealed class OllamaAutonomousTestActionProvider(
                 }
 
                 var decision = JsonSerializer.Deserialize<AutonomousTestActionDecision>(
-                    payload.Message.Content,
+                    result.Content,
                     JsonOptions);
                 if (decision is null)
                 {
@@ -775,7 +767,7 @@ public sealed class OllamaAutonomousTestActionProvider(
                         {
                             retryWithoutThinking = true;
                         }
-                        messages.Add(new OllamaMessage("assistant", payload.Message.Content));
+                        messages.Add(new OllamaMessage("assistant", result.Content));
                         messages.Add(new OllamaMessage(
                             "user",
                             $"The previous decision was rejected by deterministic validation: {details}. " +
@@ -1160,16 +1152,7 @@ public sealed class OllamaAutonomousTestActionProvider(
     private static bool IsOverridablePlaybookLayer(string layer) =>
         layer is PlaybookCitation.CoachTipLayer or PlaybookCitation.LessonLayer;
 
-    private sealed record OllamaChatRequest(
-        string Model,
-        bool Stream,
-        OllamaJsonSchema Format,
-        IReadOnlyList<OllamaMessage> Messages,
-        bool? Think = null,
-        OllamaChatOptions? Options = null);
 
-    private sealed record OllamaChatOptions(
-        [property: JsonPropertyName("num_predict")] int NumPredict);
 
     private sealed record OllamaJsonSchema(
         string Type,
@@ -1194,8 +1177,4 @@ public sealed class OllamaAutonomousTestActionProvider(
         string? Content,
         string? Thinking = null);
 
-    private sealed record OllamaChatResponse(
-        OllamaMessage? Message,
-        [property: JsonPropertyName("done_reason")] string? DoneReason = null,
-        [property: JsonPropertyName("eval_count")] int? EvalCount = null);
 }

@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LLMSurvivingProxyAgent.Core\LLMSurvivingProxyAgent.Core.csproj" />
     <ProjectReference Include="..\LLMSurvivingProxyAgent.Runtime\LLMSurvivingProxyAgent.Runtime.csproj" />
+    <ProjectReference Include="..\LLMSurvivingProxyAgent.Models\LLMSurvivingProxyAgent.Models.csproj" />
   </ItemGroup>
 
   <ItemGroup>

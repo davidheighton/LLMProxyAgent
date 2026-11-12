@@ -528,6 +528,18 @@ current game (the MTC session name).
   `buyholds`, `buyfighters`, `buyshields`, and `refurb`, or a full action name.
 - *API (loopback only)*: `POST /api/agents/<id>/coach` with `{"command":"..."}`, and `GET /api/agents/<id>/playbook`.
 
+## Model backends (Ollama or llama.cpp)
+
+Each brain (Pilot, Reactive, Strategic) chooses its own local model server, so a very small, fast Pilot can run
+alongside a larger Strategic model that deliberates. All model calls go through `LlmChatClient`, which speaks
+Ollama's `/api/chat` or llama.cpp `llama-server`'s OpenAI-compatible `/v1/chat/completions` with JSON-schema output.
+Configure each brain with `Brains:{Pilot|Reactive|Strategic}:{Backend,Endpoint,Model,Thinking,MaxTokens}`; Ollama is
+the default and existing settings keep working. On llama.cpp the Strategic brain deliberates by default, in two
+passes: free reasoning first, then a schema-constrained answer. The host checks each llama.cpp brain at startup and
+launches its `llama-server` when `Brains:{brain}:LlamaCpp:ModelPath` is set. Setup, model candidates, launch scripts,
+and the harness `bench` command that compares models on your recorded game prompts are in
+[`tools/llamacpp/README.md`](../tools/llamacpp/README.md).
+
 ## Run
 
 ```powershell

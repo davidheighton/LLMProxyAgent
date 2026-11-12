@@ -132,18 +132,22 @@ public sealed class StrategicReviewService(
         if (agent.Configuration.TryGetValue("Brains:Strategic:Model", out string? configuredStrategicModel) &&
             !string.IsNullOrWhiteSpace(configuredStrategicModel))
         {
+            // A per-agent model choice keeps the host's Strategic backend, endpoint, and deliberation settings.
             string provider = string.IsNullOrWhiteSpace(agent.PreferredProvider)
                 ? strategicModel?.Provider ?? reasoningProvider.Id
                 : agent.PreferredProvider;
-            agentStrategicModel = new ModelConfiguration(
-                provider,
-                configuredStrategicModel.Trim(),
-                modelEndpoint);
+            agentStrategicModel = strategicModel is not null
+                ? strategicModel with { Model = configuredStrategicModel.Trim() }
+                : new ModelConfiguration(provider, configuredStrategicModel.Trim(), modelEndpoint);
         }
 
         var model = agentStrategicModel ?? modelOverride ?? strategicModel ??
             new ModelConfiguration(agent.PreferredProvider!, agent.PreferredModel!, modelEndpoint);
-        if (!string.Equals(model.Provider, reasoningProvider.Id, StringComparison.OrdinalIgnoreCase))
+        bool providerMatches =
+            string.Equals(model.Provider, reasoningProvider.Id, StringComparison.OrdinalIgnoreCase) ||
+            // The local reasoning provider serves every supported backend (Ollama and llama.cpp).
+            LlmBackends.IsSupported(model.Provider) && LlmBackends.IsSupported(reasoningProvider.Id);
+        if (!providerMatches)
         {
             throw new InvalidOperationException(
                 $"The configured reasoning provider '{model.Provider}' is unavailable; " +
