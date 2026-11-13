@@ -1,6 +1,7 @@
 using System.Globalization;
 using LLMSurvivingProxyAgent.Core;
 using LLMSurvivingProxyAgent.Harness;
+using LLMSurvivingProxyAgent.Models;
 using LLMSurvivingProxyAgent.Runtime;
 using Microsoft.Data.Sqlite;
 
@@ -9,6 +10,9 @@ return await HarnessCli.RunAsync(args);
 internal static class HarnessCli
 {
     private const string DefaultPilotModel = "qwen3:1.7b";
+
+    /// <summary>All learners share this playbook memory unless --memory-id says otherwise.</summary>
+    private const string DefaultMemoryId = "veteran";
 
     private const string Usage = """
         LLMSurvivingProxyAgent.Harness — runs repeatable TradeWars learning episodes in MTC.
@@ -26,6 +30,10 @@ internal static class HarnessCli
           status  [--batch <id>]      List episodes and their state.
           report  --batch <id>        Rebuild the batch report.
           cleanup [--batch <id>]      Remove finished learners' registry entries and profiles (logs are archived).
+          bench   --brain pilot|strategic --models <spec>,<spec>,... [--samples 40] [--agent <id>]
+                  Replays recorded decision prompts against each model and compares validity, agreement with the
+                  recorded decision, latency, and tokens/s. A spec is [backend:]model[@endpoint][+think|-think], e.g.
+                  llamacpp:qwen3-0.6b@http://127.0.0.1:8081/  or  ollama:qwen3:1.7b. Report: <report-dir>\bench-*.md
 
         Shared options:
           --mtc <path\MTC.exe>        Default: nearest LLMControlCenter\bin\Debug\net10.0\MTC.exe above the current directory.
@@ -33,6 +41,8 @@ internal static class HarnessCli
           --report-dir <dir>          Default: .\reports\harness
           --grace-minutes <n>         Extra time past the cap before MTC is killed. Default: 15.
           --cleanup true|false        Clean up each learner when its episode finishes. Default: true.
+          --memory-id <id>            Playbook memory shared by every learner, so lessons carry from life to life.
+                                      Default: veteran. Use a new id to start a fresh lineage.
         """;
 
     public static async Task<int> RunAsync(string[] args)
@@ -77,6 +87,7 @@ internal static class HarnessCli
                 "status" => await StatusAsync(options, harnessStore, cancellation.Token),
                 "report" => await ReportAsync(options, reportDirectory, harnessStore, trajectoryStore, cancellation.Token),
                 "cleanup" => await CleanupAsync(options, dataDirectory, harnessStore, cancellation.Token),
+                "bench" => await BenchAsync(options, connectionString, reportDirectory, cancellation.Token),
                 _ => throw new ArgumentException($"Unknown command '{args[0]}'.\n\n{Usage}")
             };
         }
@@ -320,7 +331,12 @@ internal static class HarnessCli
             TimeSpan.FromMinutes(ParseDouble(options, "grace-minutes", 15)),
             reset,
             Path.Combine(dataDirectory, "harness", batch.BatchId),
-            PilotModel: batch.PilotModel ?? DefaultPilotModel);
+            PilotModel: batch.PilotModel ?? DefaultPilotModel,
+            MemoryId: Get(options, "memory-id") ?? DefaultMemoryId);
+        if (!PlaybookMemory.IsValidMemoryId(settings.MemoryId))
+        {
+            throw new ArgumentException("--memory-id must be 1-64 characters using letters, digits, '.', '_' or '-'.");
+        }
         bool cleanup = !string.Equals(Get(options, "cleanup"), "false", StringComparison.OrdinalIgnoreCase);
         LearnerCleanup learnerCleanup = CreateCleanup(dataDirectory);
         return new HarnessScheduler(
@@ -396,6 +412,54 @@ internal static class HarnessCli
             }
         }
         throw new FileNotFoundException("MTC.exe was not found; build LLMControlCenter or pass --mtc.");
+    }
+
+    private static async Task<int> BenchAsync(
+        Dictionary<string, string> options,
+        string connectionString,
+        string reportDirectory,
+        CancellationToken cancellationToken)
+    {
+        BenchProfile profile = BenchProfile.For(Require(options, "brain"));
+        BenchModelSpec[] models = Require(options, "models")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(spec => BenchModelSpec.Parse(spec, profile.Brain))
+            .ToArray();
+        IReadOnlyList<BenchCase> cases = ModelBench.LoadCases(
+            connectionString,
+            profile,
+            ParseInt(options, "samples", 40, minimum: 1),
+            Get(options, "agent"));
+        if (cases.Count == 0)
+        {
+            Console.Error.WriteLine($"No recorded {profile.Role} prompts were found; let an agent play first.");
+            return 1;
+        }
+
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        var bench = new ModelBench(new LlmChatClient(httpClient));
+        var results = new List<BenchResult>();
+        foreach (BenchModelSpec model in models)
+        {
+            Console.WriteLine($"Benchmarking {BrainConfiguration.Describe(model.Configuration)} on {cases.Count} prompts...");
+            results.Add(await bench.RunAsync(
+                model,
+                profile,
+                cases,
+                message => Console.Write($"\r{message}   "),
+                cancellationToken));
+            Console.WriteLine();
+        }
+
+        string markdown = ModelBench.ToMarkdown(profile, cases, results);
+        Directory.CreateDirectory(reportDirectory);
+        string path = Path.Combine(
+            reportDirectory,
+            $"bench-{profile.Brain.ToLowerInvariant()}-{DateTimeOffset.Now:yyyyMMdd-HHmm}.md");
+        await File.WriteAllTextAsync(path, markdown, cancellationToken);
+        Console.WriteLine(markdown);
+        Console.WriteLine($"Report: {path}");
+        return 0;
     }
 
     private static Dictionary<string, string> ParseOptions(string[] args)

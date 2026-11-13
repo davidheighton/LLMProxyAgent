@@ -65,7 +65,8 @@ public sealed record SchedulerSettings(
     TimeOnly GameDayReset,
     string ResultDirectory,
     bool CreateAccounts = true,
-    string? PilotModel = null);
+    string? PilotModel = null,
+    string? MemoryId = null);
 
 /// <summary>Stop conditions and pacing for an unattended rolling run.</summary>
 public sealed record RollingLimits(
@@ -149,7 +150,8 @@ public sealed class HarnessScheduler(
         {
             ResultPath = resultPath,
             ExitOnEnd = true,
-            PilotModel = settings.PilotModel
+            PilotModel = settings.PilotModel,
+            MemoryId = settings.MemoryId
         };
         var arguments = new List<string>
         {

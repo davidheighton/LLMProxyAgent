@@ -13,8 +13,10 @@ public sealed class TrajectoryRecorder(
     ITrajectoryStore store,
     ILogger<TrajectoryRecorder> logger,
     GameplayRewardWeights? weights = null,
-    TimeProvider? timeProvider = null) : ITrajectoryRecorder
+    TimeProvider? timeProvider = null,
+    IEnumerable<ITrajectoryObserver>? observers = null) : ITrajectoryRecorder
 {
+    private readonly ITrajectoryObserver[] _observers = observers?.ToArray() ?? [];
     private readonly GameplayRewardWeights _weights = weights ?? GameplayRewardWeights.Default;
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -145,7 +147,8 @@ public sealed class TrajectoryRecorder(
         AutonomousTestActionDecision decision,
         TrajectoryDecisionSource source,
         string? objective,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<string>? situationTags = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
         ArgumentNullException.ThrowIfNull(situation);
@@ -187,7 +190,12 @@ public sealed class TrajectoryRecorder(
                 objective,
                 before)
             {
-                Segment = state.Episode.Segment
+                Segment = state.Episode.Segment,
+                CitedKnowledgeNodeId = NullIfBlank(decision.CitedKnowledgeNodeId),
+                OverriddenPlaybookEntryId = NullIfBlank(decision.OverriddenPlaybookEntryId),
+                OverrideReason = NullIfBlank(decision.OverrideReason),
+                SituationTags = situationTags?.ToArray() ??
+                    [.. PlaybookSituation.Describe(before)]
             };
             state.OpenStep = step;
             state.Episode = state.Episode with
@@ -331,6 +339,17 @@ public sealed class TrajectoryRecorder(
             EndReason = reason
         };
         await store.UpsertEpisodeAsync(state.Episode, cancellationToken).ConfigureAwait(false);
+        foreach (ITrajectoryObserver observer in _observers)
+        {
+            try
+            {
+                await observer.OnEpisodeEndedAsync(state.Episode, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(exception, "A trajectory observer failed for episode {EpisodeId}.", state.Episode.EpisodeId);
+            }
+        }
         logger.LogInformation(
             "Trajectory episode {EpisodeId} for agent {AgentId} ended as {Status} ({Reason}): {Steps} steps, reward {Reward}, net worth change {NetWorthDelta}.",
             state.Episode.EpisodeId,
@@ -382,6 +401,17 @@ public sealed class TrajectoryRecorder(
         };
         await store.UpsertStepAsync(completed, cancellationToken).ConfigureAwait(false);
         state.LastClosedStep = completed;
+        foreach (ITrajectoryObserver observer in _observers)
+        {
+            try
+            {
+                await observer.OnStepClosedAsync(completed, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(exception, "A trajectory observer failed for step {StepId}.", completed.StepId);
+            }
+        }
 
         TrajectoryEpisode episode = state.Episode;
         if (after is not null)
@@ -420,6 +450,8 @@ public sealed class TrajectoryRecorder(
         await store.InitializeAsync(cancellationToken).ConfigureAwait(false);
         _initialized = true;
     }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string NormalizeModel(string model) => string.IsNullOrWhiteSpace(model) ? "unknown" : model;
 

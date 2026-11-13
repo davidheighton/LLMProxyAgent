@@ -67,19 +67,26 @@ public static class DashboardApplication
         ?? Path.Combine(dataDirectory, "knowledge.runtime.db"));
         var trajectoryDatabasePath = Path.GetFullPath(builder.Configuration["Learning:TrajectoryDatabasePath"]
         ?? Path.Combine(dataDirectory, "trajectories.db"));
+        // Cross-life memory lives beside the agent registry, outside any one game's folder, so it survives
+        // character deaths, game resets, and harness learner cleanup.
+        var playbookDatabasePath = Path.GetFullPath(builder.Configuration["Learning:PlaybookDatabasePath"]
+        ?? Path.Combine(dataDirectory, "playbook.db"));
         if (seedKnowledgePath.Equals(runtimeKnowledgePath, StringComparison.OrdinalIgnoreCase) ||
         seedKnowledgePath.Equals(databasePath, StringComparison.OrdinalIgnoreCase) ||
         runtimeKnowledgePath.Equals(databasePath, StringComparison.OrdinalIgnoreCase) ||
         trajectoryDatabasePath.Equals(databasePath, StringComparison.OrdinalIgnoreCase) ||
         trajectoryDatabasePath.Equals(seedKnowledgePath, StringComparison.OrdinalIgnoreCase) ||
-        trajectoryDatabasePath.Equals(runtimeKnowledgePath, StringComparison.OrdinalIgnoreCase))
+        trajectoryDatabasePath.Equals(runtimeKnowledgePath, StringComparison.OrdinalIgnoreCase) ||
+        new[] { databasePath, seedKnowledgePath, runtimeKnowledgePath, trajectoryDatabasePath }
+            .Contains(playbookDatabasePath, StringComparer.OrdinalIgnoreCase))
         {
         throw new InvalidOperationException(
-            "Agent, seed knowledge, runtime knowledge, and trajectory databases must use separate file paths.");
+            "Agent, seed knowledge, runtime knowledge, trajectory, and playbook databases must use separate file paths.");
         }
         Directory.CreateDirectory(Path.GetDirectoryName(seedKnowledgePath)!);
         Directory.CreateDirectory(Path.GetDirectoryName(runtimeKnowledgePath)!);
         Directory.CreateDirectory(Path.GetDirectoryName(trajectoryDatabasePath)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(playbookDatabasePath)!);
 
         static string BuildConnectionString(string path) => new SqliteConnectionStringBuilder
         {
@@ -113,6 +120,15 @@ public static class DashboardApplication
             trajectoryStore.InitializeAsync().GetAwaiter().GetResult();
             return trajectoryStore;
         });
+        builder.Services.AddSingleton<IPlaybookStore>(_ =>
+        {
+            var playbookStore = new SqlitePlaybookStore(BuildConnectionString(playbookDatabasePath));
+            playbookStore.InitializeAsync().GetAwaiter().GetResult();
+            return playbookStore;
+        });
+        builder.Services.AddSingleton<IPlaybookGuidanceProvider, PlaybookGuidanceProvider>();
+        builder.Services.AddSingleton<ITrajectoryObserver>(serviceProvider =>
+            serviceProvider.GetRequiredService<PlaybookLearner>());
         builder.Services.AddSingleton<ITrajectoryRecorder, TrajectoryRecorder>();
         builder.Services.AddSingleton<IGameCommandSender>(
         serviceProvider => serviceProvider.GetRequiredService<ProxyGameCommandBroker>());
@@ -163,6 +179,45 @@ public static class DashboardApplication
         {
             throw new InvalidOperationException("Reasoning:OllamaEndpoint must be an absolute HTTP or HTTPS URL.");
         }
+        // Each brain can use its own backend: e.g. a tiny, fast llama.cpp Pilot and a larger deliberating Strategic model.
+        ModelConfiguration pilotBrain = BrainConfiguration.Resolve(builder.Configuration, BrainConfiguration.Pilot, pilotModel);
+        ModelConfiguration strategicBrain =
+            BrainConfiguration.Resolve(builder.Configuration, BrainConfiguration.Strategic, strategicModel);
+        ModelConfiguration reactiveBrain =
+            BrainConfiguration.Resolve(builder.Configuration, BrainConfiguration.Reactive, reactiveModel);
+        builder.Services.AddSingleton(new BrainModels(pilotBrain, strategicBrain, reactiveBrain));
+        builder.Services.AddHostedService<LlamaCppServerStartupService>();
+        var playbookMemoryId = builder.Configuration["Learning:PlaybookMemoryId"] is { Length: > 0 } configuredMemoryId
+            ? configuredMemoryId
+            : EpisodeOptionsConfiguration.Read(builder.Configuration)?.MemoryId;
+        if (playbookMemoryId is not null && !PlaybookMemory.IsValidMemoryId(playbookMemoryId))
+        {
+            throw new InvalidOperationException(
+                "Learning:PlaybookMemoryId must be 1-64 characters using letters, digits, '.', '_' or '-'.");
+        }
+        var playbookGameKey = string.IsNullOrWhiteSpace(autonomousTestSessionName) ? null : autonomousTestSessionName;
+        builder.Services.AddSingleton(new PlaybookSettings(playbookMemoryId, playbookGameKey));
+        builder.Services.AddSingleton(serviceProvider => new PlaybookCoachingService(
+            serviceProvider.GetRequiredService<IPlaybookStore>(),
+            serviceProvider.GetRequiredService<PlaybookSettings>(),
+            serviceProvider.GetService<IGameSituationProvider>()));
+        builder.Services.AddHttpClient<ILessonDistiller, OllamaLessonDistiller>(
+            client => client.Timeout = TimeSpan.FromMinutes(5));
+        builder.Services.AddSingleton(serviceProvider => new PlaybookLearner(
+            serviceProvider.GetRequiredService<IPlaybookStore>(),
+            serviceProvider.GetRequiredService<ITrajectoryStore>(),
+            serviceProvider.GetRequiredService<ILogger<PlaybookLearner>>(),
+            new PlaybookLearnerOptions
+            {
+                GameKey = playbookGameKey,
+                MemoryId = playbookMemoryId,
+                // Reflection sends game observations to the model, so it only runs against a local endpoint.
+                DistillationModel = strategicBrain.Endpoint.IsLoopback &&
+                                    !builder.Configuration.GetValue("Learning:DisableDistillation", false)
+                    ? strategicBrain
+                    : null
+            },
+            serviceProvider.GetService<ILessonDistiller>()));
         if (autonomousGameplayEnabled &&
             !builder.Environment.IsDevelopment() &&
             !isEmbeddedControlCenterHost)
@@ -245,7 +300,7 @@ public static class DashboardApplication
         builder.Services.AddSingleton(sp => new ReactiveIntelligenceService(
             sp.GetRequiredService<IReactiveEventStore>(),
             sp.GetRequiredService<IReflexReasoningProvider>(),
-            new ModelConfiguration("Ollama", reactiveModel, ollamaEndpoint),
+            reactiveBrain,
             sp.GetRequiredService<IAgentStore>()));
         builder.Services.AddSingleton<AgentRuntimeQueue>();
         builder.Services.AddSingleton<IAgentRuntime>(sp => sp.GetRequiredService<AgentRuntimeQueue>());
@@ -254,10 +309,10 @@ public static class DashboardApplication
         builder.Services.AddHttpClient<IStrategicReasoningProvider, OllamaReasoningProvider>();
         if (autonomousTestingEnabled)
         {
-        if (!ollamaEndpoint.IsLoopback)
+        if (!pilotBrain.Endpoint.IsLoopback || !strategicBrain.Endpoint.IsLoopback || !reactiveBrain.Endpoint.IsLoopback)
         {
             throw new InvalidOperationException(
-                "Autonomous testing requires a loopback Ollama endpoint so game observations stay local.");
+                "Autonomous testing requires loopback model endpoints so game observations stay local.");
         }
         if (!proxyListeners.Any(listener =>
                 string.Equals(listener.AgentId, autonomousTestAgentId, StringComparison.OrdinalIgnoreCase)) &&
@@ -279,12 +334,12 @@ public static class DashboardApplication
                 serviceProvider.GetRequiredService<IGoalProposalStore>(),
                 serviceProvider.GetRequiredService<GoalProposalService>(),
                 serviceProvider.GetRequiredService<StrategicReviewService>(),
-                new ModelConfiguration("Ollama", strategicModel, ollamaEndpoint),
+                strategicBrain,
                 serviceProvider.GetRequiredService<ILogger<StrategicReviewAutonomousActionObjectiveProvider>>());
             return new AutonomousTestWorker(
                 autonomousTestAgentId,
                 modelName,
-                ollamaEndpoint,
+                pilotBrain.Endpoint,
                 serviceProvider.GetRequiredService<ProxyGameEventHub>(),
                 serviceProvider.GetRequiredService<IGameSituationProvider>(),
                 serviceProvider.GetRequiredService<IAutonomousTestActionProvider>(),
@@ -329,7 +384,11 @@ public static class DashboardApplication
                       (episodeOptions.ResultPath is { } resultPath
                           ? new EpisodeResultFileWriter(resultPath, serviceProvider.GetRequiredService<ITrajectoryStore>())
                           : null),
-                identityModelName: reactiveModel);
+                identityModelName: reactiveModel,
+                playbookGuidanceProvider: serviceProvider.GetRequiredService<IPlaybookGuidanceProvider>(),
+                playbookMemoryId: playbookMemoryId,
+                pilotModelTemplate: pilotBrain,
+                identityModelTemplate: reactiveBrain);
         }
 
         if (autonomousTestingAutoStart)
@@ -431,11 +490,12 @@ public static class DashboardApplication
                 autonomousLoginOptions.SelectedGame,
                 selectedProfile,
                 pilotModel,
-                ollamaEndpoint,
+                pilotBrain.Endpoint,
                 serviceProvider.GetRequiredService<IAutonomousLoginIdentityProvider>(),
                 serviceProvider.GetRequiredService<AutonomousLoginCredentialStore>(),
                 serviceProvider.GetRequiredService<ProxyGameCommandBroker>(),
-                serviceProvider.GetRequiredService<ILogger<AutonomousLoginWorker>>()));
+                serviceProvider.GetRequiredService<ILogger<AutonomousLoginWorker>>(),
+                pilotBrain.Provider));
         }
 
         static void ValidatePlainTextLoginValue(string value, string settingName, int maximumLength)
@@ -458,9 +518,12 @@ public static class DashboardApplication
         sp.GetRequiredService<GoalProposalService>(),
         sp.GetRequiredService<IStrategicReviewStore>(),
         sp.GetRequiredService<IStrategicReasoningProvider>(),
-        ollamaEndpoint,
-        new ModelConfiguration("Ollama", strategicModel, ollamaEndpoint),
-        sp.GetRequiredService<ILlmInteractionHistoryStore>()));
+        strategicBrain.Endpoint,
+        strategicBrain,
+        sp.GetRequiredService<ILlmInteractionHistoryStore>(),
+        sp.GetRequiredService<IPlaybookStore>(),
+        playbookGameKey,
+        playbookMemoryId));
         var knowledgeRoots = builder.Configuration
         .GetSection("Knowledge:Roots")
         .GetChildren()
@@ -605,6 +668,44 @@ public static class DashboardApplication
                     : Results.NoContent();
             });
         app.MapPost(
+            "/api/agents/{agentId}/coach",
+            async (string agentId, CoachCommandRequest request, HttpContext context, PlaybookCoachingService coaching) =>
+            {
+                if (context.Connection.RemoteIpAddress is not { } remoteAddress ||
+                    !System.Net.IPAddress.IsLoopback(remoteAddress))
+                {
+                    return Results.StatusCode(StatusCodes.Status403Forbidden);
+                }
+
+                string text = request.Command?.Trim() ?? string.Empty;
+                if (!CoachCommandParser.IsCoachCommand(text))
+                {
+                    text = $"{CoachCommandParser.Prefix} {text}";
+                }
+                CoachingResult result = await coaching.ApplyCommandAsync(agentId, text, context.RequestAborted);
+                return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+            });
+        app.MapGet(
+            "/api/agents/{agentId}/playbook",
+            async (string agentId, HttpContext context, IPlaybookStore playbookStore, PlaybookSettings playbookSettings) =>
+            {
+                if (context.Connection.RemoteIpAddress is not { } remoteAddress ||
+                    !System.Net.IPAddress.IsLoopback(remoteAddress))
+                {
+                    return Results.StatusCode(StatusCodes.Status403Forbidden);
+                }
+
+                string memoryId = playbookSettings.ResolveMemoryId(agentId);
+                IReadOnlyList<AgentLifeRecord> lives = await playbookStore.GetLivesAsync(memoryId, 200, context.RequestAborted);
+                return Results.Ok(new
+                {
+                    memoryId,
+                    entries = await playbookStore.GetEntriesAsync(memoryId, includeRetired: true, context.RequestAborted),
+                    lives,
+                    progression = ProgressionBenchmark.Compute(lives)
+                });
+            });
+        app.MapPost(
             "/api/autonomous/moves/{approvalId}/decision",
             (
                 string approvalId,
@@ -648,3 +749,5 @@ public static class DashboardApplication
 }
 
 public sealed record AutonomousMoveApprovalDecisionRequest(bool Approved);
+
+public sealed record CoachCommandRequest(string? Command);

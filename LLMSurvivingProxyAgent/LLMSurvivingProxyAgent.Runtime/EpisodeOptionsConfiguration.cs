@@ -60,8 +60,16 @@ public static class EpisodeOptionsConfiguration
                 "Learning:Episode:PilotModel must be an Ollama model name such as qwen3:1.7b.");
         }
 
+        string? memoryId = section["MemoryId"];
+        if (!string.IsNullOrWhiteSpace(memoryId) && !PlaybookMemory.IsValidMemoryId(memoryId))
+        {
+            throw new InvalidOperationException(
+                "Learning:Episode:MemoryId must be 1-64 characters using letters, digits, '.', '_' or '-'.");
+        }
+
         return new EpisodeOptions(episodeId, goal, cap)
         {
+            MemoryId = string.IsNullOrWhiteSpace(memoryId) ? null : memoryId,
             MinimumTurns = minimumTurns,
             ResultPath = string.IsNullOrWhiteSpace(section["ResultPath"]) ? null : Path.GetFullPath(section["ResultPath"]!),
             ExitOnEnd = bool.TryParse(section["ExitOnEnd"], out bool exitOnEnd) && exitOnEnd,

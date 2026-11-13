@@ -17,6 +17,9 @@ public sealed record LlmInteractionRecord(
 {
     public TimeSpan Duration => CompletedAt - StartedAt;
     public bool IsInProgress { get; init; }
+
+    /// <summary>The JSON schema the answer was constrained to, so recorded prompts can be replayed faithfully.</summary>
+    public string? RequestSchema { get; init; }
 }
 
 public interface ILlmInteractionHistoryStore

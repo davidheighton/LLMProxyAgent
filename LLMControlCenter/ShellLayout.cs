@@ -22,8 +22,8 @@ public partial class MainWindow
     private TerminalControl CreateTerminalControl()
     {
         var control = new TerminalControl(_buffer);
-        if (_terminalInputHandler != null)
-            control.SendInput = _terminalInputHandler;
+        if (_keyboardInputHandler != null)
+            control.SendInput = _keyboardInputHandler;
         control.IsConnected = _state.Connected;
         control.SetFontSize(_terminalFontSize);
         if (!string.IsNullOrWhiteSpace(_terminalFontFamilyName))
@@ -355,6 +355,8 @@ public partial class MainWindow
             () => NavigateDashboardAsync("agent-runtime", $"/agents/{escapedAgentId}/runtime"));
         AddWorkspaceNavigationButton(content, "agent-strategy", "Strategy",
             () => NavigateDashboardAsync("agent-strategy", $"/agents/{escapedAgentId}/strategy"));
+        AddWorkspaceNavigationButton(content, "agent-coaching", "Coaching",
+            () => NavigateDashboardAsync("agent-coaching", $"/agents/{escapedAgentId}/coaching"));
         AddWorkspaceNavigationButton(content, "agent-objectives", "Objectives",
             () => NavigateDashboardAsync("agent-objectives", $"/agents/{escapedAgentId}/objectives"));
         AddWorkspaceNavigationButton(content, "agent-events", "Events",
@@ -2468,8 +2470,11 @@ public partial class MainWindow
     private void SetTerminalInputHandler(Action<byte[]> handler)
     {
         _terminalInputHandler = handler;
-        _termCtrl.SendInput = handler;
-        _deckTermCtrl.SendInput = handler;
+        // Only keystrokes typed by the user pass through the !coach interceptor; programmatic sends
+        // (Mombot, scripts, RPC) use _terminalInputHandler directly.
+        _keyboardInputHandler = WithCoachCommands(handler);
+        _termCtrl.SendInput = _keyboardInputHandler;
+        _deckTermCtrl.SendInput = _keyboardInputHandler;
         UpdateTemporaryMacroControls();
     }
 

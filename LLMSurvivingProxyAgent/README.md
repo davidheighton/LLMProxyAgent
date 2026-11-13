@@ -460,7 +460,85 @@ dotnet run --project LLMSurvivingProxyAgent\LLMSurvivingProxyAgent.Harness -- cl
   does not.
 
 MTC accepts the matching options directly: `--episode-id`, `--episode-goal`, `--episode-wall-clock-minutes`,
-`--episode-minimum-turns`, `--episode-result-path`, `--episode-pilot-model`, and `--exit-on-episode-end`.
+`--episode-minimum-turns`, `--episode-result-path`, `--episode-pilot-model`, `--memory-id`, and
+`--exit-on-episode-end`.
+
+## Playbook: cross-life memory and coaching
+
+The playbook is how the agent gets better from one life to the next, and how a veteran player coaches it. It
+lives in `playbook.db` beside `agents.db` (override with `Learning:PlaybookDatabasePath`), outside any one
+game's folder, so it survives character deaths, game resets, and harness cleanup.
+
+**Memory lineage.** Entries and life records belong to a *memory id*, not to one character. It defaults to the
+agent id. Harness learners share one lineage, `--memory-id veteran` by default, so a stream of short-lived
+`learner-*` agents grows into a single veteran. Pass a new id to start a fresh lineage. For a manually launched
+MTC, set `LLMCONTROL_MEMORY_ID`. Agents that share a memory id (for example teammates) learn together.
+
+**Entry kinds.**
+
+| Kind | Author | Effect |
+| --- | --- | --- |
+| Rule | Coach | Enforced. The worker refuses the forbidden action while the rule's situation matches; the step is recorded as `CoachRuleVeto`. |
+| Tip | Coach | Strong advice. The Pilot may deviate only by naming the tip in `overriddenPlaybookEntryId` with an `overrideReason`; every override is logged and scored. |
+| Lesson | Agent | Learned from its own past lives. Starts at low confidence and must earn it in play. |
+
+Entries apply in **situation tags**: coarse, universe-independent tags derived from the synchronized snapshot.
+Examples are `credits:<1k`, `holds:30-59`, `scanner:none`, `location:fedspace`, `location:stardock` and
+`cargo:loaded`; prefix `!` to negate a tag. Sector numbers differ between games, but "no scanner, under 1k
+credits" does not, so tags let lessons transfer between games. An entry is either universal or scoped to the
+current game (the MTC session name).
+
+**Learning loop.**
+
+1. Each decision, the worker selects the applicable rules, tips, and lessons and puts them first in
+   `relevantKnowledge` (layers `CoachRule`, `CoachTip`, `Lesson`) with their track record. Strategic Review gets
+   the same items plus `veteranMemory`: recent life summaries and progression benchmarks.
+2. When the Pilot relies on an entry it cites `playbook:<id>`. When that step's reward is verified, the entry's
+   counters update: help above +0.01, hurt below −0.05 (ordinary move costs are neutral). Confidence is a Beta
+   estimate with a source prior: coach 0.8, endorsed lesson ≈0.73, new lesson 0.4. An unendorsed lesson retires
+   automatically after 8 scored uses below 0.25. Coach entries never auto-retire; they are flagged *evidence
+   disagrees* below 0.4 for the coach to review.
+3. When an episode ends, it is remembered as a **life**: a numbered record with its milestone timeline (turns
+   to each milestone), reward by action, and outcome. Comparing milestone turns across lives is how the agent
+   discovers an efficient early-game progression without a hard-coded curriculum.
+4. The local strategic model then reflects on the life's best and worst verified decisions (`OllamaLessonDistiller`)
+   and proposes at most three lessons. Each proposal must cite steps it was shown, use known tags, and restate an
+   existing lesson by reinforcing it instead of duplicating it. Reflection runs only against a loopback model
+   endpoint; set `Learning:DisableDistillation=true` to turn it off. Credit assignment still runs.
+
+**Coaching.**
+
+- *Coaching page* (`/agents/<id>/coaching`, also in the MTC workspace navigation). Add tips and rules with tag
+  pickers. Review, endorse, edit, or retire learned lessons. See each entry's track record and overrides, and
+  the progression across lives. Mark recent decisions good or poor with a note; the note becomes a tip scoped to
+  that decision's situation.
+- *In the game terminal*, type `!coach ...` and press Enter. TradeWars acts on single keystrokes, so MTC holds a
+  `!` only while the next keys still spell `coach`; anything else goes to the game unchanged. Escape cancels.
+
+  ```text
+  !coach Sell carried cargo before docking at StarDock.
+  !coach here : Pair-trade Organics/Equipment next to FedSpace until you can afford more holds.
+  !coach rule never worldtrade when scanner:none : World Trade needs a scanner first.
+  !coach game : The port pair at 412/413 pays well in this universe.
+  !coach help
+  ```
+
+  `here` scopes the entry to the current credits, holds, scanner, and location tags. `game` limits it to this
+  universe. Rules need `never <action>`; accepted actions are `move`, `trade`, `worldtrade`, `shopper`,
+  `buyholds`, `buyfighters`, `buyshields`, and `refurb`, or a full action name.
+- *API (loopback only)*: `POST /api/agents/<id>/coach` with `{"command":"..."}`, and `GET /api/agents/<id>/playbook`.
+
+## Model backends (Ollama or llama.cpp)
+
+Each brain (Pilot, Reactive, Strategic) chooses its own local model server, so a very small, fast Pilot can run
+alongside a larger Strategic model that deliberates. All model calls go through `LlmChatClient`, which speaks
+Ollama's `/api/chat` or llama.cpp `llama-server`'s OpenAI-compatible `/v1/chat/completions` with JSON-schema output.
+Configure each brain with `Brains:{Pilot|Reactive|Strategic}:{Backend,Endpoint,Model,Thinking,MaxTokens}`; Ollama is
+the default and existing settings keep working. On llama.cpp the Strategic brain deliberates by default, in two
+passes: free reasoning first, then a schema-constrained answer. The host checks each llama.cpp brain at startup and
+launches its `llama-server` when `Brains:{brain}:LlamaCpp:ModelPath` is set. Setup, model candidates, launch scripts,
+and the harness `bench` command that compares models on your recorded game prompts are in
+[`tools/llamacpp/README.md`](../tools/llamacpp/README.md).
 
 ## Run
 

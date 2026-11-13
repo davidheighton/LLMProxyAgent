@@ -5,10 +5,16 @@ using LLMSurvivingProxyAgent.Core;
 
 namespace LLMSurvivingProxyAgent.Models;
 
+/// <summary>
+/// The Pilot brain. Despite the historical name it talks to any supported local backend (Ollama or llama.cpp)
+/// through <see cref="LlmChatClient"/>.
+/// </summary>
 public sealed class OllamaAutonomousTestActionProvider(
     HttpClient httpClient,
     ILlmInteractionHistoryStore? interactionHistory = null) : IAutonomousTestActionProvider
 {
+    private readonly LlmChatClient _chat = new(httpClient);
+
     private const int MaximumDecisionResponseTokens = 2048;
     private const int MaximumDecisionAttempts = 2;
     private static readonly TimeSpan MaximumSnapshotAge = TimeSpan.FromSeconds(30);
@@ -20,8 +26,6 @@ public sealed class OllamaAutonomousTestActionProvider(
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
-    private static readonly JsonSerializerOptions OllamaResponseJsonOptions =
-        new(JsonSerializerDefaults.Web);
 
     private const string SystemPrompt = """
         You are selecting one action for a constrained TradeWars test.
@@ -203,6 +207,21 @@ public sealed class OllamaAutonomousTestActionProvider(
         supplied knowledge item supports the action; never omit either field or put rationale only in thinking.
         """;
 
+    /// <summary>Appended to the system prompt when the agent's playbook supplied items for this decision.</summary>
+    private const string PlaybookPrompt = """
+
+        Playbook: relevantKnowledge may contain items with layer CoachRule, CoachTip, or Lesson. These come from this
+        agent's persistent playbook, which carries over between lives. CoachRule and CoachTip were written by a veteran
+        human coach; Lesson items were learned from this agent's own past lives and carry a confidence from measured
+        results. situationTags describe the current game stage.
+        CoachRule items are enforced by the worker: an action they forbid is refused, so never choose it.
+        CoachTip items are strong advice: follow them unless current verified evidence shows they would clearly hurt.
+        Lesson items are advice weighted by confidence. When you rely on a playbook item, cite its id in
+        citedKnowledgeNodeId so its result is measured. When you knowingly act against an applicable CoachTip or
+        Lesson, set overriddenPlaybookEntryId to its id and give a short, evidence-based overrideReason; the coach
+        reviews every override. Otherwise leave both empty.
+        """;
+
     public string Id => "Ollama";
 
     public async Task<AutonomousTestActionDecision> DecideAsync(
@@ -212,7 +231,7 @@ public sealed class OllamaAutonomousTestActionProvider(
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(actionContext);
-        if (!string.Equals(configuration.Provider, Id, StringComparison.OrdinalIgnoreCase))
+        if (!LlmBackends.IsSupported(configuration.Provider))
         {
             throw new ArgumentException(
                 $"Provider '{configuration.Provider}' is not supported.",
@@ -220,7 +239,6 @@ public sealed class OllamaAutonomousTestActionProvider(
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(configuration.Model);
 
-        var endpoint = new Uri(configuration.Endpoint.ToString().TrimEnd('/') + "/api/chat");
         var situation = actionContext.Situation;
         IntegratedGameClientSnapshot? integratedGameClient =
             situation.Snapshot is { } synchronizedSnapshot &&
@@ -284,16 +302,23 @@ public sealed class OllamaAutonomousTestActionProvider(
             actionContext.PreferredTradeProduct,
             actionContext.AdjacentSectorKnowledge,
             actionContext.RelevantKnowledge,
-            actionContext.ExplorationRequired
+            actionContext.ExplorationRequired,
+            SituationTags = actionContext.SituationTags.Count == 0 ? null : actionContext.SituationTags
         };
+        bool hasPlaybook = actionContext.RelevantKnowledge.Any(item => IsPlaybookLayer(item.Layer));
         var messages = new List<OllamaMessage>
         {
-            new("system", SystemPrompt),
+            new("system", hasPlaybook ? SystemPrompt + PlaybookPrompt : SystemPrompt),
             new("user", JsonSerializer.Serialize(context, JsonOptions))
         };
-        bool enableQwenThinking =
-            configuration.Model.StartsWith("qwen3", StringComparison.OrdinalIgnoreCase);
+        // Ollama Qwen3 Pilots historically think first; an explicit per-brain setting overrides that, and
+        // llama.cpp Pilots answer directly unless thinking is configured.
+        bool enableQwenThinking = configuration.Think ??
+            (!LlmBackends.IsLlamaCpp(configuration) &&
+             configuration.Model.StartsWith("qwen3", StringComparison.OrdinalIgnoreCase));
         bool retryWithoutThinking = false;
+        JsonElement decisionSchema = JsonSerializer.SerializeToElement(CreateDecisionSchema(actionContext), JsonOptions);
+        string decisionSchemaText = decisionSchema.GetRawText();
         for (int attempt = 0; attempt < MaximumDecisionAttempts; attempt++)
         {
             string interactionId = Guid.NewGuid().ToString("N");
@@ -325,42 +350,28 @@ public sealed class OllamaAutonomousTestActionProvider(
             });
             try
             {
-            using var response = await httpClient.PostAsJsonAsync(
-                endpoint,
-                new OllamaChatRequest(
-                    configuration.Model,
-                    false,
-                    CreateDecisionSchema(actionContext),
-                    messages,
-                    Think: enableQwenThinking ? !retryWithoutThinking : null,
-                    Options: new OllamaChatOptions(MaximumDecisionResponseTokens)),
-                JsonOptions,
+            LlmChatResult result = await _chat.ChatAsync(
+                configuration,
+                new LlmChatRequest(
+                    "the test-action decision",
+                    messages.Select(message => new LlmChatMessage(message.Role, message.Content ?? string.Empty)).ToArray(),
+                    decisionSchema)
+                {
+                    Think = enableQwenThinking ? !retryWithoutThinking : null,
+                    MaxTokens = configuration.MaxTokens ?? MaximumDecisionResponseTokens
+                },
                 cancellationToken);
-            responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                string errorBody = responseBody.Length <= 1000
-                    ? responseBody
-                    : responseBody[..1000];
-
-                throw new HttpRequestException(
-                    $"Ollama returned HTTP {(int)response.StatusCode} ({response.StatusCode}) for the test-action decision: {errorBody}",
-                    null,
-                    response.StatusCode);
-            }
+            responseBody = result.RawResponse;
 
             try
             {
-                var payload = JsonSerializer.Deserialize<OllamaChatResponse>(
-                    responseBody,
-                    OllamaResponseJsonOptions);
-                if (string.IsNullOrWhiteSpace(payload?.Message?.Content))
+                if (string.IsNullOrWhiteSpace(result.Content))
                 {
                     string emptyContentError =
-                        $"Ollama returned an empty test-action decision (role={payload?.Message?.Role ?? "unknown"}; " +
-                        $"contentLength={payload?.Message?.Content?.Length ?? 0}; " +
-                        $"thinkingLength={payload?.Message?.Thinking?.Length ?? 0}; " +
-                        $"doneReason={payload?.DoneReason ?? "unknown"}; evalCount={payload?.EvalCount?.ToString() ?? "unknown"}).";
+                        $"The model returned an empty test-action decision (" +
+                        $"contentLength={result.Content.Length}; " +
+                        $"thinkingLength={result.Thinking?.Length ?? 0}; " +
+                        $"doneReason={result.FinishReason ?? "unknown"}; evalCount={result.CompletionTokens?.ToString() ?? "unknown"}).";
                     if (enableQwenThinking && !retryWithoutThinking &&
                         attempt + 1 < MaximumDecisionAttempts)
                     {
@@ -373,7 +384,7 @@ public sealed class OllamaAutonomousTestActionProvider(
                 }
 
                 var decision = JsonSerializer.Deserialize<AutonomousTestActionDecision>(
-                    payload.Message.Content,
+                    result.Content,
                     JsonOptions);
                 if (decision is null)
                 {
@@ -414,6 +425,28 @@ public sealed class OllamaAutonomousTestActionProvider(
                                  StringComparison.Ordinal)))
                 {
                     validationErrors.Add("knowledge citation was not supplied to the model");
+                }
+
+                string overriddenEntryId = decision.OverriddenPlaybookEntryId ?? string.Empty;
+                string overrideReason = decision.OverrideReason ?? string.Empty;
+                if (overriddenEntryId.Length > 0 &&
+                    !actionContext.RelevantKnowledge.Any(item =>
+                        IsOverridablePlaybookLayer(item.Layer) &&
+                        string.Equals(item.NodeId, overriddenEntryId, StringComparison.Ordinal)))
+                {
+                    validationErrors.Add("overriddenPlaybookEntryId is not a supplied CoachTip or Lesson");
+                }
+                if (overriddenEntryId.Length > 0 && string.IsNullOrWhiteSpace(overrideReason))
+                {
+                    validationErrors.Add("overrideReason is required when overriding a playbook item");
+                }
+                if (overriddenEntryId.Length == 0 && overrideReason.Length > 0)
+                {
+                    validationErrors.Add("overrideReason is only allowed with overriddenPlaybookEntryId");
+                }
+                if (overrideReason.Length > 300)
+                {
+                    validationErrors.Add("overrideReason exceeds 300 characters");
                 }
 
                 if (decision.Action == AutonomousTestAction.MoveToAdjacentSector)
@@ -736,7 +769,7 @@ public sealed class OllamaAutonomousTestActionProvider(
                         {
                             retryWithoutThinking = true;
                         }
-                        messages.Add(new OllamaMessage("assistant", payload.Message.Content));
+                        messages.Add(new OllamaMessage("assistant", result.Content));
                         messages.Add(new OllamaMessage(
                             "user",
                             $"The previous decision was rejected by deterministic validation: {details}. " +
@@ -782,7 +815,10 @@ public sealed class OllamaAutonomousTestActionProvider(
                     prompt,
                     responseBody,
                     succeeded,
-                    interactionError));
+                    interactionError)
+                {
+                    RequestSchema = decisionSchemaText
+                });
             }
         }
 
@@ -971,6 +1007,19 @@ public sealed class OllamaAutonomousTestActionProvider(
             "rationale",
             "citedKnowledgeNodeId"
         };
+        string[] overridablePlaybookIds = actionContext.RelevantKnowledge
+            .Where(item => IsOverridablePlaybookLayer(item.Layer))
+            .Select(item => item.NodeId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (overridablePlaybookIds.Length > 0)
+        {
+            commonProperties["overriddenPlaybookEntryId"] = new(
+                "string",
+                JsonSerializer.SerializeToElement(overridablePlaybookIds.Prepend(string.Empty).ToArray()),
+                MaxLength: 200);
+            commonProperties["overrideReason"] = new("string", MaxLength: 300);
+        }
 
         var schemaBranches = new List<OllamaJsonSchemaBranch>();
         if (movementActions.Length > 0)
@@ -1102,16 +1151,13 @@ public sealed class OllamaAutonomousTestActionProvider(
         };
     }
 
-    private sealed record OllamaChatRequest(
-        string Model,
-        bool Stream,
-        OllamaJsonSchema Format,
-        IReadOnlyList<OllamaMessage> Messages,
-        bool? Think = null,
-        OllamaChatOptions? Options = null);
+    private static bool IsPlaybookLayer(string layer) =>
+        layer is PlaybookCitation.CoachRuleLayer or PlaybookCitation.CoachTipLayer or PlaybookCitation.LessonLayer;
 
-    private sealed record OllamaChatOptions(
-        [property: JsonPropertyName("num_predict")] int NumPredict);
+    private static bool IsOverridablePlaybookLayer(string layer) =>
+        layer is PlaybookCitation.CoachTipLayer or PlaybookCitation.LessonLayer;
+
+
 
     private sealed record OllamaJsonSchema(
         string Type,
@@ -1136,8 +1182,4 @@ public sealed class OllamaAutonomousTestActionProvider(
         string? Content,
         string? Thinking = null);
 
-    private sealed record OllamaChatResponse(
-        OllamaMessage? Message,
-        [property: JsonPropertyName("done_reason")] string? DoneReason = null,
-        [property: JsonPropertyName("eval_count")] int? EvalCount = null);
 }

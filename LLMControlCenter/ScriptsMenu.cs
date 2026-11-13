@@ -227,7 +227,7 @@ public partial class MainWindow
             ? configured
             : '$';
         string line = $"{commandChar}{command}\r\n";
-        Action<byte[]> sendInput = _termCtrl.SendInput ??
+        Action<byte[]> sendInput = _terminalInputHandler ??
             throw new InvalidOperationException(
                 "The connected terminal cannot accept TWXProxy script commands.");
         sendInput(System.Text.Encoding.Latin1.GetBytes(line));

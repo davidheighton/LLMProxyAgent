@@ -10,6 +10,8 @@ public sealed class OllamaReasoningProvider(
     HttpClient httpClient,
     ILlmInteractionHistoryStore? interactionHistory = null) : IStrategicReasoningProvider
 {
+    private readonly LlmChatClient _chat = new(httpClient);
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
@@ -88,6 +90,12 @@ public sealed class OllamaReasoningProvider(
         on normalized exact text, not semantic similarity. Macro activity is local telemetry:
         its absence does not prove no live game action occurred, and a record does not prove
         that a free-text recommendation was executed.
+        This player is persistent and lives many lives. Knowledge items with layer CoachRule or CoachTip were written
+        by a veteran human coach: CoachRule items are enforced and must not be planned against; CoachTip items are
+        strong advice. Lesson items were learned from this player's own past lives; weigh them by confidence and
+        track record. VeteranMemory (when present) summarizes past lives and progressionBenchmarks give the best and
+        median turns past lives needed to reach each milestone. Use them to choose objectives that progress faster
+        than past lives did, and cite the playbook items an objective relies on.
         ReactiveActivity event counts may be truncated at the stated limit. Preserve source and
         trust-at-receipt when assessing communications; do not infer urgency from event frequency alone.
 
@@ -133,18 +141,18 @@ public sealed class OllamaReasoningProvider(
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(context);
-        if (!string.Equals(configuration.Provider, Id, StringComparison.OrdinalIgnoreCase))
+        if (!LlmBackends.IsSupported(configuration.Provider))
         {
             throw new ArgumentException($"Provider '{configuration.Provider}' is not supported.", nameof(configuration));
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(configuration.Model);
 
-        var endpoint = new Uri(configuration.Endpoint.ToString().TrimEnd('/') + "/api/chat");
         var messages = new[]
         {
             new OllamaMessage("system", SystemPrompt),
             new OllamaMessage("user", JsonSerializer.Serialize(context, JsonOptions))
         };
+        JsonElement assessmentSchema = BuildAssessmentSchema(context);
         string interactionId = Guid.NewGuid().ToString("N");
         DateTimeOffset startedAt = DateTimeOffset.UtcNow;
         string prompt = string.Join(
@@ -172,37 +180,30 @@ public sealed class OllamaReasoningProvider(
         });
         try
         {
-            using var response = await httpClient.PostAsJsonAsync(
-                endpoint,
-                new OllamaChatRequest(
-                    configuration.Model,
-                    false,
-                    BuildAssessmentSchema(context),
-                    messages),
-                JsonOptions,
+            // The strategy brain may deliberate before answering (configuration.Think); on llama.cpp that is a
+            // separate unconstrained reasoning pass followed by the schema-constrained answer.
+            LlmChatResult result = await _chat.ChatAsync(
+                configuration,
+                new LlmChatRequest(
+                    "the strategic assessment",
+                    messages.Select(message => new LlmChatMessage(message.Role, message.Content)).ToArray(),
+                    assessmentSchema)
+                {
+                    Think = configuration.Think,
+                    MaxTokens = configuration.MaxTokens
+                },
                 cancellationToken);
-            responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                string errorBody = responseBody.Length <= 1000
-                    ? responseBody
-                    : responseBody[..1000];
-                throw new HttpRequestException(
-                    $"Ollama returned HTTP {(int)response.StatusCode} ({response.StatusCode}) for the strategic assessment: {errorBody}",
-                    null,
-                    response.StatusCode);
-            }
+            responseBody = result.RawResponse;
 
             try
             {
-                var payload = JsonSerializer.Deserialize<OllamaChatResponse>(responseBody, JsonOptions);
-                if (string.IsNullOrWhiteSpace(payload?.Message?.Content))
+                if (string.IsNullOrWhiteSpace(result.Content))
                 {
-                    throw new InvalidDataException("Ollama returned an empty strategic assessment.");
+                    throw new InvalidDataException("The model returned an empty strategic assessment.");
                 }
 
                 StrategicAssessment assessment =
-                    JsonSerializer.Deserialize<StrategicAssessment>(payload.Message.Content, JsonOptions)
+                    JsonSerializer.Deserialize<StrategicAssessment>(result.Content, JsonOptions)
                     ?? throw new InvalidDataException("Ollama returned an empty strategic assessment object.");
                 ValidateObjectiveFields(assessment, context);
                 succeeded = true;
@@ -235,7 +236,10 @@ public sealed class OllamaReasoningProvider(
                 prompt,
                 responseBody,
                 succeeded,
-                interactionError));
+                interactionError)
+            {
+                RequestSchema = assessmentSchema.GetRawText()
+            });
         }
     }
 
@@ -395,12 +399,6 @@ public sealed class OllamaReasoningProvider(
         return document.RootElement.Clone();
     }
 
-    private sealed record OllamaChatRequest(
-        string Model,
-        bool Stream,
-        JsonElement Format,
-        IReadOnlyList<OllamaMessage> Messages);
 
     private sealed record OllamaMessage(string Role, string Content);
-    private sealed record OllamaChatResponse(OllamaMessage? Message);
 }

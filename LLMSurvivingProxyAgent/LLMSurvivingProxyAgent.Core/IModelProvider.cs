@@ -3,7 +3,17 @@ namespace LLMSurvivingProxyAgent.Core;
 public sealed record ModelConfiguration(
     string Provider,
     string Model,
-    Uri Endpoint);
+    Uri Endpoint)
+{
+    /// <summary>Request model reasoning before answering. Null keeps each brain's default.</summary>
+    public bool? Think { get; init; }
+
+    /// <summary>Upper bound on generated tokens. Null keeps each brain's default.</summary>
+    public int? MaxTokens { get; init; }
+
+    /// <summary>Sampling temperature. Null keeps the server default.</summary>
+    public double? Temperature { get; init; }
+}
 
 public interface IModelProvider
 {
